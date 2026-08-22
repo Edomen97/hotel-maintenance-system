@@ -3,6 +3,7 @@ import io
 import os
 import sqlite3
 import uuid
+import base64
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -34,7 +35,7 @@ from werkzeug.utils import secure_filename
 import qrcode
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
@@ -46,7 +47,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -144,7 +145,7 @@ class MaintenanceRequest(db.Model):
     __tablename__ = "maintenance_requests"
     id = db.Column(db.Integer, primary_key=True)
     request_no = db.Column(db.String(30), unique=True, nullable=False)
-    location_type = db.Column(db.String(20), nullable=False)  # Room / Hotel Area
+    location_type = db.Column(db.String(20), nullable=False)
     floor = db.Column(db.Integer)
     room_id = db.Column(db.Integer, db.ForeignKey("rooms.id"))
     area_id = db.Column(db.Integer, db.ForeignKey("areas.id"))
@@ -195,6 +196,7 @@ class WorkOrder(db.Model):
     work_performed = db.Column(db.Text)
     labor_hours = db.Column(db.Float, default=0)
     completion_notes = db.Column(db.Text)
+    completion_photo = db.Column(db.String(255), nullable=True)
     completed_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     verified_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -245,7 +247,7 @@ class StockMovement(db.Model):
     __tablename__ = "stock_movements"
     id = db.Column(db.Integer, primary_key=True)
     part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"))
-    movement_type = db.Column(db.String(10), nullable=False)  # IN / OUT
+    movement_type = db.Column(db.String(10), nullable=False)
     quantity = db.Column(db.Float, nullable=False)
     reason = db.Column(db.String(200))
     request_id = db.Column(db.Integer)
@@ -358,7 +360,7 @@ class InspectionItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     inspection_id = db.Column(db.Integer, db.ForeignKey("inspections.id"), nullable=False)
     item_text = db.Column(db.String(200), nullable=False)
-    result = db.Column(db.String(10), default="Pass")  # Pass / Fail / N/A
+    result = db.Column(db.String(10), default="Pass")
     notes = db.Column(db.Text)
 
     inspection = db.relationship("Inspection", back_populates="items")
@@ -368,9 +370,9 @@ class Photo(db.Model):
     __tablename__ = "photos"
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
-    object_type = db.Column(db.String(20), nullable=False)  # request / workorder
+    object_type = db.Column(db.String(20), nullable=False)
     object_id = db.Column(db.Integer, nullable=False)
-    photo_type = db.Column(db.String(20), default="Before")  # Before/During/After/Document
+    photo_type = db.Column(db.String(20), default="Before")
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     file_size = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -502,7 +504,7 @@ def page(title, content):
             nav.append('<a class="nav-link" href="/checklists">Checklists</a>')
             nav.append('<a class="nav-link" href="/suppliers">Suppliers</a>')
             nav.append('<a class="nav-link" href="/contractors">Contractors</a>')
-            nav.append('<a class="nav-link" href="/employees">Employees</a>')  # NEW
+            nav.append('<a class="nav-link" href="/employees">Employees</a>')
         if current_user.role == "ADMIN":
             nav.append('<a class="nav-link" href="/admin/users">Users</a>')
             nav.append('<a class="nav-link" href="/admin/masterdata">Master Data</a>')
@@ -525,7 +527,7 @@ def page(title, content):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} | Hotel Maintenance</title>
+<title>{title} | Rori Hotel Maintenance</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="manifest" href="/manifest.json">
 <style>
@@ -539,7 +541,7 @@ body {{ background:#f8f9fa; }}
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
-    <a class="navbar-brand" href="/dashboard">🏨 Hotel Maintenance</a>
+    <a class="navbar-brand" href="/dashboard">🏨 Rori Hotel</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -564,43 +566,38 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 # SEED DATA
 # --------------------------------------------------------------
 def seed_data():
-    # Floors
     for f in [2, 3, 4, 5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
 
-    # Rooms 201-300
     if Room.query.count() == 0:
         for num in range(201, 301):
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
 
-    # Areas
     initial_areas = [
-        ("Buduchalley", "F&B", "Maintenance note area"),
-        ("Sillanto", "Unknown", "Maintenance note area"),
-        ("Fura", "Unknown", "Maintenance note area"),
-        ("Executive", "Unknown", "Maintenance note area"),
-        ("Mitima", "Unknown", "Maintenance note area"),
-        ("Odako", "Unknown", "Maintenance note area"),
-        ("Gudumale", "Unknown", "Maintenance note area"),
-        ("Bubble", "Unknown", "Maintenance note area"),
-        ("Bubbles", "Unknown", "Maintenance note area"),
-        ("Fura Corridor", "Unknown", "Maintenance note area"),
-        ("Executive Meeting Room", "Unknown", "Maintenance note area"),
-        ("Counter", "Unknown", "Maintenance note area"),
+        ("Buduchalley", "F&B"),
+        ("Sillanto", "Unknown"),
+        ("Fura", "Unknown"),
+        ("Executive", "Unknown"),
+        ("Mitima", "Unknown"),
+        ("Odako", "Unknown"),
+        ("Gudumale", "Unknown"),
+        ("Bubble", "Unknown"),
+        ("Bubbles", "Unknown"),
+        ("Fura Corridor", "Unknown"),
+        ("Executive Meeting Room", "Unknown"),
+        ("Counter", "Unknown"),
     ]
-    for name, dept, desc in initial_areas:
+    for name, dept in initial_areas:
         if not Area.query.filter_by(name=name).first():
-            db.session.add(Area(name=name, department=dept, description=desc))
+            db.session.add(Area(name=name, department=dept))
 
-    # Categories
     categories = ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry", "Civil", "Safety", "General", "Other"]
     for c in categories:
         if not Category.query.filter_by(name=c).first():
             db.session.add(Category(name=c))
 
-    # Working items
     items = [
         "Light", "Switch", "Window", "Door Key", "Door Lock", "Paint", "Mirror",
         "Drainage Cover", "Frame", "Background Frame", "Spot Light", "Plumbing",
@@ -610,7 +607,6 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
-    # Seed Employees (Engineering Department)
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
         (2, "ቸርነት አምና", "Electrical"),
@@ -622,60 +618,58 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
-    # Admin user
     if not User.query.filter_by(username="admin").first():
-        admin = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@hotel.local")
+        admin = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
         admin.set_password("admin123")
         db.session.add(admin)
 
     if not User.query.filter_by(username="manager").first():
-        mgr = User(username="manager", full_name="Maintenance Manager", role="MANAGER", email="manager@hotel.local")
+        mgr = User(username="manager", full_name="Maintenance Manager", role="MANAGER", email="manager@rorihotel.local")
         mgr.set_password("manager123")
         db.session.add(mgr)
 
     if not User.query.filter_by(username="staff").first():
-        staff = User(username="staff", full_name="Maintenance Staff", role="MAINTENANCE STAFF", email="staff@hotel.local")
+        staff = User(username="staff", full_name="Maintenance Staff", role="MAINTENANCE STAFF", email="staff@rorihotel.local")
         staff.set_password("staff123")
         db.session.add(staff)
 
     if not User.query.filter_by(username="employee").first():
-        emp = User(username="employee", full_name="Hotel Employee", role="EMPLOYEE", email="employee@hotel.local")
+        emp = User(username="employee", full_name="Hotel Employee", role="EMPLOYEE", email="employee@rorihotel.local")
         emp.set_password("employee123")
         db.session.add(emp)
 
     db.session.commit()
 
-    # Initial maintenance note records
     if MaintenanceRequest.query.count() == 0:
         admin = User.query.filter_by(username="admin").first()
         note_records = [
-            ("Sling", "Buduchalley", "F&B"),
-            ("Jemison Frame", "Sillanto", None),
-            ("Window", "Sillanto", None),
-            ("Paint", "Sillanto", None),
-            ("Paint", "Fura", None),
-            ("Paint", "Executive", None),
-            ("Background Frame", "Executive", None),
-            ("Door Key", "Mitima", None),
-            ("Corridor Paint", "Fura Corridor", None),
-            ("Light", "Executive Meeting Room", None),
-            ("Light", "Gudumale", None),
-            ("Light", "Counter", None),
-            ("Light", "Bubbles", None),
-            ("Cracked Mirror", "Executive Meeting Room", None),
-            ("Cracked Mirror", "Gudumale", None),
-            ("Cracked Mirror", "Counter", None),
-            ("Cracked Mirror", "Bubbles", None),
-            ("Drainage Line Cover", "Executive Meeting Room", None),
-            ("Drainage Line Cover", "Gudumale", None),
-            ("Drainage Line Cover", "Counter", None),
-            ("Drainage Line Cover", "Bubbles", None),
-            ("Switch Cover", "Odako", None),
-            ("Stage Light Switch Separation", "Odako", None),
-            ("Stage Light Switch Separation", "Gudumale", None),
-            ("Counter Paint / Spot Light", "Bubble", None),
+            ("Sling", "Buduchalley"),
+            ("Jemison Frame", "Sillanto"),
+            ("Window", "Sillanto"),
+            ("Paint", "Sillanto"),
+            ("Paint", "Fura"),
+            ("Paint", "Executive"),
+            ("Background Frame", "Executive"),
+            ("Door Key", "Mitima"),
+            ("Corridor Paint", "Fura Corridor"),
+            ("Light", "Executive Meeting Room"),
+            ("Light", "Gudumale"),
+            ("Light", "Counter"),
+            ("Light", "Bubbles"),
+            ("Cracked Mirror", "Executive Meeting Room"),
+            ("Cracked Mirror", "Gudumale"),
+            ("Cracked Mirror", "Counter"),
+            ("Cracked Mirror", "Bubbles"),
+            ("Drainage Line Cover", "Executive Meeting Room"),
+            ("Drainage Line Cover", "Gudumale"),
+            ("Drainage Line Cover", "Counter"),
+            ("Drainage Line Cover", "Bubbles"),
+            ("Switch Cover", "Odako"),
+            ("Stage Light Switch Separation", "Odako"),
+            ("Stage Light Switch Separation", "Gudumale"),
+            ("Counter Paint / Spot Light", "Bubble"),
         ]
-        for item_name, area_name, dept in note_records:
+        for item_name, area_name in note_records:
             area = Area.query.filter_by(name=area_name).first()
             item = WorkingItem.query.filter_by(name=item_name.split(" / ")[0]).first()
             if not item:
@@ -698,100 +692,58 @@ def seed_data():
 
 
 # --------------------------------------------------------------
-# EMPLOYEES (Engineering Department)
-# --------------------------------------------------------------
-@app.route("/employees")
-@role_required("ADMIN", "MANAGER")
-def employees_list():
-    employees = Employee.query.order_by(Employee.id).all()
-    rows = "".join(
-        f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td><td>{e.department}</td>'
-        f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit">Edit</a></td></tr>'
-        for e in employees
-    )
-    content = f"""
-    <h3>Engineering Department Employees</h3>
-    <a class="btn btn-primary mb-2" href="/employees/new">Add Employee</a>
-    <table class="table table-bordered">
-    <thead><tr><th>ID</th><th>Name</th><th>Job Title</th><th>Department</th><th>Action</th></tr></thead>
-    <tbody>{rows}</tbody></table>"""
-    return page("Employees", content)
-
-
-@app.route("/employees/new", methods=["GET", "POST"])
-@role_required("ADMIN", "MANAGER")
-def employee_create():
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        job_title = request.form.get("job_title", "").strip()
-        department = request.form.get("department", "Engineering").strip()
-        if not name:
-            flash("Name is required", "danger")
-            return redirect(url_for("employee_create"))
-        emp = Employee(name=name, job_title=job_title, department=department)
-        db.session.add(emp)
-        db.session.flush()
-        log_audit("Create", "Employee", emp.id, new_value=name)
-        db.session.commit()
-        flash("Employee added", "success")
-        return redirect(url_for("employees_list"))
-    return page("Add Employee", """<form method="post">
-    <div class="mb-3"><label>Name</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>Job Title</label><input class="form-control" name="job_title"></div>
-    <div class="mb-3"><label>Department</label><input class="form-control" name="department" value="Engineering"></div>
-    <button class="btn btn-primary">Save</button></form>""")
-
-
-@app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
-@role_required("ADMIN", "MANAGER")
-def employee_edit(emp_id):
-    emp = Employee.query.get_or_404(emp_id)
-    if request.method == "POST":
-        old_name = emp.name
-        emp.name = request.form.get("name", emp.name).strip()
-        emp.job_title = request.form.get("job_title", emp.job_title).strip()
-        emp.department = request.form.get("department", emp.department).strip()
-        emp.updated_at = datetime.utcnow()
-        log_audit("Update", "Employee", emp.id, old_name, emp.name)
-        db.session.commit()
-        flash("Employee updated", "success")
-        return redirect(url_for("employees_list"))
-    content = f"""
-    <form method="post">
-    <div class="mb-3"><label>Name</label><input class="form-control" name="name" value="{emp.name}" required></div>
-    <div class="mb-3"><label>Job Title</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
-    <div class="mb-3"><label>Department</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
-    <button class="btn btn-primary">Save</button></form>"""
-    return page("Edit Employee", content)
-
-
-# --------------------------------------------------------------
 # AUTH
 # --------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         user = User.query.filter_by(username=username).first()
+
         if user and user.check_password(password) and user.active:
             login_user(user)
             log_audit("Login", "User", user.id)
             db.session.commit()
             return redirect(url_for("dashboard"))
-        flash("Invalid username or password", "danger")
-    return page("Login", """
-    <div class="row justify-content-center"><div class="col-md-4">
-    <h3>Login</h3>
-    <form method="post">
-      <div class="mb-3"><label>Username</label><input class="form-control" name="username" required></div>
-      <div class="mb-3"><label>Password</label><input type="password" class="form-control" name="password" required></div>
-      <button class="btn btn-primary w-100">Login</button>
-    </form>
-    <p class="mt-3 small text-muted">Default users: admin/admin123, manager/manager123, staff/staff123, employee/employee123</p>
-    </div></div>""")
+
+        flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል", "danger")
+
+    login_html = """
+    <div class="row justify-content-center align-items-center" style="min-height: 80vh;">
+        <div class="col-11 col-md-5 col-lg-4">
+            <div class="card shadow-lg border-0" style="border-radius: 1rem;">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <h2 class="fw-bold text-primary">🏨 Rori Hotel</h2>
+                        <p class="text-muted">የጥገና ክፍል መግቢያ (Maintenance Portal)</p>
+                    </div>
+                    
+                    <form method="post">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">መለያ ስም (Username)</label>
+                            <input type="text" class="form-control form-control-lg bg-light" name="username" placeholder="ስም ያስገቡ..." required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">የይለፍ ቃል (Password)</label>
+                            <input type="password" class="form-control form-control-lg bg-light" name="password" placeholder="********" required>
+                        </div>
+                        <button class="btn btn-primary btn-lg w-100 fw-bold" style="border-radius: 0.5rem;">ግባ / Login</button>
+                    </form>
+                    
+                    <hr class="my-4">
+                    <div class="text-center small text-muted">
+                        <p class="mb-1">ሰራተኛ <b>staff</b> | ማናጀር <b>manager</b></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    return page("Login", login_html)
 
 
 @app.route("/logout")
@@ -825,50 +777,49 @@ def dashboard():
     urgent = MaintenanceRequest.query.filter_by(priority="URGENT").count()
     low_stock = sum(1 for p in InventoryPart.query.all() if p.is_low)
     out_rooms = Room.query.filter(Room.status.in_(["Maintenance", "Out of Service"])).count()
-    open_wo = WorkOrder.query.filter(WorkOrder.status.in_(["Assigned", "In Progress"])).count()
 
     if role == "MAINTENANCE STAFF":
         assigned_wo = WorkOrder.query.filter_by(assigned_to_id=current_user.id).count()
         content = f"""
-        <h3>Maintenance Staff Dashboard</h3>
+        <h3>የጥገና ሰራተኛ ዳሽቦርድ</h3>
         <div class="row text-center">
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{assigned_wo}</b> Assigned WOs</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> In Progress</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> Completed</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{overdue}</b> Overdue</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{assigned_wo}</b> የተመደቡ ስራዎች</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{overdue}</b> ያለፉ</div></div>
         </div>
-        <a class="btn btn-primary mt-3" href="/workorders">My Work Orders</a>
+        <a class="btn btn-primary mt-3" href="/workorders">የእኔ ስራዎች</a>
         """
     elif role == "EMPLOYEE":
         my_requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).count()
         content = f"""
-        <h3>Employee Dashboard</h3>
+        <h3>የሰራተኛ ዳሽቦርድ</h3>
         <div class="row text-center">
-        <div class="col-4"><div class="card p-3"><b>{my_requests}</b> My Requests</div></div>
-        <div class="col-4"><div class="card p-3"><b>{pending}</b> Pending</div></div>
-        <div class="col-4"><div class="card p-3"><b>{completed}</b> Completed</div></div>
+        <div class="col-4"><div class="card p-3"><b>{my_requests}</b> የእኔ ጥያቄዎች</div></div>
+        <div class="col-4"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
+        <div class="col-4"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
         </div>
-        <a class="btn btn-primary mt-3" href="/requests/new">Create Request</a>
+        <a class="btn btn-primary mt-3" href="/requests/new">አዲስ ጥያቄ ይፍጠሩ</a>
         """
     else:
-        total_employees = Employee.query.count()  # NEW
+        total_employees = Employee.query.count()
         content = f"""
-        <h3>Manager Dashboard</h3>
+        <h3>የአስተዳዳሪ ዳሽቦርድ</h3>
         <div class="row text-center">
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_requests}</b> Requests</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{pending}</b> Pending</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> In Progress</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> Completed</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{urgent}</b> Urgent</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{overdue}</b> Overdue</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{low_stock}</b> Low Stock</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{out_rooms}</b> Rooms Out</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_employees}</b> Employees</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_requests}</b> ጥያቄዎች</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{urgent}</b> አስቸኳይ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{overdue}</b> ያለፉ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{low_stock}</b> ዝቅተኛ ክምችት</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{out_rooms}</b> ክፍሎች ውጪ</div></div>
+        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_employees}</b> ሰራተኞች</div></div>
         </div>
         <div class="row mt-4">
-        <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests">Review Requests</a></div>
-        <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders">Work Orders</a></div>
-        <div class="col-md-4"><a class="btn btn-info w-100" href="/reports">Reports</a></div>
+        <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests">ጥያቄዎችን ይገምግሙ</a></div>
+        <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders">የስራ ትዕዛዞች</a></div>
+        <div class="col-md-4"><a class="btn btn-info w-100" href="/reports">ሪፖርቶች</a></div>
         </div>
         """
     return page("Dashboard", content)
@@ -902,11 +853,11 @@ def requests_list():
         <td>{r.created_at.strftime('%Y-%m-%d %H:%M')}</td>
         </tr>""")
     content = f"""
-    <h3>Maintenance Requests</h3>
-    <a class="btn btn-primary mb-2" href="/requests/new">New Request</a>
+    <h3>የጥገና ጥያቄዎች</h3>
+    <a class="btn btn-primary mb-2" href="/requests/new">አዲስ ጥያቄ</a>
     <div class="table-responsive">
     <table class="table table-bordered table-striped">
-    <thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>
+    <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
     <tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Requests", content)
 
@@ -930,26 +881,26 @@ def request_create():
         due_date = request.form.get("due_date")
 
         if location_type not in ["Room", "Hotel Area"]:
-            flash("Invalid location type", "danger")
+            flash("የቦታ አይነት ልክ አይደለም", "danger")
             return redirect(url_for("request_create"))
 
         if location_type == "Room":
             room = Room.query.get(room_id)
             if not room or not (201 <= int(room.room_number) <= 300):
-                flash("Invalid room. Room must be one of 201–300.", "danger")
+                flash("ልክ ያልሆነ ክፍል። ክፍሉ ከ201-300 መሆን አለበት።", "danger")
                 return redirect(url_for("request_create"))
             floor = room.floor
             area_id = None
         else:
             area = Area.query.get(area_id)
             if not area:
-                flash("Invalid area", "danger")
+                flash("ልክ ያልሆነ ቦታ", "danger")
                 return redirect(url_for("request_create"))
             floor = None
             room_id = None
 
         if not description:
-            flash("Problem description is required", "danger")
+            flash("የችግሩ መግለጫ ያስፈልጋል", "danger")
             return redirect(url_for("request_create"))
 
         due = datetime.strptime(due_date, "%Y-%m-%dT%H:%M") if due_date else datetime.utcnow() + timedelta(hours=PRIORITIES.get(priority, 24))
@@ -971,61 +922,61 @@ def request_create():
         db.session.flush()
         log_audit("Create", "MaintenanceRequest", req.id, new_value=f"{req.request_no} - {req.priority}")
         managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-        notify([u.id for u in managers], f"New request {req.request_no} at {req.location_name}", "New Request", req.id)
+        notify([u.id for u in managers], f"አዲስ ጥያቄ {req.request_no} በ {req.location_name}", "አዲስ ጥያቄ", req.id)
         if priority == "URGENT":
-            notify([u.id for u in managers], f"URGENT request {req.request_no}", "Urgent", req.id)
+            notify([u.id for u in managers], f"አስቸኳይ ጥያቄ {req.request_no}", "አስቸኳይ", req.id)
         db.session.commit()
-        flash("Request submitted successfully", "success")
+        flash("ጥያቄዎ በተሳካ ሁኔታ ተልኳል", "success")
         return redirect(url_for("requests_list"))
 
-    room_options = "".join(f'<option value="{r.id}">Room {r.room_number} (Floor {r.floor})</option>' for r in rooms)
+    room_options = "".join(f'<option value="{r.id}">ክፍል {r.room_number} (ፎቅ {r.floor})</option>' for r in rooms)
     area_options = "".join(f'<option value="{a.id}">{a.name}</option>' for a in areas)
     item_options = "".join(f'<option value="{i.id}">{i.name}</option>' for i in items)
     category_options = "".join(f'<option value="{c.id}">{c.name}</option>' for c in categories)
-    selected_room = f'<option value="{room_id}" selected>Room {Room.query.get(room_id).room_number if room_id and Room.query.get(room_id) else ""}</option>' if room_id else ""
+    selected_room = f'<option value="{room_id}" selected>ክፍል {Room.query.get(room_id).room_number if room_id and Room.query.get(room_id) else ""}</option>' if room_id else ""
     content = f"""
-    <h3>New Maintenance Request</h3>
+    <h3>አዲስ የጥገና ጥያቄ</h3>
     <form method="post">
     <div class="row">
     <div class="col-md-6 mb-3">
-    <label>Location Type</label>
+    <label>የቦታ አይነት</label>
     <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
-      <option value="Room">Room</option>
-      <option value="Hotel Area">Hotel Area</option>
+      <option value="Room">ክፍል</option>
+      <option value="Hotel Area">የሆቴል ቦታ</option>
     </select>
     </div>
     <div class="col-md-6 mb-3" id="room_div">
-    <label>Room</label>
+    <label>ክፍል</label>
     <select class="form-select" name="room_id">{selected_room}{room_options}</select>
     </div>
     <div class="col-md-6 mb-3" id="area_div" style="display:none">
-    <label>Area</label>
-    <select class="form-select" name="area_id"><option value="">-- Select Area --</option>{area_options}</select>
+    <label>ቦታ</label>
+    <select class="form-select" name="area_id"><option value="">-- ቦታ ይምረጡ --</option>{area_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>Working Item</label>
-    <select class="form-select" name="working_item_id" required><option value="">-- Select Item --</option>{item_options}</select>
+    <label>የስራ እቃ</label>
+    <select class="form-select" name="working_item_id" required><option value="">-- እቃ ይምረጡ --</option>{item_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>Category</label>
-    <select class="form-select" name="category_id" required><option value="">-- Select Category --</option>{category_options}</select>
+    <label>ምድብ</label>
+    <select class="form-select" name="category_id" required><option value="">-- ምድብ ይምረጡ --</option>{category_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>Priority</label>
+    <label>ቅድሚያ</label>
     <select class="form-select" name="priority">
-      <option value="LOW">LOW</option><option value="MEDIUM" selected>MEDIUM</option>
-      <option value="HIGH">HIGH</option><option value="URGENT">URGENT</option>
+      <option value="LOW">ዝቅተኛ</option><option value="MEDIUM" selected>መካከለኛ</option>
+      <option value="HIGH">ከፍተኛ</option><option value="URGENT">አስቸኳይ</option>
     </select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>Due Date (optional)</label>
+    <label>የመጨረሻ ቀን (አማራጭ)</label>
     <input type="datetime-local" class="form-control" name="due_date">
     </div>
     <div class="col-12 mb-3">
-    <label>Problem Description</label>
+    <label>የችግሩ መግለጫ</label>
     <textarea class="form-control" name="description" required></textarea>
     </div>
-    <button class="btn btn-primary">Submit Request</button>
+    <button class="btn btn-primary">ጥያቄ ይላኩ</button>
     </div>
     </form>
     <script>
@@ -1045,37 +996,37 @@ def request_detail(req_id):
     photos = Photo.query.filter_by(object_type="request", object_id=req.id).all()
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
     photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
-    history_html = "".join(f"<li>{h.status} at {h.timestamp.strftime('%Y-%m-%d %H:%M')} by {h.user.full_name if h.user else 'System'}</li>" for h in history)
+    history_html = "".join(f"<li>{h.status} በ {h.timestamp.strftime('%Y-%m-%d %H:%M')} በ {h.user.full_name if h.user else 'System'}</li>" for h in history)
     content = f"""
-    <h3>Request {req.request_no}</h3>
+    <h3>ጥያቄ {req.request_no}</h3>
     <div class="row">
     <div class="col-md-8">
     <table class="table table-bordered">
-    <tr><th>Status</th><td>{req.status}</td></tr>
-    <tr><th>Location</th><td>{req.location_name}</td></tr>
-    <tr><th>Item</th><td>{req.working_item.name if req.working_item else ''}</td></tr>
-    <tr><th>Category</th><td>{req.category.name if req.category else ''}</td></tr>
-    <tr><th>Priority</th><td class="{'table-danger' if req.is_overdue or req.priority=='URGENT' else ''}">{req.priority}</td></tr>
-    <tr><th>Due</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
-    <tr><th>Description</th><td>{req.description}</td></tr>
-    <tr><th>Requested By</th><td>{req.requested_by.full_name if req.requested_by else ''}</td></tr>
+    <tr><th>ሁኔታ</th><td>{req.status}</td></tr>
+    <tr><th>ቦታ</th><td>{req.location_name}</td></tr>
+    <tr><th>እቃ</th><td>{req.working_item.name if req.working_item else ''}</td></tr>
+    <tr><th>ምድብ</th><td>{req.category.name if req.category else ''}</td></tr>
+    <tr><th>ቅድሚያ</th><td class="{'table-danger' if req.is_overdue or req.priority=='URGENT' else ''}">{req.priority}</td></tr>
+    <tr><th>የመጨረሻ ቀን</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
+    <tr><th>መግለጫ</th><td>{req.description}</td></tr>
+    <tr><th>የጠየቀው</th><td>{req.requested_by.full_name if req.requested_by else ''}</td></tr>
     </table>
-    <h5>Status History</h5>
-    <ul>{history_html or '<li>No history yet</li>'}</ul>
+    <h5>የሁኔታ ታሪክ</h5>
+    <ul>{history_html or '<li>እስካሁን ታሪክ የለም</li>'}</ul>
     </div>
     <div class="col-md-4">
-    <h5>Photos</h5>{photo_html or '<p>No photos</p>'}
+    <h5>ፎቶዎች</h5>{photo_html or '<p>ፎቶ የለም</p>'}
     </div>
     </div>
     """
     if current_user.role in ["MANAGER", "ADMIN"]:
         action_buttons = ""
         if req.status == "Pending":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">Approve</a> '
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">አጽድቅ</a> '
         if req.status in ["Approved", "Assigned"]:
-            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">Create Work Order</a> '
+            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">የስራ ትዕዛዝ ፍጠር</a> '
         if req.status == "Completed":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">Verify</a> '
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a> '
         content += f'<div class="mt-3">{action_buttons}</div>'
     return page("Request Detail", content)
 
@@ -1090,9 +1041,9 @@ def request_approve(req_id):
         hist = StatusHistory(request_id=req.id, status=req.status, user_id=current_user.id)
         db.session.add(hist)
         log_audit("Status Change", "MaintenanceRequest", req.id, old, req.status)
-        notify([req.requested_by_id], f"Your request {req.request_no} was approved", "Status Changed", req.id)
+        notify([req.requested_by_id], f"ጥያቄዎ {req.request_no} ጸድቋል", "Status Changed", req.id)
         db.session.commit()
-        flash("Request approved", "success")
+        flash("ጥያቄው ጸድቋል", "success")
     return redirect(url_for("request_detail", req_id=req.id))
 
 
@@ -1107,9 +1058,9 @@ def request_verify(req_id):
         hist = StatusHistory(request_id=req.id, status=req.status, user_id=current_user.id)
         db.session.add(hist)
         log_audit("Verification", "MaintenanceRequest", req.id, old, req.status)
-        notify([req.requested_by_id], f"Your request {req.request_no} was verified", "Status Changed", req.id)
+        notify([req.requested_by_id], f"ጥያቄዎ {req.request_no} ተረጋግጧል", "Status Changed", req.id)
         db.session.commit()
-        flash("Request verified", "success")
+        flash("ጥያቄው ተረጋግጧል", "success")
     return redirect(url_for("request_detail", req_id=req.id))
 
 
@@ -1134,9 +1085,9 @@ def workorders_list():
         <td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td>
         </tr>""")
     content = f"""
-    <h3>Work Orders</h3>
+    <h3>የስራ ትዕዛዞች</h3>
     <table class="table table-bordered table-striped">
-    <thead><tr><th>WO #</th><th>Location</th><th>Item</th><th>Status</th><th>Assigned To</th></tr></thead>
+    <thead><tr><th>ትዕዛዝ #</th><th>ቦታ</th><th>እቃ</th><th>ሁኔታ</th><th>የተመደበ</th></tr></thead>
     <tbody>{''.join(rows)}</tbody></table>"""
     return page("Work Orders", content)
 
@@ -1154,7 +1105,7 @@ def workorder_create():
         work_performed = request.form.get("work_performed", "")
         req = MaintenanceRequest.query.get_or_404(request_id)
         if req.status not in ["Approved", "Assigned"]:
-            flash("Request is not approved", "danger")
+            flash("ጥያቄው አልጸደቀም", "danger")
             return redirect(url_for("workorder_create", request_id=request_id))
         wo = WorkOrder(
             work_order_no=work_order_no_generator(),
@@ -1170,21 +1121,21 @@ def workorder_create():
         db.session.add(wo)
         db.session.flush()
         log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
-        notify([assigned_to_id], f"New work order {wo.work_order_no} assigned to you", "Work Order Assigned", req.id, wo.id)
+        notify([assigned_to_id], f"አዲስ የስራ ትዕዛዝ {wo.work_order_no} ተመድቧል", "Work Order Assigned", req.id, wo.id)
         db.session.commit()
-        flash("Work order created", "success")
+        flash("የስራ ትዕዛዝ ተፈጥሯል", "success")
         return redirect(url_for("workorders_list"))
     content = f"""
-    <h3>Create Work Order</h3>
+    <h3>የስራ ትዕዛዝ ይፍጠሩ</h3>
     <form method="post">
     <input type="hidden" name="request_id" value="{req.id if req else ''}">
-    <div class="mb-3"><label>Request</label>
+    <div class="mb-3"><label>ጥያቄ</label>
     <input class="form-control" value="{req.request_no if req else ''}" disabled></div>
-    <div class="mb-3"><label>Assigned Staff</label>
-    <select class="form-select" name="assigned_to_id" required><option value="">-- Select Staff --</option>{user_options}</select></div>
-    <div class="mb-3"><label>Initial Instructions</label>
+    <div class="mb-3"><label>የተመደበ ሰራተኛ</label>
+    <select class="form-select" name="assigned_to_id" required><option value="">-- ሰራተኛ ይምረጡ --</option>{user_options}</select></div>
+    <div class="mb-3"><label>የመጀመሪያ መመሪያ</label>
     <textarea class="form-control" name="work_performed"></textarea></div>
-    <button class="btn btn-primary">Create Work Order</button>
+    <button class="btn btn-primary">የስራ ትዕዛዝ ይፍጠሩ</button>
     </form>"""
     return page("New Work Order", content)
 
@@ -1197,24 +1148,40 @@ def workorder_detail(wo_id):
     photos = Photo.query.filter_by(object_type="workorder", object_id=wo.id).all()
     parts_html = "".join(f"<li>{p.part.part_name} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
     photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
+    
+    # የማጠናቀቂያ ፎቶ ካለ አሳይ
+    completion_photo_html = ""
+    if wo.completion_photo:
+        completion_photo_html = f"""
+        <div class="mt-3">
+            <h6>📸 የተሰራው ስራ ፎቶ ማረጋገጫ፡</h6>
+            <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
+                <img src="/static/uploads/maintenance/{wo.completion_photo}" 
+                     class="img-fluid rounded shadow-sm" 
+                     style="max-height: 250px; object-fit: cover;" 
+                     alt="Maintenance Photo Proof">
+            </a>
+        </div>"""
+    
     content = f"""
-    <h3>Work Order {wo.work_order_no}</h3>
+    <h3>የስራ ትዕዛዝ {wo.work_order_no}</h3>
     <table class="table table-bordered">
-    <tr><th>Request</th><td>{wo.request.request_no if wo.request else ''}</td></tr>
-    <tr><th>Location</th><td>{wo.request.location_name if wo.request else ''}</td></tr>
-    <tr><th>Status</th><td>{wo.status}</td></tr>
-    <tr><th>Assigned To</th><td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td></tr>
-    <tr><th>Work Performed</th><td>{wo.work_performed or ''}</td></tr>
-    <tr><th>Parts Used</th><td><ul>{parts_html}</ul></td></tr>
-    <tr><th>Labor Hours</th><td>{wo.labor_hours}</td></tr>
-    <tr><th>Photos</th><td>{photo_html or 'None'}</td></tr>
+    <tr><th>ጥያቄ</th><td>{wo.request.request_no if wo.request else ''}</td></tr>
+    <tr><th>ቦታ</th><td>{wo.request.location_name if wo.request else ''}</td></tr>
+    <tr><th>ሁኔታ</th><td>{wo.status}</td></tr>
+    <tr><th>የተመደበ</th><td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td></tr>
+    <tr><th>የተሰራው ስራ</th><td>{wo.work_performed or ''}</td></tr>
+    <tr><th>የተጠቀሙ እቃዎች</th><td><ul>{parts_html}</ul></td></tr>
+    <tr><th>የስራ ሰዓት</th><td>{wo.labor_hours}</td></tr>
+    <tr><th>ፎቶዎች</th><td>{photo_html or 'የለም'}</td></tr>
     </table>
+    {completion_photo_html}
     """
     if current_user.role in ["MAINTENANCE STAFF", "MANAGER", "ADMIN"]:
         if wo.status == "Assigned":
-            content += f'<a class="btn btn-warning" href="/workorders/{wo.id}/progress">Start Work</a> '
+            content += f'<a class="btn btn-warning" href="/workorders/{wo.id}/progress">ስራ ጀምር</a> '
         if wo.status == "In Progress":
-            content += f'<a class="btn btn-success" href="/workorders/{wo.id}/complete">Mark Completed</a> '
+            content += f'<a class="btn btn-success" href="/workorders/{wo.id}/complete">ስራውን ጨርስ</a> '
     return page("Work Order Detail", content)
 
 
@@ -1229,7 +1196,7 @@ def workorder_progress(wo_id):
         db.session.add(hist)
         log_audit("Status Change", "WorkOrder", wo.id, "Assigned", "In Progress")
         db.session.commit()
-        flash("Work order started", "success")
+        flash("ስራው ተጀምሯል", "success")
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
 
@@ -1238,10 +1205,21 @@ def workorder_progress(wo_id):
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
+    
     if request.method == "POST":
         wo.work_performed = request.form.get("work_performed", "")
         wo.labor_hours = float(request.form.get("labor_hours", 0) or 0)
         wo.completion_notes = request.form.get("completion_notes", "")
+        
+        # ፎቶ ማስተናገድ
+        file = request.files.get("photo")
+        if file and file.filename != "" and allowed_file(file.filename):
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            wo.completion_photo = filename
+        
         wo.status = "Completed"
         wo.completed_by_id = current_user.id
         wo.request.status = "Completed"
@@ -1262,37 +1240,123 @@ def workorder_complete(wo_id):
                     mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=qty, reason=f"Work Order {wo.work_order_no}", work_order_id=wo.id, user_id=current_user.id)
                     db.session.add(mov)
                     if part.quantity <= 0:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} is OUT OF STOCK", "Out of Stock", work_order_id=wo.id)
+                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ክምችት አልቋል", "Out of Stock", work_order_id=wo.id)
                     elif part.quantity <= part.minimum_stock:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} is LOW STOCK", "Low Stock", work_order_id=wo.id)
+                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ዝቅተኛ ክምችት", "Low Stock", work_order_id=wo.id)
+        
         log_audit("Completion", "WorkOrder", wo.id, old_value="In Progress", new_value="Completed")
-        notify([wo.request.requested_by_id], f"Work order {wo.work_order_no} completed", "Status Changed", wo.request_id, wo.id)
+        notify([wo.request.requested_by_id], f"የስራ ትዕዛዝ {wo.work_order_no} ተጠናቋል", "Status Changed", wo.request_id, wo.id)
         db.session.commit()
-        flash("Work order completed", "success")
+        flash("የጥገና ሪፖርቱ እና ፎቶው በተሳካ ሁኔታ ተልኳል!", "success")
         return redirect(url_for("workorder_detail", wo_id=wo.id))
 
     part_options = "".join(f'<option value="{p.id}">{p.part_name} (qty {p.quantity})</option>' for p in parts)
     content = f"""
-    <h3>Complete Work Order {wo.work_order_no}</h3>
-    <form method="post" enctype="multipart/form-data">
-    <div class="mb-3"><label>Work Performed</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
-    <div class="mb-3"><label>Labor Hours</label><input type="number" step="0.1" class="form-control" name="labor_hours" value="0"></div>
-    <div class="mb-3"><label>Completion Notes</label><textarea class="form-control" name="completion_notes"></textarea></div>
-    <h5>Parts Used</h5>
-    <div id="parts">
-      <div class="row mb-2"><div class="col"><select class="form-select" name="part_id"><option value="">-- Part --</option>{part_options}</select></div>
-      <div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="Qty"></div></div>
+    <h3>ስራውን ይጨርሱ {wo.work_order_no}</h3>
+    <form id="workOrderForm" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="wo_id" value="{wo.id}">
+    <div class="mb-3">
+        <label class="form-label fw-bold">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
+        <input type="file" name="photo" accept="image/*" capture="environment" class="form-control form-control-lg" required>
+        <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPart()">+ Add Part</button>
+    <div class="mb-3"><label>የተሰራው ስራ</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
+    <div class="mb-3"><label>የስራ ሰዓት</label><input type="number" step="0.1" class="form-control" name="labor_hours" value="0"></div>
+    <div class="mb-3">
+        <label class="form-label fw-bold">ማስታወሻ</label>
+        <textarea name="completion_notes" class="form-control" rows="3" placeholder="ስራው እንዴት እንደተጠናቀቀ ይፃፉ..."></textarea>
+    </div>
+    <h5>የተጠቀሙ እቃዎች</h5>
+    <div id="parts">
+      <div class="row mb-2"><div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div>
+      <div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div></div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPart()">+ እቃ ጨምር</button>
     <hr>
-    <button class="btn btn-success">Mark Completed</button>
+    <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">✅ ስራውን ጨርስ / Complete Task</button>
     </form>
     <script>
     function addPart() {{
       var div = document.createElement('div');
       div.className = 'row mb-2';
-      div.innerHTML = '<div class="col"><select class="form-select" name="part_id"><option value="">-- Part --</option>{part_options}</select></div><div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="Qty"></div>';
+      div.innerHTML = '<div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div><div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div>';
       document.getElementById('parts').appendChild(div);
+    }}
+    </script>
+    <script>
+    // Offline support
+    let db;
+    const dbRequest = indexedDB.open("RoriMaintenanceOffline", 1);
+    dbRequest.onupgradeneeded = (e) => {{
+        db = e.target.result;
+        if (!db.objectStoreNames.contains("pendingReports")) {{
+            db.createObjectStore("pendingReports", {{ keyPath: "id", autoIncrement: true }});
+        }}
+    }};
+    dbRequest.onsuccess = (e) => {{ db = e.target.result; }};
+    
+    document.getElementById("workOrderForm").addEventListener("submit", async function(e) {{
+        e.preventDefault();
+        const form = this;
+        const formData = new FormData(form);
+        const woId = formData.get("wo_id");
+        
+        if (navigator.onLine) {{
+            form.submit();
+        }} else {{
+            const file = formData.get("photo");
+            const reader = new FileReader();
+            reader.onload = function() {{
+                const tx = db.transaction("pendingReports", "readwrite");
+                const store = tx.objectStore("pendingReports");
+                store.add({{
+                    wo_id: woId,
+                    notes: formData.get("completion_notes"),
+                    work_performed: formData.get("work_performed"),
+                    labor_hours: formData.get("labor_hours"),
+                    photoBase64: reader.result,
+                    timestamp: new Date().toISOString()
+                }});
+                alert("⚠️ የዋይፋይ ኮኔክሽን የለም! ሪፖርቱ እና ፎቶው ስልክዎ ላይ ተቀምጧል። ኢንተርኔት ሲያገኙ በራሱ ይላካል።");
+                form.reset();
+            }};
+            if (file) reader.readAsDataURL(file);
+        }}
+    }});
+    
+    window.addEventListener("online", syncPendingReports);
+    async function syncPendingReports() {{
+        if (!db) return;
+        const tx = db.transaction("pendingReports", "readwrite");
+        const store = tx.objectStore("pendingReports");
+        const getAllReq = store.getAll();
+        getAllReq.onsuccess = async () => {{
+            const reports = getAllReq.result;
+            if (reports.length === 0) return;
+            for (let report of reports) {{
+                const syncData = new FormData();
+                syncData.append("wo_id", report.wo_id);
+                syncData.append("work_performed", report.work_performed);
+                syncData.append("labor_hours", report.labor_hours);
+                syncData.append("completion_notes", report.notes);
+                const response = await fetch(report.photoBase64);
+                const blob = await response.blob();
+                syncData.append("photo", blob, `wo_${{report.wo_id}}_offline.jpg`);
+                try {{
+                    let res = await fetch(`/workorders/${{report.wo_id}}/complete`, {{
+                        method: "POST",
+                        body: syncData
+                    }});
+                    if (res.ok) {{
+                        const deleteTx = db.transaction("pendingReports", "readwrite");
+                        deleteTx.objectStore("pendingReports").delete(report.id);
+                    }}
+                }} catch (err) {{
+                    console.error("Sync failed for WO:", report.wo_id);
+                }}
+            }}
+            alert("✅ ኢንተርኔት ስለተመለሰ ከመስመር ውጭ (Offline) የተሰሩ ሪፖርቶች በሙሉ ተልከዋል!");
+        }};
     }}
     </script>"""
     return page("Complete Work Order", content)
@@ -1308,10 +1372,10 @@ def upload_photo(obj_type, obj_id):
         abort(400)
     file = request.files.get("file")
     if not file or file.filename == "":
-        flash("No file selected", "danger")
+        flash("ፋይል አልተመረጠም", "danger")
         return redirect(request.referrer or url_for("dashboard"))
     if not allowed_file(file.filename):
-        flash("Invalid file type", "danger")
+        flash("ልክ ያልሆነ የፋይል አይነት", "danger")
         return redirect(request.referrer or url_for("dashboard"))
 
     filename = secure_filename(f"{uuid.uuid4().hex}_{file.filename}")
@@ -1327,11 +1391,11 @@ def upload_photo(obj_type, obj_id):
     db.session.add(photo)
     log_audit("Upload", "Photo", photo.id, new_value=filename)
     db.session.commit()
-    flash("File uploaded", "success")
+    flash("ፋይል ተሰቅሏል", "success")
     return redirect(request.referrer or url_for("dashboard"))
 
 
-@app.route("/uploads/<filename>")
+@app.route("/static/uploads/maintenance/<filename>")
 @login_required
 def uploaded_file(filename):
     return send_file(os.path.join(UPLOAD_FOLDER, filename))
@@ -1350,12 +1414,12 @@ def rooms_list():
         rows.append(f"""
         <tr class="{cls}">
         <td>{r.room_number}</td><td>{r.floor}</td><td>{r.status}</td>
-        <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit">Edit</a></td>
+        <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit">አርትዕ</a></td>
         </tr>""")
     content = f"""
-    <h3>Rooms ({len(rooms)})</h3>
+    <h3>ክፍሎች ({len(rooms)})</h3>
     <div class="table-responsive"><table class="table table-bordered">
-    <thead><tr><th>Room</th><th>Floor</th><th>Status</th><th>Action</th></tr></thead>
+    <thead><tr><th>ክፍል</th><th>ፎቅ</th><th>ሁኔታ</th><th>እርምጃ</th></tr></thead>
     <tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Rooms", content)
 
@@ -1371,14 +1435,14 @@ def room_edit(room_id):
         room.updated_at = datetime.utcnow()
         log_audit("Room Status Change", "Room", room.id, old_status, room.status)
         db.session.commit()
-        flash("Room updated", "success")
+        flash("ክፍሉ ተዘምኗል", "success")
         return redirect(url_for("rooms_list"))
     content = f"""
-    <h3>Edit Room {room.room_number}</h3>
+    <h3>ክፍል አርትዕ {room.room_number}</h3>
     <form method="post">
-    <div class="mb-3"><label>Floor</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
-    <div class="mb-3"><label>Status</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
-    <button class="btn btn-primary">Save</button>
+    <div class="mb-3"><label>ፎቅ</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
+    <div class="mb-3"><label>ሁኔታ</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
+    <button class="btn btn-primary">አስቀምጥ</button>
     </form>"""
     return page("Edit Room", content)
 
@@ -1390,11 +1454,11 @@ def room_edit(room_id):
 @role_required("ADMIN", "MANAGER")
 def areas_list():
     areas = Area.query.order_by(Area.name).all()
-    rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit">Edit</a></td></tr>' for a in areas)
+    rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit">አርትዕ</a></td></tr>' for a in areas)
     content = f"""
-    <h3>Hotel Areas</h3>
-    <a class="btn btn-primary mb-2" href="/areas/new">Add Area</a>
-    <table class="table table-bordered"><thead><tr><th>Name</th><th>Department</th><th>Status</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>የሆቴል ቦታዎች</h3>
+    <a class="btn btn-primary mb-2" href="/areas/new">ቦታ ጨምር</a>
+    <table class="table table-bordered"><thead><tr><th>ስም</th><th>ክፍል</th><th>ሁኔታ</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Areas", content)
 
 
@@ -1404,19 +1468,19 @@ def area_create():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         if not name:
-            flash("Name required", "danger")
+            flash("ስም ያስፈልጋል", "danger")
         else:
             area = Area(name=name, department=request.form.get("department", ""), description=request.form.get("description", ""), status="Active")
             db.session.add(area)
             log_audit("Create", "Area", area.id, new_value=name)
             db.session.commit()
-            flash("Area created", "success")
+            flash("ቦታ ተፈጥሯል", "success")
             return redirect(url_for("areas_list"))
     return page("Add Area", """<form method="post">
-    <div class="mb-3"><label>Name</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>Department</label><input class="form-control" name="department"></div>
-    <div class="mb-3"><label>Description</label><textarea class="form-control" name="description"></textarea></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department"></div>
+    <div class="mb-3"><label>መግለጫ</label><textarea class="form-control" name="description"></textarea></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
 
 
 @app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
@@ -1431,20 +1495,20 @@ def area_edit(area_id):
         area.status = request.form.get("status", area.status)
         log_audit("Update", "Area", area.id, old, area.name)
         db.session.commit()
-        flash("Area updated", "success")
+        flash("ቦታ ተዘምኗል", "success")
         return redirect(url_for("areas_list"))
     content = f"""
     <form method="post">
-    <div class="mb-3"><label>Name</label><input class="form-control" name="name" value="{area.name}" required></div>
-    <div class="mb-3"><label>Department</label><input class="form-control" name="department" value="{area.department or ''}"></div>
-    <div class="mb-3"><label>Description</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
-    <div class="mb-3"><label>Status</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
-    <button class="btn btn-primary">Save</button></form>"""
+    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" value="{area.name}" required></div>
+    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="{area.department or ''}"></div>
+    <div class="mb-3"><label>መግለጫ</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
+    <div class="mb-3"><label>ሁኔታ</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>"""
     return page("Edit Area", content)
 
 
 # --------------------------------------------------------------
-# MASTER DATA (Categories & Working Items)
+# MASTER DATA
 # --------------------------------------------------------------
 @app.route("/admin/masterdata")
 @role_required("ADMIN")
@@ -1452,14 +1516,14 @@ def master_data():
     cats = Category.query.order_by(Category.name).all()
     items = WorkingItem.query.order_by(WorkingItem.name).all()
     content = f"""
-    <h3>Master Data</h3>
+    <h3>ማስተር ዳታ</h3>
     <div class="row">
     <div class="col-md-6">
-    <h5>Categories</h5>
+    <h5>ምድቦች</h5>
     <ul class="list-group">{''.join(f'<li class="list-group-item">{c.name}</li>' for c in cats)}</ul>
     </div>
     <div class="col-md-6">
-    <h5>Working Items</h5>
+    <h5>የስራ እቃዎች</h5>
     <ul class="list-group">{''.join(f'<li class="list-group-item">{i.name}</li>' for i in items)}</ul>
     </div>
     </div>"""
@@ -1478,9 +1542,9 @@ def inventory_list():
         cls = "table-danger" if p.quantity <= 0 else "table-warning" if p.quantity <= p.minimum_stock else ""
         rows.append(f'<tr class="{cls}"><td>{p.part_name}</td><td>{p.quantity}</td><td>{p.unit}</td><td>{p.unit_cost}</td><td>{p.minimum_stock}</td><td>{p.status}</td></tr>')
     content = f"""
-    <h3>Inventory & Spare Parts</h3>
-    <a class="btn btn-primary mb-2" href="/inventory/new">Add Part</a>
-    <table class="table table-bordered"><thead><tr><th>Name</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Min Stock</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"""
+    <h3>ክምችት እና መለዋወጫ</h3>
+    <a class="btn btn-primary mb-2" href="/inventory/new">እቃ ጨምር</a>
+    <table class="table table-bordered"><thead><tr><th>ስም</th><th>ብዛት</th><th>አሃድ</th><th>ዋጋ</th><th>ዝቅተኛ</th><th>ሁኔታ</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"""
     return page("Inventory", content)
 
 
@@ -1501,17 +1565,17 @@ def inventory_create():
         db.session.add(part)
         log_audit("Create", "InventoryPart", part.id, new_value=part.part_name)
         db.session.commit()
-        flash("Part added", "success")
+        flash("እቃ ተጨምሯል", "success")
         return redirect(url_for("inventory_list"))
     return page("Add Part", """<form method="post">
-    <div class="mb-3"><label>Part Name</label><input class="form-control" name="part_name" required></div>
-    <div class="mb-3"><label>Category</label><input class="form-control" name="category"></div>
-    <div class="mb-3"><label>Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
-    <div class="mb-3"><label>Minimum Stock</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="5"></div>
-    <div class="mb-3"><label>Unit</label><input class="form-control" name="unit" value="pcs"></div>
-    <div class="mb-3"><label>Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost"></div>
-    <div class="mb-3"><label>Storage Location</label><input class="form-control" name="storage_location"></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <div class="mb-3"><label>የእቃ ስም</label><input class="form-control" name="part_name" required></div>
+    <div class="mb-3"><label>ምድብ</label><input class="form-control" name="category"></div>
+    <div class="mb-3"><label>ብዛት</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
+    <div class="mb-3"><label>ዝቅተኛ ክምችት</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="5"></div>
+    <div class="mb-3"><label>አሃድ</label><input class="form-control" name="unit" value="pcs"></div>
+    <div class="mb-3"><label>ዋጋ</label><input type="number" step="0.01" class="form-control" name="unit_cost"></div>
+    <div class="mb-3"><label>የማከማቻ ቦታ</label><input class="form-control" name="storage_location"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
 
 
 # --------------------------------------------------------------
@@ -1523,9 +1587,9 @@ def preventive_list():
     tasks = PreventiveMaintenance.query.order_by(PreventiveMaintenance.next_due_date).all()
     rows = "".join(f'<tr><td>{t.title}</td><td>{t.frequency}</td><td>{t.next_due_date.strftime("%Y-%m-%d") if t.next_due_date else ""}</td><td>{t.status}</td></tr>' for t in tasks)
     content = f"""
-    <h3>Preventive Maintenance</h3>
-    <a class="btn btn-primary mb-2" href="/preventive/new">Schedule Task</a>
-    <table class="table table-bordered"><thead><tr><th>Title</th><th>Frequency</th><th>Next Due</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>የመከላከያ ጥገና</h3>
+    <a class="btn btn-primary mb-2" href="/preventive/new">ተግባር መርሐግብር</a>
+    <table class="table table-bordered"><thead><tr><th>ርዕስ</th><th>ድግግሞሽ</th><th>ቀጣይ ቀን</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Preventive Maintenance", content)
 
 
@@ -1544,16 +1608,16 @@ def preventive_create():
         db.session.add(task)
         log_audit("Create", "PreventiveMaintenance", task.id, new_value=task.title)
         db.session.commit()
-        flash("Task scheduled", "success")
+        flash("ተግባር መርሐግብር ተይዟል", "success")
         return redirect(url_for("preventive_list"))
     content = """
     <form method="post">
-    <div class="mb-3"><label>Title</label><input class="form-control" name="title" required></div>
-    <div class="mb-3"><label>Task Details</label><textarea class="form-control" name="task"></textarea></div>
-    <div class="mb-3"><label>Frequency</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
-    <div class="mb-3"><label>Priority</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
-    <div class="mb-3"><label>Next Due Date</label><input type="date" class="form-control" name="next_due_date"></div>
-    <button class="btn btn-primary">Save</button></form>"""
+    <div class="mb-3"><label>ርዕስ</label><input class="form-control" name="title" required></div>
+    <div class="mb-3"><label>ዝርዝር</label><textarea class="form-control" name="task"></textarea></div>
+    <div class="mb-3"><label>ድግግሞሽ</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
+    <div class="mb-3"><label>ቅድሚያ</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
+    <div class="mb-3"><label>ቀጣይ ቀን</label><input type="date" class="form-control" name="next_due_date"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>"""
     return page("New Preventive Task", content)
 
 
@@ -1564,11 +1628,11 @@ def preventive_create():
 @role_required("ADMIN", "MANAGER")
 def checklists_list():
     templates = ChecklistTemplate.query.all()
-    rows = "".join(f'<tr><td><a href="/checklists/{t.id}">{t.name}</a></td><td>{len(t.items)} items</td></tr>' for t in templates)
+    rows = "".join(f'<tr><td><a href="/checklists/{t.id}">{t.name}</a></td><td>{len(t.items)} እቃዎች</td></tr>' for t in templates)
     content = f"""
-    <h3>Maintenance Checklists</h3>
-    <a class="btn btn-primary mb-2" href="/checklists/new">New Checklist</a>
-    <table class="table table-bordered"><thead><tr><th>Name</th><th>Items</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>የጥገና ማረጋገጫ ዝርዝሮች</h3>
+    <a class="btn btn-primary mb-2" href="/checklists/new">አዲስ ዝርዝር</a>
+    <table class="table table-bordered"><thead><tr><th>ስም</th><th>እቃዎች</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Checklists", content)
 
 
@@ -1585,12 +1649,12 @@ def checklist_create():
         db.session.add(tpl)
         log_audit("Create", "ChecklistTemplate", tpl.id, new_value=name)
         db.session.commit()
-        flash("Checklist created", "success")
+        flash("ዝርዝር ተፈጥሯል", "success")
         return redirect(url_for("checklists_list"))
     return page("New Checklist", """<form method="post">
-    <div class="mb-3"><label>Name</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>Description</label><input class="form-control" name="description"></div>
-    <div class="mb-3"><label>Items (one per line)</label><textarea class="form-control" name="items" rows="8">Lights
+    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label>መግለጫ</label><input class="form-control" name="description"></div>
+    <div class="mb-3"><label>እቃዎች (አንድ በመስመር)</label><textarea class="form-control" name="items" rows="8">Lights
 Switches
 Door Lock
 Water Supply
@@ -1600,7 +1664,7 @@ Window
 Mirror
 Plumbing
 Safety Equipment</textarea></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
 
 
 # --------------------------------------------------------------
@@ -1612,9 +1676,9 @@ def suppliers_list():
     suppliers = Supplier.query.all()
     rows = "".join(f'<tr><td>{s.company_name}</td><td>{s.contact_person}</td><td>{s.phone}</td><td>{s.status}</td></tr>' for s in suppliers)
     content = f"""
-    <h3>Suppliers</h3>
-    <a class="btn btn-primary mb-2" href="/suppliers/new">Add Supplier</a>
-    <table class="table table-bordered"><thead><tr><th>Company</th><th>Contact</th><th>Phone</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>አቅራቢዎች</h3>
+    <a class="btn btn-primary mb-2" href="/suppliers/new">አቅራቢ ጨምር</a>
+    <table class="table table-bordered"><thead><tr><th>ኩባንያ</th><th>አድራሻ</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Suppliers", content)
 
 
@@ -1626,16 +1690,16 @@ def supplier_create():
         db.session.add(s)
         log_audit("Create", "Supplier", s.id, new_value=s.company_name)
         db.session.commit()
-        flash("Supplier added", "success")
+        flash("አቅራቢ ተጨምሯል", "success")
         return redirect(url_for("suppliers_list"))
     return page("Add Supplier", """<form method="post">
-    <div class="mb-3"><label>Company Name</label><input class="form-control" name="company_name" required></div>
-    <div class="mb-3"><label>Contact Person</label><input class="form-control" name="contact_person"></div>
-    <div class="mb-3"><label>Phone</label><input class="form-control" name="phone"></div>
-    <div class="mb-3"><label>Email</label><input class="form-control" name="email"></div>
-    <div class="mb-3"><label>Address</label><textarea class="form-control" name="address"></textarea></div>
-    <div class="mb-3"><label>Supplied Items</label><input class="form-control" name="supplied_items"></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <div class="mb-3"><label>የኩባንያ ስም</label><input class="form-control" name="company_name" required></div>
+    <div class="mb-3"><label>አድራሻ ሰው</label><input class="form-control" name="contact_person"></div>
+    <div class="mb-3"><label>ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label>አድራሻ</label><textarea class="form-control" name="address"></textarea></div>
+    <div class="mb-3"><label>የሚያቀርቡት እቃዎች</label><input class="form-control" name="supplied_items"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
 
 
 @app.route("/contractors")
@@ -1644,9 +1708,9 @@ def contractors_list():
     contractors = Contractor.query.all()
     rows = "".join(f'<tr><td>{c.name}</td><td>{c.service_type}</td><td>{c.phone}</td><td>{c.status}</td></tr>' for c in contractors)
     content = f"""
-    <h3>Contractors</h3>
-    <a class="btn btn-primary mb-2" href="/contractors/new">Add Contractor</a>
-    <table class="table table-bordered"><thead><tr><th>Name</th><th>Service</th><th>Phone</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>ተቋራጮች</h3>
+    <a class="btn btn-primary mb-2" href="/contractors/new">ተቋራጭ ጨምር</a>
+    <table class="table table-bordered"><thead><tr><th>ስም</th><th>አገልግሎት</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Contractors", content)
 
 
@@ -1658,15 +1722,83 @@ def contractor_create():
         db.session.add(c)
         log_audit("Create", "Contractor", c.id, new_value=c.name)
         db.session.commit()
-        flash("Contractor added", "success")
+        flash("ተቋራጭ ተጨምሯል", "success")
         return redirect(url_for("contractors_list"))
     return page("Add Contractor", """<form method="post">
-    <div class="mb-3"><label>Name/Company</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>Service Type</label><input class="form-control" name="service_type"></div>
-    <div class="mb-3"><label>Phone</label><input class="form-control" name="phone"></div>
-    <div class="mb-3"><label>Email</label><input class="form-control" name="email"></div>
-    <div class="mb-3"><label>Rate</label><input type="number" step="0.01" class="form-control" name="rate"></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <div class="mb-3"><label>ስም/ኩባንያ</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label>የአገልግሎት አይነት</label><input class="form-control" name="service_type"></div>
+    <div class="mb-3"><label>ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label>ዋጋ</label><input type="number" step="0.01" class="form-control" name="rate"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+
+
+# --------------------------------------------------------------
+# EMPLOYEES
+# --------------------------------------------------------------
+@app.route("/employees")
+@role_required("ADMIN", "MANAGER")
+def employees_list():
+    employees = Employee.query.order_by(Employee.id).all()
+    rows = "".join(
+        f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td><td>{e.department}</td>'
+        f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit">አርትዕ</a></td></tr>'
+        for e in employees
+    )
+    content = f"""
+    <h3>የኢንጂነሪንግ ክፍል ሰራተኞች</h3>
+    <a class="btn btn-primary mb-2" href="/employees/new">ሰራተኛ ጨምር</a>
+    <table class="table table-bordered">
+    <thead><tr><th>ID</th><th>ስም</th><th>የስራ ድርሻ</th><th>ክፍል</th><th>እርምጃ</th></tr></thead>
+    <tbody>{rows}</tbody></table>"""
+    return page("Employees", content)
+
+
+@app.route("/employees/new", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def employee_create():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        job_title = request.form.get("job_title", "").strip()
+        department = request.form.get("department", "Engineering").strip()
+        if not name:
+            flash("ስም ያስፈልጋል", "danger")
+            return redirect(url_for("employee_create"))
+        emp = Employee(name=name, job_title=job_title, department=department)
+        db.session.add(emp)
+        db.session.flush()
+        log_audit("Create", "Employee", emp.id, new_value=name)
+        db.session.commit()
+        flash("ሰራተኛ ተጨምሯል", "success")
+        return redirect(url_for("employees_list"))
+    return page("Add Employee", """<form method="post">
+    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label>የስራ ድርሻ</label><input class="form-control" name="job_title"></div>
+    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="Engineering"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+
+
+@app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def employee_edit(emp_id):
+    emp = Employee.query.get_or_404(emp_id)
+    if request.method == "POST":
+        old_name = emp.name
+        emp.name = request.form.get("name", emp.name).strip()
+        emp.job_title = request.form.get("job_title", emp.job_title).strip()
+        emp.department = request.form.get("department", emp.department).strip()
+        emp.updated_at = datetime.utcnow()
+        log_audit("Update", "Employee", emp.id, old_name, emp.name)
+        db.session.commit()
+        flash("ሰራተኛ ተዘምኗል", "success")
+        return redirect(url_for("employees_list"))
+    content = f"""
+    <form method="post">
+    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" value="{emp.name}" required></div>
+    <div class="mb-3"><label>የስራ ድርሻ</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
+    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>"""
+    return page("Edit Employee", content)
 
 
 # --------------------------------------------------------------
@@ -1676,10 +1808,10 @@ def contractor_create():
 @login_required
 def notifications():
     notifs = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(50).all()
-    rows = "".join(f'<tr class="{"table-info" if not n.read else ""}"><td>{n.message}</td><td>{n.type}</td><td>{n.created_at.strftime("%Y-%m-%d %H:%M")}</td><td><a href="/notifications/{n.id}/read">Mark read</a></td></tr>' for n in notifs)
+    rows = "".join(f'<tr class="{"table-info" if not n.read else ""}"><td>{n.message}</td><td>{n.type}</td><td>{n.created_at.strftime("%Y-%m-%d %H:%M")}</td><td><a href="/notifications/{n.id}/read">አንብብ</a></td></tr>' for n in notifs)
     content = f"""
-    <h3>Notifications</h3>
-    <table class="table table-bordered"><thead><tr><th>Message</th><th>Type</th><th>Date</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>ማሳወቂያዎች</h3>
+    <table class="table table-bordered"><thead><tr><th>መልእክት</th><th>አይነት</th><th>ቀን</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Notifications", content)
 
 
@@ -1700,13 +1832,13 @@ def notification_read(n_id):
 @login_required
 def reports():
     content = """
-    <h3>Reports</h3>
+    <h3>ሪፖርቶች</h3>
     <ul>
-    <li><a href="/reports/export/requests">Export Maintenance Requests CSV</a></li>
-    <li><a href="/reports/export/workorders">Export Work Orders CSV</a></li>
-    <li><a href="/reports/export/inventory">Export Inventory CSV</a></li>
-    <li><a href="/reports/export/audit">Export Audit Log CSV</a></li>
-    <li><a href="/reports/export/employees">Export Employees CSV</a></li>
+    <li><a href="/reports/export/requests">የጥገና ጥያቄዎችን ወደ CSV ላክ</a></li>
+    <li><a href="/reports/export/workorders">የስራ ትዕዛዞችን ወደ CSV ላክ</a></li>
+    <li><a href="/reports/export/inventory">ክምችት ወደ CSV ላክ</a></li>
+    <li><a href="/reports/export/audit">Audit Log ወደ CSV ላክ</a></li>
+    <li><a href="/reports/export/employees">ሰራተኞችን ወደ CSV ላክ</a></li>
     </ul>"""
     return page("Reports", content)
 
@@ -1750,9 +1882,9 @@ def admin_users():
     users = User.query.all()
     rows = "".join(f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td><td>{u.active}</td></tr>' for u in users)
     content = f"""
-    <h3>Users</h3>
-    <a class="btn btn-primary mb-2" href="/admin/users/new">Add User</a>
-    <table class="table table-bordered"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Active</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3>ተጠቃሚዎች</h3>
+    <a class="btn btn-primary mb-2" href="/admin/users/new">ተጠቃሚ ጨምር</a>
+    <table class="table table-bordered"><thead><tr><th>የመለያ ስም</th><th>ስም</th><th>ሚና</th><th>ንቁ</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Users", content)
 
 
@@ -1764,22 +1896,22 @@ def admin_user_create():
         password = request.form.get("password")
         role = request.form.get("role")
         if User.query.filter_by(username=username).first():
-            flash("Username exists", "danger")
+            flash("የመለያ ስም አለ", "danger")
         else:
             u = User(username=username, full_name=request.form.get("full_name"), role=role, email=request.form.get("email"))
             u.set_password(password)
             db.session.add(u)
             log_audit("Create", "User", u.id, new_value=username)
             db.session.commit()
-            flash("User created", "success")
+            flash("ተጠቃሚ ተፈጥሯል", "success")
             return redirect(url_for("admin_users"))
     return page("Add User", f"""<form method="post">
-    <div class="mb-3"><label>Username</label><input class="form-control" name="username" required></div>
-    <div class="mb-3"><label>Full Name</label><input class="form-control" name="full_name"></div>
-    <div class="mb-3"><label>Password</label><input type="password" class="form-control" name="password" required></div>
-    <div class="mb-3"><label>Role</label><select class="form-select" name="role">{''.join(f'<option>{r}</option>' for r in ROLES)}</select></div>
-    <div class="mb-3"><label>Email</label><input class="form-control" name="email"></div>
-    <button class="btn btn-primary">Save</button></form>""")
+    <div class="mb-3"><label>የመለያ ስም</label><input class="form-control" name="username" required></div>
+    <div class="mb-3"><label>ሙሉ ስም</label><input class="form-control" name="full_name"></div>
+    <div class="mb-3"><label>የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
+    <div class="mb-3"><label>ሚና</label><select class="form-select" name="role">{''.join(f'<option>{r}</option>' for r in ROLES)}</select></div>
+    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
+    <button class="btn btn-primary">አስቀምጥ</button></form>""")
 
 
 # --------------------------------------------------------------
@@ -1792,7 +1924,7 @@ def audit_logs():
     rows = "".join(f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td><td>{a.object_type}</td><td>{a.object_id}</td><td>{a.old_value}</td><td>{a.new_value}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M")}</td></tr>' for a in logs)
     content = f"""
     <h3>Audit Log</h3>
-    <table class="table table-bordered table-sm"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>ID</th><th>Old</th><th>New</th><th>Date</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <table class="table table-bordered table-sm"><thead><tr><th>ተጠቃሚ</th><th>እርምጃ</th><th>ነገር</th><th>ID</th><th>ድሮ</th><th>አዲስ</th><th>ቀን</th></tr></thead><tbody>{rows}</tbody></table>"""
     return page("Audit Log", content)
 
 
@@ -1845,7 +1977,6 @@ def restore_backup(filename):
     if not os.path.exists(filepath):
         flash("Backup not found", "danger")
         return redirect(url_for("backup_page"))
-    # Safety backup before restore
     safety = os.path.join(BACKUP_FOLDER, f"safety_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
     src = sqlite3.connect(get_db_path())
     dst = sqlite3.connect(safety)
@@ -1915,8 +2046,8 @@ def qr_index():
 @app.route("/manifest.json")
 def manifest():
     return jsonify({
-        "name": "Hotel Maintenance Management",
-        "short_name": "HotelMaint",
+        "name": "Rori Hotel Maintenance",
+        "short_name": "RoriMaint",
         "start_url": "/dashboard",
         "display": "standalone",
         "background_color": "#ffffff",
@@ -1937,12 +2068,12 @@ self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
 # --------------------------------------------------------------
 @app.errorhandler(403)
 def forbidden(e):
-    return page("Forbidden", '<div class="alert alert-danger">You do not have permission to access this page.</div>'), 403
+    return page("Forbidden", '<div class="alert alert-danger">ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
 
 
 @app.errorhandler(404)
 def not_found(e):
-    return page("Not Found", '<div class="alert alert-warning">Page not found.</div>'), 404
+    return page("Not Found", '<div class="alert alert-warning">ገጹ አልተገኘም።</div>'), 404
 
 
 # --------------------------------------------------------------
@@ -1954,4 +2085,4 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000 )
+    app.run(debug=True, host="0.0.0.0", port=5000)
