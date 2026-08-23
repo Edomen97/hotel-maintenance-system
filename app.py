@@ -1230,22 +1230,25 @@ def workorder_progress(wo_id):
 @role_required("MAINTENANCE STAFF", "SUPERVISOR", "MANAGER", "ADMIN")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
-    
+    parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
+
     if request.method == "POST":
         try:
             wo.work_performed = request.form.get("work_performed", "")
             
+            labor_input = request.form.get("labor_hours", 0)
             try:
-                wo.labor_hours = float(request.form.get("labor_hours", 0) or 0)
-            except (ValueError, TypeError):
+                wo.labor_hours = float(labor_input) if labor_input else 0.0
+            except:
                 wo.labor_hours = 0.0
 
             wo.completion_notes = request.form.get("completion_notes", "")
 
-            # ፎቶን ደህንነቱ በተጠበቀ መንገድ ማስቀመጥ
             file = request.files.get("photo")
             if file and file.filename != "":
-                upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                import os
+                from werkzeug.utils import secure_filename
+                upload_dir = app.config.get('UPLOAD_FOLDER', 'static/uploads/maintenance')
                 os.makedirs(upload_dir, exist_ok=True)
                 ext = file.filename.rsplit('.', 1)[-1].lower()
                 filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
@@ -1256,10 +1259,9 @@ def workorder_complete(wo_id):
             if hasattr(current_user, 'id'):
                 wo.completed_by_id = current_user.id
 
-            if wo.request:
+            if getattr(wo, 'request', None):
                 wo.request.status = "Completed"
 
-            # እቃዎችን ከኢንቬንተሪ መቀነስ (ያለ ምንም ጥሪ ስህተት)
             part_ids = request.form.getlist("part_id")
             quantities = request.form.getlist("quantity")
             for pid, qty in zip(part_ids, quantities):
@@ -1272,7 +1274,7 @@ def workorder_complete(wo_id):
                                 part.quantity -= q_val
                                 wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity_used=q_val)
                                 db.session.add(wo_part)
-                    except (ValueError, TypeError):
+                    except:
                         pass
 
             db.session.commit()
@@ -1281,13 +1283,69 @@ def workorder_complete(wo_id):
             
         except Exception as e:
             db.session.rollback()
-            flash(f"ስህተት ተፈጽሟል: {str(e)}", "danger")
-            return redirect(url_for("workorder_detail", wo_id=wo.id))
-                    part = InventoryPart.query.get(int(pid))
-                    if part and part.quantity >= q_val:
-                        part.quantity -= q_val
-                        wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity_used=q_val)
-                        db.session.add(wo_part)
+            import traceback
+            error_msg = traceback.format_exc()
+            return f"<h3>ስህተት ተገኝቷል:</h3><pre style='color:red;'>{error_msg}</pre>", 500
+
+    # የ HTML ፎርም ማሳያ (GET request)
+    parts_options = "".join([f'<option value="{p.id}">{p.part_name} (ካለ: {p.quantity})</option>' for p in parts])
+    content = f"""
+    <div class="card shadow-sm"><div class="card-body">
+    <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label class="form-label">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
+            <input type="file" name="photo" accept="image/*" capture="environment" class="form-control form-control-lg" required>
+            <small class="text-muted">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</small>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">የተሰራው ስራ</label>
+            <textarea name="work_performed" class="form-control mb-2" required></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">የስራ ሰዓት</label>
+            <input type="number" step="0.5" name="labor_hours" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">ማስታወሻ</label>
+            <textarea name="completion_notes" class="form-control"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">የተጠቀሙ እቃዎች</label>
+            <div id="parts-container">
+                <div class="d-flex mb-2">
+                    <select name="part_id" class="form-select me-2">
+                        <option value="">-- እቃ --</option>
+                        {parts_options}
+                    </select>
+                    <input type="number" name="quantity" class="form-control w-25" value="1" min="1">
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPartRow()">+ እቃ ጨምር</button>
+        </div>
+        <button type="submit" class="btn btn-success btn-lg w-100">
+            <i class="fas fa-check-square"></i> ስራውን ጨርስ / Complete Task
+        </button>
+    </form>
+    </div></div>
+    <script>
+    function addPartRow() {{
+        const container = document.getElementById('parts-container');
+        const row = document.createElement('div');
+        row.className = 'd-flex mb-2';
+        row.innerHTML = `
+            <select name="part_id" class="form-select me-2">
+                <option value="">-- እቃ --</option>
+                {parts_options}
+            </select>
+            <input type="number" name="quantity" class="form-control w-25" value="1" min="1">
+            <button type="button" class="btn btn-danger ms-2" onclick="this.parentElement.remove()">X</button>
+        `;
+        container.appendChild(row);
+    }}
+    </script>
+    """
+    return page("Work Order Complete", content)
+
                         mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=q_val)
                         db.session.add(mov)
 
