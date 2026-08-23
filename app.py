@@ -2077,6 +2077,19 @@ def not_found(e):
 
 
 # --------------------------------------------------------------
+# ERROR HANDLING
+# --------------------------------------------------------------
+@app.errorhandler(403)
+def forbidden(e):
+    return page("Forbidden", '<div class="alert alert-danger">ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return page("Not Found", '<div class="alert alert-warning">ገጹ አልተገኘም።</div>'), 404
+
+
+# --------------------------------------------------------------
 # INIT
 # --------------------------------------------------------------
 with app.app_context():
@@ -2092,4 +2105,3 @@ def serve_logo():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-
