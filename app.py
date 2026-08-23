@@ -56,7 +56,6 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-# Added TECHNICIAN and SUPERVISOR roles
 ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
 REQUEST_STATUSES = [
@@ -86,7 +85,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), default="EMPLOYEE", nullable=False)
     phone = db.Column(db.String(30))
     email = db.Column(db.String(120))
-    profile_pic = db.Column(db.String(255), nullable=True)  # filename
+    profile_pic = db.Column(db.String(255), nullable=True)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -615,25 +614,22 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
-    # Engineering staff (Employee model) – keep as is
+    # Engineering staff (Employee model) – updated to match new users
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
-        (2, "ቸርነት አምና", "Electrical"),
-        (3, "ስሞን", "Welding / ብየዳ"),
-        (4, "አበባየሁ ክፍሌ", "Maintenance & Plumbing"),
-        (5, "አሚር አወል", "Engineering Manager"),
+        (2, "ቸርነት አሞና", "General Mechanic"),
+        (3, "ስምዖን ዮሐንስ", "General Mechanic"),
+        (4, "አበባየሁ ክፍሌ", "Supervisor"),
+        (5, "አሚር አወል", "Manager"),
+        (6, "ዋሌ", "General Mechanic"),
+        (7, "ፃዲቁ", "General Mechanic"),
     ]
     for emp_id, name, title in engineering_staff:
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
     # ---------- USER SEED (exact list from spec) ----------
-    # Clear existing users except those we want to keep? We'll replace all with the new list.
-    # For simplicity, we delete all existing users and re-create.
-    # But we need to keep the admin user for initial login? The spec didn't mention admin.
-    # We'll add a default admin user with username 'admin' and password 'admin123' for emergency.
-    # And also create the specified users.
-    # We'll remove old default users (admin, manager, staff, employee) and replace.
+    # Clear existing users except admin? We'll recreate all.
     User.query.delete()
     db.session.commit()
 
@@ -649,12 +645,11 @@ def seed_data():
     admin.set_password("admin123")
     db.session.add(admin)
 
-    # Create the specified staff
+    # Create the specified staff (no separate nekere)
     staff_list = [
         {"username": "amir", "full_name": "አሚር አወል", "role": "MANAGER"},
         {"username": "abebayhu", "full_name": "አበባየሁ ክፍሌ", "role": "SUPERVISOR"},
-        {"username": "tesfahun", "full_name": "ተስፋሁን", "role": "TECHNICIAN"},
-        {"username": "nekere", "full_name": "ነከረ", "role": "TECHNICIAN"},
+        {"username": "tesfahun", "full_name": "ተስፋሁን ነከረ", "role": "TECHNICIAN"},
         {"username": "simon", "full_name": "ስምዖን ዮሐንስ", "role": "TECHNICIAN"},
         {"username": "chernet", "full_name": "ቸርነት አሞና", "role": "TECHNICIAN"},
         {"username": "wale", "full_name": "ዋሌ", "role": "TECHNICIAN"},
@@ -733,7 +728,11 @@ def seed_data():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        # Redirect based on role
+        if current_user.role in ["ADMIN", "MANAGER"]:
+            return redirect(url_for("dashboard"))
+        else:
+            return redirect(url_for("workorders_list"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -744,7 +743,10 @@ def login():
             login_user(user)
             log_audit("Login", "User", user.id)
             db.session.commit()
-            return redirect(url_for("dashboard"))
+            if user.role in ["ADMIN", "MANAGER"]:
+                return redirect(url_for("dashboard"))
+            else:
+                return redirect(url_for("workorders_list"))
 
         flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል", "danger")
 
@@ -776,7 +778,7 @@ def login():
                     
                     <hr class="my-4">
                     <div class="text-center small text-muted">
-                        <p class="mb-1">ሰራተኛ <b>staff</b> | ማናጀር <b>manager</b></p>
+                        <p class="mb-1">ማናጀር: amir | ሱፐርቫይዘር: abebayhu | ሰራተኛ: tesfahun | የይለፍ ቃል: 123456</p>
                     </div>
                 </div>
             </div>
@@ -884,11 +886,15 @@ def profile():
 
 
 # --------------------------------------------------------------
-# DASHBOARD
+# DASHBOARD - RESTRICTED TO MANAGERS & ADMINS
 # --------------------------------------------------------------
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Restrict to managers and admins only
+    if current_user.role not in ["ADMIN", "MANAGER"]:
+        return redirect(url_for("workorders_list"))
+
     role = current_user.role
     total_rooms = Room.query.count()
     total_requests = MaintenanceRequest.query.count()
@@ -900,50 +906,26 @@ def dashboard():
     low_stock = sum(1 for p in InventoryPart.query.all() if p.is_low)
     out_rooms = Room.query.filter(Room.status.in_(["Maintenance", "Out of Service"])).count()
 
-    if role == "MAINTENANCE STAFF" or role == "TECHNICIAN":
-        assigned_wo = WorkOrder.query.filter_by(assigned_to_id=current_user.id).count()
-        content = f"""
-        <h3>የጥገና ሰራተኛ ዳሽቦርድ</h3>
-        <div class="row text-center">
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{assigned_wo}</b> የተመደቡ ስራዎች</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{overdue}</b> ያለፉ</div></div>
-        </div>
-        <a class="btn btn-primary mt-3" href="/workorders">የእኔ ስራዎች</a>
-        """
-    elif role == "EMPLOYEE":
-        my_requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).count()
-        content = f"""
-        <h3>የሰራተኛ ዳሽቦርድ</h3>
-        <div class="row text-center">
-        <div class="col-4"><div class="card p-3"><b>{my_requests}</b> የእኔ ጥያቄዎች</div></div>
-        <div class="col-4"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
-        <div class="col-4"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
-        </div>
-        <a class="btn btn-primary mt-3" href="/requests/new">አዲስ ጥያቄ ይፍጠሩ</a>
-        """
-    else:
-        total_employees = Employee.query.count()
-        content = f"""
-        <h3>የአስተዳዳሪ ዳሽቦርድ</h3>
-        <div class="row text-center">
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_requests}</b> ጥያቄዎች</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{urgent}</b> አስቸኳይ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{overdue}</b> ያለፉ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{low_stock}</b> ዝቅተኛ ክምችት</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{out_rooms}</b> ክፍሎች ውጪ</div></div>
-        <div class="col-6 col-md-3"><div class="card p-3"><b>{total_employees}</b> ሰራተኞች</div></div>
-        </div>
-        <div class="row mt-4">
-        <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests">ጥያቄዎችን ይገምግሙ</a></div>
-        <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders">የስራ ትዕዛዞች</a></div>
-        <div class="col-md-4"><a class="btn btn-info w-100" href="/reports">ሪፖርቶች</a></div>
-        </div>
-        """
+    total_employees = Employee.query.count()
+    content = f"""
+    <h3>የአስተዳዳሪ ዳሽቦርድ</h3>
+    <div class="row text-center">
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{total_requests}</b> ጥያቄዎች</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{urgent}</b> አስቸኳይ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{overdue}</b> ያለፉ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{low_stock}</b> ዝቅተኛ ክምችት</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{out_rooms}</b> ክፍሎች ውጪ</div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><b>{total_employees}</b> ሰራተኞች</div></div>
+    </div>
+    <div class="row mt-4">
+    <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests">ጥያቄዎችን ይገምግሙ</a></div>
+    <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders">የስራ ትዕዛዞች</a></div>
+    <div class="col-md-4"><a class="btn btn-info w-100" href="/reports">ሪፖርቶች</a></div>
+    </div>
+    """
     return page("Dashboard", content)
 
 
@@ -1119,6 +1101,7 @@ def request_detail(req_id):
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
     photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
     history_html = "".join(f"<li>{h.status} በ {h.timestamp.strftime('%Y-%m-%d %H:%M')} በ {h.user.full_name if h.user else 'System'}</li>" for h in history)
+
     content = f"""
     <h3>ጥያቄ {req.request_no}</h3>
     <div class="row">
@@ -1130,8 +1113,9 @@ def request_detail(req_id):
     <tr><th>ምድብ</th><td>{req.category.name if req.category else ''}</td></tr>
     <tr><th>ቅድሚያ</th><td class="{'table-danger' if req.is_overdue or req.priority=='URGENT' else ''}">{req.priority}</td></tr>
     <tr><th>የመጨረሻ ቀን</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
-    <tr><th>መግለጫ</th><td>{req.description}</td></tr>
     <tr><th>የጠየቀው</th><td>{req.requested_by.full_name if req.requested_by else ''}</td></tr>
+    <tr><th>የተመደበለት</th><td>{req.assigned_to.full_name if req.assigned_to else 'አልተመደበም'}</td></tr>
+    <tr><th>መግለጫ</th><td>{req.description}</td></tr>
     </table>
     <h5>የሁኔታ ታሪክ</h5>
     <ul>{history_html or '<li>እስካሁን ታሪክ የለም</li>'}</ul>
@@ -1151,6 +1135,7 @@ def request_detail(req_id):
             action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a>'
         content += f'<div class="mt-3">{action_buttons}</div>'
 
+    # Show completion photo from work order if exists
     wo = WorkOrder.query.filter_by(request_id=req.id).first()
     if wo and wo.completion_photo:
         content += f"""
@@ -2270,13 +2255,11 @@ def serve_logo():
 
 
 # --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት ---
-# This script now matches the spec but is redundant because seed_data already creates them.
-# We keep it for compatibility with existing deployments.
+# Updated to match the corrected names (nekere merged into tesfahun)
 users_data = [
     {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
     {"full_name": "አበባየሁ ክፍሌ", "username": "abebayhu", "role": "SUPERVISOR"},
-    {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "TECHNICIAN"},
-    {"full_name": "ነከረ", "username": "nekere", "role": "TECHNICIAN"},
+    {"full_name": "ተስፋሁን ነከረ", "username": "tesfahun", "role": "TECHNICIAN"},
     {"full_name": "ስምዖን ዮሐንስ", "username": "simon", "role": "TECHNICIAN"},
     {"full_name": "ቸርነት አሞና", "username": "chernet", "role": "TECHNICIAN"},
     {"full_name": "ዋሌ", "username": "wale", "role": "TECHNICIAN"},
