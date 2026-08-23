@@ -2139,7 +2139,7 @@ def serve_logo():
     logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
     return send_file(logo_path, mimetype='image/png')
 
-# --- የሰራተኞች መመዝገቢያ ስክሪፕት ---
+# --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት ---
 users_data = [
     {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
     {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
@@ -2151,21 +2151,24 @@ users_data = [
 ]
 
 with app.app_context():
-    db.create_all()
-    for user_info in users_data:
-        existing_user = User.query.filter_by(username=user_info["username"]).first()
-        if not existing_user:
-            new_user = User(
-                username=user_info["username"],
-                full_name=user_info["full_name"],
-                role=user_info["role"]
-            )
-            new_user.set_password("123456")
-            db.session.add(new_user)
-    db.session.commit()
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    try:
+        db.create_all()
+        for user_info in users_data:
+            user = User.query.filter_by(username=user_info["username"]).first()
+            if not user:
+                user = User(username=user_info["username"], role=user_info["role"])
+                user.set_password("123456")
+                db.session.add(user)
+            
+            # ነባር ተጠቃሚም ቢሆን ሙሉ ስሙን እና ሚናውን ያድሳል
+            if hasattr(user, 'full_name'):
+                user.full_name = user_info["full_name"]
+            user.role = user_info["role"]
+            
+        db.session.commit()
+    except Exception as e:
+        print("Setup error:", e)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
+
