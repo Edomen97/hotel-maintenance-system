@@ -119,7 +119,6 @@ class Area(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# ADDED: Category model (was missing)
 class Category(db.Model):
     __tablename__ = "categories"
     id = db.Column(db.Integer, primary_key=True)
@@ -127,7 +126,6 @@ class Category(db.Model):
     description = db.Column(db.Text)
 
 
-# ADDED: WorkingItem model (was missing)
 class WorkingItem(db.Model):
     __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
@@ -570,18 +568,15 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 # SEED DATA
 # --------------------------------------------------------------
 def seed_data():
-    # Floors
     for f in [2, 3, 4, 5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
 
-    # Rooms
     if Room.query.count() == 0:
         for num in range(201, 301):
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
 
-    # Areas
     initial_areas = [
         ("Buduchalley", "F&B"),
         ("Sillanto", "Unknown"),
@@ -600,13 +595,11 @@ def seed_data():
         if not Area.query.filter_by(name=name).first():
             db.session.add(Area(name=name, department=dept))
 
-    # Categories
     categories = ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry", "Civil", "Safety", "General", "Other"]
     for c in categories:
         if not Category.query.filter_by(name=c).first():
             db.session.add(Category(name=c))
 
-    # Working Items
     items = [
         "Light", "Switch", "Window", "Door Key", "Door Lock", "Paint", "Mirror",
         "Drainage Cover", "Frame", "Background Frame", "Spot Light", "Plumbing",
@@ -616,7 +609,6 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
-    # Engineering staff (Employees)
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
         (2, "ቸርነት አምና", "Electrical"),
@@ -628,7 +620,6 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
-    # Default users
     if not User.query.filter_by(username="admin").first():
         admin = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
         admin.set_password("admin123")
@@ -651,7 +642,6 @@ def seed_data():
 
     db.session.commit()
 
-    # Seed some sample maintenance requests
     if MaintenanceRequest.query.count() == 0:
         admin = User.query.filter_by(username="admin").first()
         note_records = [
@@ -683,7 +673,6 @@ def seed_data():
         ]
         for item_name, area_name in note_records:
             area = Area.query.filter_by(name=area_name).first()
-            # split if contains " / " to get first part
             item_name_part = item_name.split(" / ")[0]
             item = WorkingItem.query.filter_by(name=item_name_part).first()
             if not item:
@@ -1037,18 +1026,16 @@ def request_detail(req_id):
     </div>
     </div>
     """
-    # Action buttons for managers/admins
     if current_user.role in ["MANAGER", "ADMIN"]:
         action_buttons = ""
         if req.status == "Pending":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">ፈቅድ</a>'
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">ፈቅድ</a> '
         if req.status in ["Approved", "Assigned"]:
-            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">ስራ አዝዝ</a>'
+            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">ስራ አዝዝ</a> '
         if req.status == "Completed":
             action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a>'
         content += f'<div class="mt-3">{action_buttons}</div>'
 
-    # Show completion photo if exists
     wo = WorkOrder.query.filter_by(request_id=req.id).first()
     if wo and wo.completion_photo:
         content += f"""
@@ -1061,6 +1048,23 @@ def request_detail(req_id):
         """
 
     return page("Request Detail", content)
+
+
+@app.route("/requests/<int:req_id>/approve")
+@role_required("MANAGER", "ADMIN")
+def request_approve(req_id):
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    if req.status == "Pending":
+        req.status = "Approved"
+        hist = StatusHistory(request_id=req.id, status=req.status, user_id=current_user.id)
+        db.session.add(hist)
+        log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
+        notify([req.requested_by_id], f"ጥያቄዎ {req.request_no} ጸድቋል", "Status Changed", req.id)
+        db.session.commit()
+        flash("ጥያቄው ጸድቋል", "success")
+    else:
+        flash("ይህ ጥያቄ በመጠባበቅ ላይ አይደለም", "warning")
+    return redirect(url_for("request_detail", req_id=req.id))
 
 
 @app.route("/requests/<int:req_id>/verify")
@@ -1248,7 +1252,6 @@ def workorder_complete(wo_id):
             if getattr(wo, 'request', None):
                 wo.request.status = "Completed"
 
-            # Process parts used
             part_ids = request.form.getlist("part_id")
             quantities = request.form.getlist("quantity")
             for pid, qty in zip(part_ids, quantities):
@@ -1259,7 +1262,6 @@ def workorder_complete(wo_id):
                             part = InventoryPart.query.get(int(pid))
                             if part and part.quantity >= q_val:
                                 part.quantity -= q_val
-                                # Add WorkOrderPart
                                 wo_part = WorkOrderPart(
                                     work_order_id=wo.id,
                                     part_id=part.id,
@@ -1267,7 +1269,6 @@ def workorder_complete(wo_id):
                                     unit_cost=part.unit_cost
                                 )
                                 db.session.add(wo_part)
-                                # Log stock movement
                                 mov = StockMovement(
                                     part_id=part.id,
                                     movement_type="OUT",
@@ -1290,7 +1291,6 @@ def workorder_complete(wo_id):
             error_msg = traceback.format_exc()
             return f"<h3>ስህተት ተገኝቷል:</h3><pre style='color:red;'>{error_msg}</pre>", 500
 
-    # GET: show form
     parts_options = "".join([f'<option value="{p.id}">{p.part_name} (ካለ: {p.quantity})</option>' for p in parts])
     content = f"""
     <div class="card shadow-sm"><div class="card-body">
@@ -1346,7 +1346,6 @@ def workorder_complete(wo_id):
         container.appendChild(row);
     }}
     </script>
-    <!-- Offline support -->
     <script>
     let db;
     const dbRequest = indexedDB.open("RoriMaintenanceOffline", 1);
@@ -2174,7 +2173,6 @@ with app.app_context():
                 user = User(username=user_info["username"], role=user_info["role"])
                 user.set_password("123456")
                 db.session.add(user)
-            # Update full name and role for existing users
             if hasattr(user, 'full_name'):
                 user.full_name = user_info["full_name"]
             user.role = user_info["role"]
