@@ -1262,7 +1262,8 @@ def workorder_complete(wo_id):
     <input type="hidden" name="wo_id" value="{wo.id}">
     <div class="mb-3">
         <label class="form-label fw-bold">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
-        <input type="file" name="photo" accept="image/*" capture="environment" class="form-control form-control-lg" required>
+        <input type="file" name="photo" accept="image/*"  <input type="file" name="photo" accept="image/*" class="form-control form-control-sm">
+ class="form-control form-control-lg" required>
         <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
     </div>
     <div class="mb-3"><label>የተሰራው ስራ</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
