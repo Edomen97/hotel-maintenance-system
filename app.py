@@ -2063,7 +2063,6 @@ def service_worker():
 self.addEventListener('activate', e => self.clients.claim());
 self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
 
-
 # --------------------------------------------------------------
 # ERROR HANDLING
 # --------------------------------------------------------------
@@ -2089,6 +2088,7 @@ with app.app_context():
 def serve_logo():
     logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
     return send_file(logo_path, mimetype='image/png')
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
