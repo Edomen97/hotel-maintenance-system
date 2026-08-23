@@ -1227,57 +1227,68 @@ def workorder_progress(wo_id):
 
 
 @app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
-@role_required("MAINTENANCE STAFF", "MANAGER", "ADMIN")
+@role_required("MAINTENANCE STAFF", "SUPERVISOR", "MANAGER", "ADMIN")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
-    
-    if request.method == "POST":
-        wo.work_performed = request.form.get("work_performed", "")
-        wo.labor_hours = float(request.form.get("labor_hours", 0) or 0)
-        wo.completion_notes = request.form.get("completion_notes", "")
-        
-        # ፎቶ ማስተናገድ
-        file = request.files.get("photo")
-        if file and file.filename != "" and allowed_file(file.filename):
-            ext = file.filename.rsplit('.', 1)[1].lower()
-            filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-            wo.completion_photo = filename
-        
-        wo.status = "Completed"
-        wo.completed_by_id = current_user.id
-        wo.request.status = "Completed"
-        wo.request.completed_date = datetime.utcnow()
-        hist = StatusHistory(request_id=wo.request_id, status=wo.request.status, user_id=current_user.id)
-        db.session.add(hist)
 
-        part_ids = request.form.getlist("part_id")
-        quantities = request.form.getlist("quantity")
-        for pid, qty in zip(part_ids, quantities):
-            qty = float(qty or 0)
-            if qty > 0:
-                part = InventoryPart.query.get(int(pid))
-                if part and part.quantity >= qty:
-                    part.quantity -= qty
-                    wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=qty, unit_cost=part.unit_cost)
-                    db.session.add(wo_part)
-                    mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=qty, reason=f"Work Order {wo.work_order_no}", work_order_id=wo.id, user_id=current_user.id)
-                    db.session.add(mov)
-                    if part.quantity <= 0:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ክምችት አልቋል", "Out of Stock", work_order_id=wo.id)
-                    elif part.quantity <= part.minimum_stock:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ዝቅተኛ ክምችት", "Low Stock", work_order_id=wo.id)
-        
-        log_audit("Completion", "WorkOrder", wo.id, old_value="In Progress", new_value="Completed")
-       mgr_ids = [u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()]
-if wo.request.requested_by_id not in mgr_ids:
-    mgr_ids.append(wo.request.requested_by_id)
-notify(mgr_ids, f"ስራው ተጠናቋል፡ {wo.work_order_no}", "Status Changed", wo.request_id)
-     log_audit("Completion", "WorkOrder", wo.id, old_value="In Progress", new_value="Completed")
-    mgr_ids = [u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()]
-    if wo.request.requested_by_id not in mgr_ids:
+    if request.method == "POST":
+        try:
+            wo.work_performed = request.form.get("work_performed", "")
+            
+            try:
+                wo.labor_hours = float(request.form.get("labor_hours", 0) or 0)
+            except (ValueError, TypeError):
+                wo.labor_hours = 0.0
+
+            wo.completion_notes = request.form.get("completion_notes", "")
+
+            # ፎቶ ማስቀመጫ ፎልደር ከነ መንገዱ ማዘጋጀት
+            file = request.files.get("photo")
+            if file and file.filename != "":
+                upload_dir = app.config.get('UPLOAD_FOLDER', 'static/uploads/maintenance')
+                os.makedirs(upload_dir, exist_ok=True)
+                ext = file.filename.rsplit('.', 1)[-1].lower()
+                filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
+                file.save(os.path.join(upload_dir, filename))
+                wo.completion_photo = filename
+
+            wo.status = "Completed"
+            wo.completed_by_id = current_user.id
+
+            if wo.request:
+                wo.request.status = "Completed"
+                if hasattr(wo.request, 'completed_date'):
+                    wo.request.completed_date = datetime.utcnow()
+                hist = StatusHistory(request_id=wo.request_id, status="Completed", user_id=current_user.id)
+                db.session.add(hist)
+
+            # የተጠቀሙባቸውን እቃዎች መቀነስ
+            part_ids = request.form.getlist("part_id")
+            quantities = request.form.getlist("quantity")
+            for pid, qty in zip(part_ids, quantities):
+                try:
+                    q_val = float(qty or 0)
+                except (ValueError, TypeError):
+                    q_val = 0.0
+
+                if pid and pid.isdigit() and q_val > 0:
+                    part = InventoryPart.query.get(int(pid))
+                    if part and part.quantity >= q_val:
+                        part.quantity -= q_val
+                        wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity_used=q_val)
+                        db.session.add(wo_part)
+                        mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=q_val)
+                        db.session.add(mov)
+
+            db.session.commit()
+            flash("ስራው በጽሁፍ እና በፎቶ ማረጋገጫ ተጠናቋል!", "success")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"የስህተት ዝርዝር: {str(e)}", "danger")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
+
         mgr_ids.append(wo.request.requested_by_id)
     notify(mgr_ids, f"ስራው ተጠናቋል፡ {wo.work_order_no}", "Status Changed", wo.request_id)
     db.session.commit()
