@@ -2116,6 +2116,33 @@ def serve_logo():
     logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
     return send_file(logo_path, mimetype='image/png')
 
+# --- የሰራተኞች መመዝገቢያ ስክሪፕት ---
+users_data = [
+    {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
+    {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
+    {"full_name": "አበባየሁ ክፍሌ", "username": "ababayew", "role": "SUPERVISOR"},
+    {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "MAINTENANCE STAFF"},
+    {"full_name": "ነከረ", "username": "nekere", "role": "MAINTENANCE STAFF"},
+    {"full_name": "ስሞን ዩሐንስ", "username": "simon", "role": "MAINTENANCE STAFF"},
+    {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "MAINTENANCE STAFF"},
+]
+
+with app.app_context():
+    db.create_all()
+    for user_info in users_data:
+        existing_user = User.query.filter_by(username=user_info["username"]).first()
+        if not existing_user:
+            new_user = User(
+                username=user_info["username"],
+                full_name=user_info["full_name"],
+                role=user_info["role"]
+            )
+            new_user.set_password("123456")
+            db.session.add(new_user)
+    db.session.commit()
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
