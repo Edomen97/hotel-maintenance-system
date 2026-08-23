@@ -119,7 +119,20 @@ class Area(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-name = db.Column(db.String(80), unique=True, nullable=False)
+# ADDED: Category model (was missing)
+class Category(db.Model):
+    __tablename__ = "categories"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.Text)
+
+
+# ADDED: WorkingItem model (was missing)
+class WorkingItem(db.Model):
+    __tablename__ = "working_items"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.Text)
 
 
 class Employee(db.Model):
@@ -130,17 +143,6 @@ class Employee(db.Model):
     department = db.Column(db.String(80), default="Engineering")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-        db.create_all()
-        users_data = [
-            {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
-            {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
-            {"full_name": "አበባየሁ ክፍሌ", "username": "ababayew", "role": "SUPERVISOR"},
-            {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "MAINTENANCE STAFF"},
-            {"full_name": "ነከረ", "username": "nekere", "role": "MAINTENANCE STAFF"},
-            {"full_name": "ስሞን ዩሐንስ", "username": "simon", "role": "MAINTENANCE STAFF"},
-            {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "MAINTENANCE STAFF"},
-        ]
 
 
 class MaintenanceRequest(db.Model):
@@ -544,7 +546,6 @@ body {{ background:#f8f9fa; }}
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
    <a class="navbar-brand" href="/dashboard"><img src="/logo.png" alt="Rori Hotel Logo" style="height: 35px; vertical-align: middle; margin-right: 6px;"> Rori Hotel</a>
- Rori Hotel</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -569,15 +570,18 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 # SEED DATA
 # --------------------------------------------------------------
 def seed_data():
+    # Floors
     for f in [2, 3, 4, 5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
 
+    # Rooms
     if Room.query.count() == 0:
         for num in range(201, 301):
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
 
+    # Areas
     initial_areas = [
         ("Buduchalley", "F&B"),
         ("Sillanto", "Unknown"),
@@ -596,11 +600,13 @@ def seed_data():
         if not Area.query.filter_by(name=name).first():
             db.session.add(Area(name=name, department=dept))
 
+    # Categories
     categories = ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry", "Civil", "Safety", "General", "Other"]
     for c in categories:
         if not Category.query.filter_by(name=c).first():
             db.session.add(Category(name=c))
 
+    # Working Items
     items = [
         "Light", "Switch", "Window", "Door Key", "Door Lock", "Paint", "Mirror",
         "Drainage Cover", "Frame", "Background Frame", "Spot Light", "Plumbing",
@@ -610,6 +616,7 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
+    # Engineering staff (Employees)
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
         (2, "ቸርነት አምና", "Electrical"),
@@ -621,6 +628,7 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
+    # Default users
     if not User.query.filter_by(username="admin").first():
         admin = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
         admin.set_password("admin123")
@@ -643,6 +651,7 @@ def seed_data():
 
     db.session.commit()
 
+    # Seed some sample maintenance requests
     if MaintenanceRequest.query.count() == 0:
         admin = User.query.filter_by(username="admin").first()
         note_records = [
@@ -674,7 +683,9 @@ def seed_data():
         ]
         for item_name, area_name in note_records:
             area = Area.query.filter_by(name=area_name).first()
-            item = WorkingItem.query.filter_by(name=item_name.split(" / ")[0]).first()
+            # split if contains " / " to get first part
+            item_name_part = item_name.split(" / ")[0]
+            item = WorkingItem.query.filter_by(name=item_name_part).first()
             if not item:
                 item = WorkingItem.query.filter_by(name="Other").first()
             if area and item:
@@ -1026,7 +1037,8 @@ def request_detail(req_id):
     </div>
     </div>
     """
-          if current_user.role in ["MANAGER", "ADMIN"]:
+    # Action buttons for managers/admins
+    if current_user.role in ["MANAGER", "ADMIN"]:
         action_buttons = ""
         if req.status == "Pending":
             action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">ፈቅድ</a>'
@@ -1036,8 +1048,9 @@ def request_detail(req_id):
             action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a>'
         content += f'<div class="mt-3">{action_buttons}</div>'
 
-         wo =     WorkOrder.query.filter_by(request_id=req.id).first()
-          if wo   and wo.completion_photo:
+    # Show completion photo if exists
+    wo = WorkOrder.query.filter_by(request_id=req.id).first()
+    if wo and wo.completion_photo:
         content += f"""
         <div class="mt-3">
             <h6>📸 የተሰራው ስራ ፎቶ ማረጋገጫ:</h6>
@@ -1047,7 +1060,7 @@ def request_detail(req_id):
         </div>
         """
 
-          return page  ("Request Detail", content)    
+    return page("Request Detail", content)
 
 
 @app.route("/requests/<int:req_id>/verify")
@@ -1151,8 +1164,7 @@ def workorder_detail(wo_id):
     photos = Photo.query.filter_by(object_type="workorder", object_id=wo.id).all()
     parts_html = "".join(f"<li>{p.part.part_name} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
     photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
-    
-    # የማጠናቀቂያ ፎቶ ካለ አሳይ
+
     completion_photo_html = ""
     if wo.completion_photo:
         completion_photo_html = f"""
@@ -1165,7 +1177,7 @@ def workorder_detail(wo_id):
                      alt="Maintenance Photo Proof">
             </a>
         </div>"""
-    
+
     content = f"""
     <h3>የስራ ትዕዛዝ {wo.work_order_no}</h3>
     <table class="table table-bordered">
@@ -1177,8 +1189,6 @@ def workorder_detail(wo_id):
     <tr><th>የተጠቀሙ እቃዎች</th><td><ul>{parts_html}</ul></td></tr>
     <tr><th>የስራ ሰዓት</th><td>{wo.labor_hours}</td></tr>
     <tr><th>ፎቶዎች</th><td>{'ተያይዟል' if wo.completion_photo else 'የለም'}</td></tr>
-
-
     </table>
     {completion_photo_html}
     """
@@ -1214,7 +1224,6 @@ def workorder_complete(wo_id):
     if request.method == "POST":
         try:
             wo.work_performed = request.form.get("work_performed", "")
-            
             labor_input = request.form.get("labor_hours", 0)
             try:
                 wo.labor_hours = float(labor_input) if labor_input else 0.0
@@ -1225,8 +1234,6 @@ def workorder_complete(wo_id):
 
             file = request.files.get("photo")
             if file and file.filename != "":
-                import os
-                from werkzeug.utils import secure_filename
                 upload_dir = app.config.get('UPLOAD_FOLDER', 'static/uploads/maintenance')
                 os.makedirs(upload_dir, exist_ok=True)
                 ext = file.filename.rsplit('.', 1)[-1].lower()
@@ -1241,6 +1248,7 @@ def workorder_complete(wo_id):
             if getattr(wo, 'request', None):
                 wo.request.status = "Completed"
 
+            # Process parts used
             part_ids = request.form.getlist("part_id")
             quantities = request.form.getlist("quantity")
             for pid, qty in zip(part_ids, quantities):
@@ -1251,22 +1259,38 @@ def workorder_complete(wo_id):
                             part = InventoryPart.query.get(int(pid))
                             if part and part.quantity >= q_val:
                                 part.quantity -= q_val
-                                wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity_used=q_val)
+                                # Add WorkOrderPart
+                                wo_part = WorkOrderPart(
+                                    work_order_id=wo.id,
+                                    part_id=part.id,
+                                    quantity=q_val,
+                                    unit_cost=part.unit_cost
+                                )
                                 db.session.add(wo_part)
+                                # Log stock movement
+                                mov = StockMovement(
+                                    part_id=part.id,
+                                    movement_type="OUT",
+                                    quantity=q_val,
+                                    reason=f"Used in WO {wo.work_order_no}",
+                                    work_order_id=wo.id,
+                                    user_id=current_user.id
+                                )
+                                db.session.add(mov)
                     except:
                         pass
 
             db.session.commit()
             flash("ስራው በስኬት ተጠናቋል!", "success")
             return redirect(url_for("workorder_detail", wo_id=wo.id))
-            
+
         except Exception as e:
             db.session.rollback()
             import traceback
             error_msg = traceback.format_exc()
             return f"<h3>ስህተት ተገኝቷል:</h3><pre style='color:red;'>{error_msg}</pre>", 500
 
-    # የ HTML ፎርም ማሳያ (GET request)
+    # GET: show form
     parts_options = "".join([f'<option value="{p.id}">{p.part_name} (ካለ: {p.quantity})</option>' for p in parts])
     content = f"""
     <div class="card shadow-sm"><div class="card-body">
@@ -1322,65 +1346,8 @@ def workorder_complete(wo_id):
         container.appendChild(row);
     }}
     </script>
-    """
-    return page("Work Order Complete", content)
-
-                        mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=q_val)
-                        db.session.add(mov)
-
-            db.session.commit()
-            flash("ስራው በጽሁፍ እና በፎቶ ማረጋገጫ ተጠናቋል!", "success")
-            return redirect(url_for("workorder_detail", wo_id=wo.id))
-        except Exception as e:
-            db.session.rollback()
-            flash(f"የስህተት ዝርዝር: {str(e)}", "danger")
-            return redirect(url_for("workorder_detail", wo_id=wo.id))
-
-        mgr_ids.append(wo.request.requested_by_id)
-    notify(mgr_ids, f"ስራው ተጠናቋል፡ {wo.work_order_no}", "Status Changed", wo.request_id)
-    db.session.commit()
-    flash("የተከናወነ ተግባር እና ፎቶው በጥሩ ሁኔታ ተልኳል!", "success")
-    return redirect(url_for('workorder_detail', wo_id=wo.id))
-
-        db.session.commit()
-        flash("የጥገና ሪፖርቱ እና ፎቶው በተሳካ ሁኔታ ተልኳል!", "success")
-        return redirect(url_for("workorder_detail", wo_id=wo.id))
-
-    part_options = "".join(f'<option value="{p.id}">{p.part_name} (qty {p.quantity})</option>' for p in parts)
-    content = f"""
-    <h3>ስራውን ይጨርሱ {wo.work_order_no}</h3>
-    <form id="workOrderForm" method="post" enctype="multipart/form-data">
-    <input type="hidden" name="wo_id" value="{wo.id}">
-    <div class="mb-3">
-        <label class="form-label fw-bold">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
-        <input type="file" name="photo" accept="image/*"  
-        <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
-    </div>
-    <div class="mb-3"><label>የተሰራው ስራ</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
-    <div class="mb-3"><label>የስራ ሰዓት</label><input type="number" step="0.1" class="form-control" name="labor_hours" value="0"></div>
-    <div class="mb-3">
-        <label class="form-label fw-bold">ማስታወሻ</label>
-        <textarea name="completion_notes" class="form-control" rows="3" placeholder="ስራው እንዴት እንደተጠናቀቀ ይፃፉ..."></textarea>
-    </div>
-    <h5>የተጠቀሙ እቃዎች</h5>
-    <div id="parts">
-      <div class="row mb-2"><div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div>
-      <div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div></div>
-    </div>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPart()">+ እቃ ጨምር</button>
-    <hr>
-    <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">✅ ስራውን ጨርስ / Complete Task</button>
-    </form>
+    <!-- Offline support -->
     <script>
-    function addPart() {{
-      var div = document.createElement('div');
-      div.className = 'row mb-2';
-      div.innerHTML = '<div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div><div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div>';
-      document.getElementById('parts').appendChild(div);
-    }}
-    </script>
-    <script>
-    // Offline support
     let db;
     const dbRequest = indexedDB.open("RoriMaintenanceOffline", 1);
     dbRequest.onupgradeneeded = (e) => {{
@@ -1391,11 +1358,11 @@ def workorder_complete(wo_id):
     }};
     dbRequest.onsuccess = (e) => {{ db = e.target.result; }};
     
-    document.getElementById("workOrderForm").addEventListener("submit", async function(e) {{
+    document.querySelector("form").addEventListener("submit", async function(e) {{
         e.preventDefault();
         const form = this;
         const formData = new FormData(form);
-        const woId = formData.get("wo_id");
+        const woId = {wo.id};
         
         if (navigator.onLine) {{
             form.submit();
@@ -1454,7 +1421,8 @@ def workorder_complete(wo_id):
             alert("✅ ኢንተርኔት ስለተመለሰ ከመስመር ውጭ (Offline) የተሰሩ ሪፖርቶች በሙሉ ተልከዋል!");
         }};
     }}
-    </script>"""
+    </script>
+    """
     return page("Complete Work Order", content)
 
 
@@ -2158,18 +2126,6 @@ def service_worker():
 self.addEventListener('activate', e => self.clients.claim());
 self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
 
-# --------------------------------------------------------------
-# ERROR HANDLING
-# --------------------------------------------------------------
-@app.errorhandler(403)
-def forbidden(e):
-    return page("Forbidden", '<div class="alert alert-danger">ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
-
-
-@app.errorhandler(404)
-def not_found(e):
-    return page("Not Found", '<div class="alert alert-warning">ገጹ አልተገኘም።</div>'), 404
-
 
 # --------------------------------------------------------------
 # ERROR HANDLING
@@ -2197,6 +2153,7 @@ def serve_logo():
     logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
     return send_file(logo_path, mimetype='image/png')
 
+
 # --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት ---
 users_data = [
     {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
@@ -2217,16 +2174,13 @@ with app.app_context():
                 user = User(username=user_info["username"], role=user_info["role"])
                 user.set_password("123456")
                 db.session.add(user)
-            
-            # ነባር ተጠቃሚም ቢሆን ሙሉ ስሙን እና ሚናውን ያድሳል
+            # Update full name and role for existing users
             if hasattr(user, 'full_name'):
                 user.full_name = user_info["full_name"]
             user.role = user_info["role"]
-            
         db.session.commit()
     except Exception as e:
         print("Setup error:", e)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-
