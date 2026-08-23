@@ -1024,32 +1024,28 @@ def request_detail(req_id):
     </div>
     </div>
     """
-    if current_user.role in ["MANAGER", "ADMIN"]:
+          if current_user.role in ["MANAGER", "ADMIN"]:
         action_buttons = ""
         if req.status == "Pending":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">አጽድቅ</a> '
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">ፈቅድ</a>'
         if req.status in ["Approved", "Assigned"]:
-            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">የስራ ትዕዛዝ ፍጠር</a> '
+            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">ስራ አዝዝ</a>'
         if req.status == "Completed":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a> '
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a>'
         content += f'<div class="mt-3">{action_buttons}</div>'
-    return page("Request Detail", content)
 
+         wo =     WorkOrder.query.filter_by(request_id=req.id).first()
+          if wo   and wo.completion_photo:
+        content += f"""
+        <div class="mt-3">
+            <h6>📸 የተሰራው ስራ ፎቶ ማረጋገጫ:</h6>
+            <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
+                <img src="/static/uploads/maintenance/{wo.completion_photo}" class="img-fluid rounded shadow-sm" style="max-height: 250px;">
+            </a>
+        </div>
+        """
 
-@app.route("/requests/<int:req_id>/approve")
-@role_required("MANAGER", "ADMIN")
-def request_approve(req_id):
-    req = MaintenanceRequest.query.get_or_404(req_id)
-    if req.status == "Pending":
-        old = req.status
-        req.status = "Approved"
-        hist = StatusHistory(request_id=req.id, status=req.status, user_id=current_user.id)
-        db.session.add(hist)
-        log_audit("Status Change", "MaintenanceRequest", req.id, old, req.status)
-        notify([req.requested_by_id], f"ጥያቄዎ {req.request_no} ጸድቋል", "Status Changed", req.id)
-        db.session.commit()
-        flash("ጥያቄው ጸድቋል", "success")
-    return redirect(url_for("request_detail", req_id=req.id))
+          return page  ("Request Detail", content)    
 
 
 @app.route("/requests/<int:req_id>/verify")
@@ -1178,7 +1174,9 @@ def workorder_detail(wo_id):
     <tr><th>የተሰራው ስራ</th><td>{wo.work_performed or ''}</td></tr>
     <tr><th>የተጠቀሙ እቃዎች</th><td><ul>{parts_html}</ul></td></tr>
     <tr><th>የስራ ሰዓት</th><td>{wo.labor_hours}</td></tr>
-    <tr><th>ፎቶዎች</th><td>{photo_html or 'የለም'}</td></tr>
+    <tr><th>ፎቶዎች</th><td>{'ተያይዟል' if wo.completion_photo else 'የለም'}</td></tr>
+
+
     </table>
     {completion_photo_html}
     """
