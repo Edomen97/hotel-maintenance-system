@@ -2086,4 +2086,6 @@ with app.app_context():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
- 
+ @app.route('/logo.png')
+def serve_logo():
+    return send_file('file_00000000d93c821094a2e3f7dced7c77.png')
