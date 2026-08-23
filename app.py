@@ -1230,8 +1230,7 @@ def workorder_progress(wo_id):
 @role_required("MAINTENANCE STAFF", "SUPERVISOR", "MANAGER", "ADMIN")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
-    parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
-
+    
     if request.method == "POST":
         try:
             wo.work_performed = request.form.get("work_performed", "")
@@ -1243,10 +1242,10 @@ def workorder_complete(wo_id):
 
             wo.completion_notes = request.form.get("completion_notes", "")
 
-            # ፎቶ ማስቀመጫ ፎልደር ከነ መንገዱ ማዘጋጀት
+            # ፎቶን ደህንነቱ በተጠበቀ መንገድ ማስቀመጥ
             file = request.files.get("photo")
             if file and file.filename != "":
-                upload_dir = app.config.get('UPLOAD_FOLDER', 'static/uploads/maintenance')
+                upload_dir = os.path.join(app.root_path, 'static', 'uploads')
                 os.makedirs(upload_dir, exist_ok=True)
                 ext = file.filename.rsplit('.', 1)[-1].lower()
                 filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
@@ -1254,25 +1253,36 @@ def workorder_complete(wo_id):
                 wo.completion_photo = filename
 
             wo.status = "Completed"
-            wo.completed_by_id = current_user.id
+            if hasattr(current_user, 'id'):
+                wo.completed_by_id = current_user.id
 
             if wo.request:
                 wo.request.status = "Completed"
-                if hasattr(wo.request, 'completed_date'):
-                    wo.request.completed_date = datetime.utcnow()
-                hist = StatusHistory(request_id=wo.request_id, status="Completed", user_id=current_user.id)
-                db.session.add(hist)
 
-            # የተጠቀሙባቸውን እቃዎች መቀነስ
+            # እቃዎችን ከኢንቬንተሪ መቀነስ (ያለ ምንም ጥሪ ስህተት)
             part_ids = request.form.getlist("part_id")
             quantities = request.form.getlist("quantity")
             for pid, qty in zip(part_ids, quantities):
-                try:
-                    q_val = float(qty or 0)
-                except (ValueError, TypeError):
-                    q_val = 0.0
+                if pid and pid.isdigit() and qty:
+                    try:
+                        q_val = float(qty)
+                        if q_val > 0:
+                            part = InventoryPart.query.get(int(pid))
+                            if part and part.quantity >= q_val:
+                                part.quantity -= q_val
+                                wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity_used=q_val)
+                                db.session.add(wo_part)
+                    except (ValueError, TypeError):
+                        pass
 
-                if pid and pid.isdigit() and q_val > 0:
+            db.session.commit()
+            flash("ስራው በስኬት ተጠናቋል!", "success")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f"ስህተት ተፈጽሟል: {str(e)}", "danger")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
                     part = InventoryPart.query.get(int(pid))
                     if part and part.quantity >= q_val:
                         part.quantity -= q_val
