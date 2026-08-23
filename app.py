@@ -1250,7 +1250,11 @@ def workorder_complete(wo_id):
                         notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ዝቅተኛ ክምችት", "Low Stock", work_order_id=wo.id)
         
         log_audit("Completion", "WorkOrder", wo.id, old_value="In Progress", new_value="Completed")
-        notify([wo.request.requested_by_id], f"የስራ ትዕዛዝ {wo.work_order_no} ተጠናቋል", "Status Changed", wo.request_id, wo.id)
+       mgr_ids = [u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()]
+if wo.request.requested_by_id not in mgr_ids:
+    mgr_ids.append(wo.request.requested_by_id)
+notify(mgr_ids, f"ስራው ተጠናቋል፡ {wo.work_order_no}", "Status Changed", wo.request_id)
+ f"የስራ ትዕዛዝ {wo.work_order_no} ተጠናቋል", "Status Changed", wo.request_id, wo.id)
         db.session.commit()
         flash("የጥገና ሪፖርቱ እና ፎቶው በተሳካ ሁኔታ ተልኳል!", "success")
         return redirect(url_for("workorder_detail", wo_id=wo.id))
@@ -1262,8 +1266,7 @@ def workorder_complete(wo_id):
     <input type="hidden" name="wo_id" value="{wo.id}">
     <div class="mb-3">
         <label class="form-label fw-bold">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
-        <input type="file" name="photo" accept="image/*"  <input type="file" name="photo" accept="image/*" class="form-control form-control-sm">
- class="form-control form-control-lg" required>
+        <input type="file" name="photo" accept="image/*"  
         <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
     </div>
     <div class="mb-3"><label>የተሰራው ስራ</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
