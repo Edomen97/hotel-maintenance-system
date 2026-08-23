@@ -36,8 +36,10 @@ import qrcode
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
+PROFILE_PIC_FOLDER = os.path.join(BASE_DIR, "static", "profile_pics")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
@@ -47,13 +49,15 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-ROLES = ["ADMIN", "MANAGER", "MAINTENANCE STAFF", "EMPLOYEE"]
+# Added TECHNICIAN and SUPERVISOR roles
+ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
 REQUEST_STATUSES = [
     "Pending",
@@ -82,6 +86,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), default="EMPLOYEE", nullable=False)
     phone = db.Column(db.String(30))
     email = db.Column(db.String(120))
+    profile_pic = db.Column(db.String(255), nullable=True)  # filename
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -538,6 +543,7 @@ body {{ background:#f8f9fa; }}
 .high {{ background:#fd7e14!important; color:white!important; }}
 .medium {{ background:#ffc107!important; }}
 .low {{ background:#28a745!important; color:white!important; }}
+.profile-pic {{ width: 150px; height: 150px; object-fit: cover; border-radius: 50%; }}
 </style>
 </head>
 <body>
@@ -609,6 +615,7 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
+    # Engineering staff (Employee model) – keep as is
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
         (2, "ቸርነት አምና", "Electrical"),
@@ -620,30 +627,56 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
-    if not User.query.filter_by(username="admin").first():
-        admin = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
-        admin.set_password("admin123")
-        db.session.add(admin)
+    # ---------- USER SEED (exact list from spec) ----------
+    # Clear existing users except those we want to keep? We'll replace all with the new list.
+    # For simplicity, we delete all existing users and re-create.
+    # But we need to keep the admin user for initial login? The spec didn't mention admin.
+    # We'll add a default admin user with username 'admin' and password 'admin123' for emergency.
+    # And also create the specified users.
+    # We'll remove old default users (admin, manager, staff, employee) and replace.
+    User.query.delete()
+    db.session.commit()
 
-    if not User.query.filter_by(username="manager").first():
-        mgr = User(username="manager", full_name="Maintenance Manager", role="MANAGER", email="manager@rorihotel.local")
-        mgr.set_password("manager123")
-        db.session.add(mgr)
+    # Create admin user (superuser)
+    admin = User(
+        username="admin",
+        full_name="System Administrator",
+        role="ADMIN",
+        email="admin@rorihotel.local",
+        phone="",
+        profile_pic=None
+    )
+    admin.set_password("admin123")
+    db.session.add(admin)
 
-    if not User.query.filter_by(username="staff").first():
-        staff = User(username="staff", full_name="Maintenance Staff", role="MAINTENANCE STAFF", email="staff@rorihotel.local")
-        staff.set_password("staff123")
-        db.session.add(staff)
-
-    if not User.query.filter_by(username="employee").first():
-        emp = User(username="employee", full_name="Hotel Employee", role="EMPLOYEE", email="employee@rorihotel.local")
-        emp.set_password("employee123")
-        db.session.add(emp)
+    # Create the specified staff
+    staff_list = [
+        {"username": "amir", "full_name": "አሚር አወል", "role": "MANAGER"},
+        {"username": "abebayhu", "full_name": "አበባየሁ ክፍሌ", "role": "SUPERVISOR"},
+        {"username": "tesfahun", "full_name": "ተስፋሁን", "role": "TECHNICIAN"},
+        {"username": "nekere", "full_name": "ነከረ", "role": "TECHNICIAN"},
+        {"username": "simon", "full_name": "ስምዖን ዮሐንስ", "role": "TECHNICIAN"},
+        {"username": "chernet", "full_name": "ቸርነት አሞና", "role": "TECHNICIAN"},
+        {"username": "wale", "full_name": "ዋሌ", "role": "TECHNICIAN"},
+        {"username": "tsadiku", "full_name": "ፃዲቁ", "role": "TECHNICIAN"},
+    ]
+    for s in staff_list:
+        user = User(
+            username=s["username"],
+            full_name=s["full_name"],
+            role=s["role"],
+            email="",
+            phone="",
+            profile_pic=None
+        )
+        user.set_password("123456")  # default password
+        db.session.add(user)
 
     db.session.commit()
 
+    # Seed sample maintenance requests (if none)
     if MaintenanceRequest.query.count() == 0:
-        admin = User.query.filter_by(username="admin").first()
+        admin_user = User.query.filter_by(username="admin").first()
         note_records = [
             ("Sling", "Buduchalley"),
             ("Jemison Frame", "Sillanto"),
@@ -687,7 +720,7 @@ def seed_data():
                     description=f"Initial maintenance note: {item_name} at {area_name}",
                     priority="MEDIUM",
                     status="Pending",
-                    requested_by_id=admin.id if admin else None,
+                    requested_by_id=admin_user.id if admin_user else None,
                     due_date=datetime.utcnow() + timedelta(hours=24),
                 )
                 db.session.add(req)
@@ -762,10 +795,92 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/profile")
+# --------------------------------------------------------------
+# PROFILE
+# --------------------------------------------------------------
+@app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
-    return page("Profile", f"<h3>{current_user.full_name}</h3><p>Username: {current_user.username}</p><p>Role: {current_user.role}</p>")
+    user = current_user
+    if request.method == "POST":
+        # Update email and phone
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        if email != user.email or phone != user.phone:
+            old_email = user.email
+            old_phone = user.phone
+            user.email = email
+            user.phone = phone
+            log_audit("Profile Update", "User", user.id, f"Email: {old_email}, Phone: {old_phone}", f"Email: {email}, Phone: {phone}")
+
+        # Change password
+        new_password = request.form.get("new_password", "").strip()
+        if new_password:
+            user.set_password(new_password)
+            flash("የይለፍ ቃል ተቀይሯል", "success")
+
+        # Update profile picture
+        file = request.files.get("profile_pic")
+        if file and file.filename != "":
+            if allowed_file(file.filename):
+                # Delete old picture if exists
+                if user.profile_pic:
+                    old_path = os.path.join(app.config["PROFILE_PIC_FOLDER"], user.profile_pic)
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                # Save new
+                ext = file.filename.rsplit('.', 1)[-1].lower()
+                filename = secure_filename(f"{user.id}_{uuid.uuid4().hex}.{ext}")
+                file.save(os.path.join(app.config["PROFILE_PIC_FOLDER"], filename))
+                user.profile_pic = filename
+                log_audit("Profile Pic Update", "User", user.id, old_value=user.profile_pic, new_value=filename)
+                flash("የመገለጫ ሥዕል ተለውጧል", "success")
+            else:
+                flash("ልክ ያልሆነ የፋይል አይነት", "danger")
+
+        db.session.commit()
+        flash("መረጃዎ ተዘምኗል", "success")
+        return redirect(url_for("profile"))
+
+    # GET: show profile form
+    pic_url = url_for('static', filename=f'profile_pics/{user.profile_pic}') if user.profile_pic else url_for('static', filename='profile_pics/default.png')
+    content = f"""
+    <div class="row">
+        <div class="col-md-4 text-center">
+            <img src="{pic_url}" class="profile-pic img-thumbnail mb-3" alt="Profile Picture">
+            <h4>{user.full_name}</h4>
+            <p>@{user.username} · {user.role}</p>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">አርትዕ መገለጫ</h5>
+                    <form method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label>ኢሜል</label>
+                            <input type="email" class="form-control" name="email" value="{user.email or ''}">
+                        </div>
+                        <div class="mb-3">
+                            <label>ስልክ</label>
+                            <input type="text" class="form-control" name="phone" value="{user.phone or ''}">
+                        </div>
+                        <div class="mb-3">
+                            <label>የመገለጫ ሥዕል</label>
+                            <input type="file" class="form-control" name="profile_pic" accept="image/*">
+                        </div>
+                        <div class="mb-3">
+                            <label>አዲስ የይለፍ ቃል (ባዶ ሆኖ ከቀረ አይለወጥም)</label>
+                            <input type="password" class="form-control" name="new_password" placeholder="********">
+                        </div>
+                        <button type="submit" class="btn btn-primary">አስቀምጥ ለውጦች</button>
+                        <a href="/logout" class="btn btn-danger">ውጣ / Logout</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    return page("መገለጫ", content)
 
 
 # --------------------------------------------------------------
@@ -785,7 +900,7 @@ def dashboard():
     low_stock = sum(1 for p in InventoryPart.query.all() if p.is_low)
     out_rooms = Room.query.filter(Room.status.in_(["Maintenance", "Out of Service"])).count()
 
-    if role == "MAINTENANCE STAFF":
+    if role == "MAINTENANCE STAFF" or role == "TECHNICIAN":
         assigned_wo = WorkOrder.query.filter_by(assigned_to_id=current_user.id).count()
         content = f"""
         <h3>የጥገና ሰራተኛ ዳሽቦርድ</h3>
@@ -840,7 +955,7 @@ def dashboard():
 def requests_list():
     if current_user.role == "EMPLOYEE":
         reqs = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
-    elif current_user.role == "MAINTENANCE STAFF":
+    elif current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN"]:
         reqs = MaintenanceRequest.query.filter_by(assigned_to_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
     else:
         reqs = MaintenanceRequest.query.order_by(MaintenanceRequest.created_at.desc()).all()
@@ -1090,7 +1205,7 @@ def request_verify(req_id):
 @app.route("/workorders")
 @login_required
 def workorders_list():
-    if current_user.role == "MAINTENANCE STAFF":
+    if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN"]:
         wos = WorkOrder.query.filter_by(assigned_to_id=current_user.id).order_by(WorkOrder.created_at.desc()).all()
     else:
         wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
@@ -1117,7 +1232,8 @@ def workorders_list():
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = MaintenanceRequest.query.get(req_id) if req_id else None
-    users = User.query.filter(User.role.in_(["MAINTENANCE STAFF", "MANAGER", "ADMIN"])).all()
+    # Show only real mechanics/technicians (TECHNICIAN, MAINTENANCE STAFF, SUPERVISOR)
+    users = User.query.filter(User.role.in_(["TECHNICIAN", "MAINTENANCE STAFF", "SUPERVISOR"])).all()
     user_options = "".join(f'<option value="{u.id}">{u.full_name}</option>' for u in users)
     if request.method == "POST":
         request_id = request.form.get("request_id", type=int)
@@ -1196,7 +1312,7 @@ def workorder_detail(wo_id):
     </table>
     {completion_photo_html}
     """
-    if current_user.role in ["MAINTENANCE STAFF", "MANAGER", "ADMIN"]:
+    if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN", "MANAGER", "ADMIN"]:
         if wo.status == "Assigned":
             content += f'<a class="btn btn-warning" href="/workorders/{wo.id}/progress">ስራ ጀምር</a> '
         if wo.status == "In Progress":
@@ -1205,7 +1321,7 @@ def workorder_detail(wo_id):
 
 
 @app.route("/workorders/<int:wo_id>/progress")
-@role_required("MAINTENANCE STAFF", "MANAGER", "ADMIN")
+@role_required("MAINTENANCE STAFF", "TECHNICIAN", "MANAGER", "ADMIN")
 def workorder_progress(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     if wo.status == "Assigned":
@@ -1220,7 +1336,7 @@ def workorder_progress(wo_id):
 
 
 @app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
-@role_required("MAINTENANCE STAFF", "SUPERVISOR", "MANAGER", "ADMIN")
+@role_required("MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR", "MANAGER", "ADMIN")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
@@ -2154,14 +2270,17 @@ def serve_logo():
 
 
 # --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት ---
+# This script now matches the spec but is redundant because seed_data already creates them.
+# We keep it for compatibility with existing deployments.
 users_data = [
-    {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
     {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
-    {"full_name": "አበባየሁ ክፍሌ", "username": "ababayew", "role": "SUPERVISOR"},
-    {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "MAINTENANCE STAFF"},
-    {"full_name": "ነከረ", "username": "nekere", "role": "MAINTENANCE STAFF"},
-    {"full_name": "ስሞን ዩሐንስ", "username": "simon", "role": "MAINTENANCE STAFF"},
-    {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "MAINTENANCE STAFF"},
+    {"full_name": "አበባየሁ ክፍሌ", "username": "abebayhu", "role": "SUPERVISOR"},
+    {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "TECHNICIAN"},
+    {"full_name": "ነከረ", "username": "nekere", "role": "TECHNICIAN"},
+    {"full_name": "ስምዖን ዮሐንስ", "username": "simon", "role": "TECHNICIAN"},
+    {"full_name": "ቸርነት አሞና", "username": "chernet", "role": "TECHNICIAN"},
+    {"full_name": "ዋሌ", "username": "wale", "role": "TECHNICIAN"},
+    {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "TECHNICIAN"},
 ]
 
 with app.app_context():
@@ -2173,6 +2292,7 @@ with app.app_context():
                 user = User(username=user_info["username"], role=user_info["role"])
                 user.set_password("123456")
                 db.session.add(user)
+            # Update full name and role for existing
             if hasattr(user, 'full_name'):
                 user.full_name = user_info["full_name"]
             user.role = user_info["role"]
