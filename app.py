@@ -719,7 +719,11 @@ def login():
             <div class="card shadow-lg border-0" style="border-radius: 1rem;">
                 <div class="card-body p-4 p-md-5">
                     <div class="text-center mb-4">
-                        <h2 class="fw-bold text-primary">🏨 Rori Hotel</h2>
+                        <h2 class="fw-bold text-primary"><h3 class="text-primary fw-bold">
+    <img src="/logo.png" alt="Rori Hotel Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">
+    Rori Hotel
+</h3>
+
                         <p class="text-muted">የጥገና ክፍል መግቢያ (Maintenance Portal)</p>
                     </div>
                     
