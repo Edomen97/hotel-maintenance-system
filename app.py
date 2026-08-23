@@ -125,7 +125,30 @@ class Category(db.Model):
     name = db.Column(db.String(80), unique=True, nullable=False)
 
 
-class WorkingItem(db.Model):
+class WorkingItem(db.Model):# --- የሰራተኞች መመዝገቢያ ስክሪፕት ---
+with app.app_context():
+    try:
+        db.create_all()
+        users_data = [
+            {"full_name": "ሙሉቀን ገዳፈዉ", "username": "muluken", "role": "ADMIN"},
+            {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
+            {"full_name": "አበባየሁ ክፍሌ", "username": "ababayew", "role": "SUPERVISOR"},
+            {"full_name": "ተስፋሁን", "username": "tesfahun", "role": "MAINTENANCE STAFF"},
+            {"full_name": "ነከረ", "username": "nekere", "role": "MAINTENANCE STAFF"},
+            {"full_name": "ስሞን ዩሐንስ", "username": "simon", "role": "MAINTENANCE STAFF"},
+            {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "MAINTENANCE STAFF"},
+        ]
+        for u in users_data:
+            if not User.query.filter_by(username=u["username"]).first():
+                user = User(username=u["username"], role=u["role"])
+                if hasattr(user, 'full_name'):
+                    user.full_name = u["full_name"]
+                user.set_password("123456")
+                db.session.add(user)
+        db.session.commit()
+    except Exception as e:
+        print("Database setup error:", e)
+
     __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
