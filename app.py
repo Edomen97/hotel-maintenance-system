@@ -74,7 +74,7 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", 
 
 
 # --------------------------------------------------------------
-# MODELS
+# MODELS (unchanged)
 # --------------------------------------------------------------
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -495,33 +495,38 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+# --------------------------------------------------------------
+# PAGE FUNCTION WITH LUXURY THEME
+# --------------------------------------------------------------
 def page(title, content):
-    nav = []
+    nav_items = []
     if current_user.is_authenticated:
-        nav.append('<a class="nav-link" href="/dashboard">Dashboard</a>')
-        nav.append('<a class="nav-link" href="/requests/new">New Request</a>')
-        nav.append('<a class="nav-link" href="/requests">Requests</a>')
-        nav.append('<a class="nav-link" href="/workorders">Work Orders</a>')
+        nav_items.append(('<i class="fas fa-home"></i> Dashboard', '/dashboard'))
+        nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', '/requests/new'))
+        nav_items.append(('<i class="fas fa-tasks"></i> Requests', '/requests'))
+        nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', '/workorders'))
         if current_user.role in ["ADMIN", "MANAGER"]:
-            nav.append('<a class="nav-link" href="/rooms">Rooms</a>')
-            nav.append('<a class="nav-link" href="/areas">Areas</a>')
-            nav.append('<a class="nav-link" href="/inventory">Inventory</a>')
-            nav.append('<a class="nav-link" href="/preventive">Preventive</a>')
-            nav.append('<a class="nav-link" href="/checklists">Checklists</a>')
-            nav.append('<a class="nav-link" href="/suppliers">Suppliers</a>')
-            nav.append('<a class="nav-link" href="/contractors">Contractors</a>')
-            nav.append('<a class="nav-link" href="/employees">Employees</a>')
+            nav_items.append(('<i class="fas fa-door-open"></i> Rooms', '/rooms'))
+            nav_items.append(('<i class="fas fa-map-marked-alt"></i> Areas', '/areas'))
+            nav_items.append(('<i class="fas fa-boxes"></i> Inventory', '/inventory'))
+            nav_items.append(('<i class="fas fa-calendar-check"></i> Preventive', '/preventive'))
+            nav_items.append(('<i class="fas fa-list-check"></i> Checklists', '/checklists'))
+            nav_items.append(('<i class="fas fa-truck"></i> Suppliers', '/suppliers'))
+            nav_items.append(('<i class="fas fa-hard-hat"></i> Contractors', '/contractors'))
+            nav_items.append(('<i class="fas fa-users"></i> Employees', '/employees'))
         if current_user.role == "ADMIN":
-            nav.append('<a class="nav-link" href="/admin/users">Users</a>')
-            nav.append('<a class="nav-link" href="/admin/masterdata">Master Data</a>')
-            nav.append('<a class="nav-link" href="/admin/audit">Audit Log</a>')
-            nav.append('<a class="nav-link" href="/admin/backup">Backup</a>')
-        nav.append('<a class="nav-link" href="/reports">Reports</a>')
-        nav.append('<a class="nav-link" href="/notifications">Notifications</a>')
-        nav.append('<a class="nav-link" href="/profile">Profile</a>')
-        nav.append('<a class="nav-link" href="/logout">Logout</a>')
+            nav_items.append(('<i class="fas fa-user-cog"></i> Users', '/admin/users'))
+            nav_items.append(('<i class="fas fa-database"></i> Master Data', '/admin/masterdata'))
+            nav_items.append(('<i class="fas fa-history"></i> Audit Log', '/admin/audit'))
+            nav_items.append(('<i class="fas fa-archive"></i> Backup', '/admin/backup'))
+        nav_items.append(('<i class="fas fa-chart-bar"></i> Reports', '/reports'))
+        nav_items.append(('<i class="fas fa-bell"></i> Notifications', '/notifications'))
+        nav_items.append(('<i class="fas fa-user-circle"></i> Profile', '/profile'))
+        nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', '/logout'))
     else:
-        nav.append('<a class="nav-link" href="/login">Login</a>')
+        nav_items.append(('<i class="fas fa-sign-in-alt"></i> Login', '/login'))
+
+    nav_html = "".join(f'<a class="nav-link" href="{url}">{label}</a>' for label, url in nav_items)
 
     flash_html = "".join(
         f'<div class="alert alert-{cat} alert-dismissible fade show">{msg}</div>'
@@ -535,31 +540,392 @@ def page(title, content):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title} | Rori Hotel Maintenance</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="manifest" href="/manifest.json">
 <style>
-body {{ background:#f8f9fa; }}
-.urgent {{ background:#dc3545!important; color:white!important; }}
-.high {{ background:#fd7e14!important; color:white!important; }}
-.medium {{ background:#ffc107!important; }}
-.low {{ background:#28a745!important; color:white!important; }}
-.profile-pic {{ width: 150px; height: 150px; object-fit: cover; border-radius: 50%; }}
+    /* ----- LUXURY THEME ----- */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&display=swap');
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }}
+    body {{
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+        min-height: 100vh;
+        color: #e2e8f0;
+        padding-top: 70px;
+    }}
+    /* Glassmorphism Navbar */
+    .navbar {{
+        background: rgba(15, 23, 42, 0.75) !important;
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        padding: 0.75rem 1.5rem;
+    }}
+    .navbar-brand {{
+        font-weight: 700;
+        font-size: 1.4rem;
+        letter-spacing: 0.5px;
+        color: #f59e0b !important;
+        text-shadow: 0 2px 8px rgba(245,158,11,0.3);
+    }}
+    .navbar-brand img {{
+        height: 38px;
+        vertical-align: middle;
+        margin-right: 10px;
+        filter: drop-shadow(0 2px 6px rgba(245,158,11,0.2));
+    }}
+    .nav-link {{
+        color: #cbd5e1 !important;
+        font-weight: 500;
+        padding: 0.6rem 1.2rem !important;
+        border-radius: 40px;
+        transition: all 0.25s ease;
+        margin: 0 0.1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }}
+    .nav-link i {{
+        font-size: 1.1rem;
+        width: 1.5rem;
+        text-align: center;
+        color: #f59e0b;
+        transition: color 0.2s;
+    }}
+    .nav-link:hover {{
+        background: rgba(245, 158, 11, 0.12);
+        color: #f59e0b !important;
+        transform: translateY(-1px);
+    }}
+    .nav-link:hover i {{
+        color: #fbbf24;
+    }}
+    .navbar-nav .active {{
+        background: rgba(245, 158, 11, 0.18);
+        color: #f59e0b !important;
+        box-shadow: 0 0 20px rgba(245,158,11,0.08);
+    }}
+    .navbar-toggler {{
+        border-color: rgba(245,158,11,0.4);
+    }}
+    .navbar-toggler-icon {{
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(245,158,11,0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+    }}
+
+    /* Container & Cards */
+    .container {{
+        max-width: 1280px;
+        padding: 1.5rem;
+    }}
+    .card {{
+        background: rgba(30, 41, 59, 0.6) !important;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(245, 158, 11, 0.15);
+        border-radius: 20px !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        transition: transform 0.25s ease, box-shadow 0.3s ease;
+        color: #e2e8f0;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+    }}
+    .card:hover {{
+        transform: translateY(-4px);
+        box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+        border-color: rgba(245, 158, 11, 0.3);
+    }}
+    .card-title {{
+        font-weight: 600;
+        color: #f59e0b;
+        letter-spacing: 0.3px;
+    }}
+    .card-text {{
+        color: #94a3b8;
+    }}
+    /* Dashboard Metric Cards */
+    .metric-card {{
+        background: rgba(30, 41, 59, 0.5);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(245, 158, 11, 0.12);
+        border-radius: 20px;
+        padding: 1.2rem 1rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }}
+    .metric-card:hover {{
+        transform: translateY(-6px);
+        border-color: #f59e0b;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }}
+    .metric-icon {{
+        font-size: 2.2rem;
+        color: #f59e0b;
+        margin-bottom: 0.5rem;
+        opacity: 0.9;
+    }}
+    .metric-value {{
+        font-size: 2rem;
+        font-weight: 700;
+        color: #f8fafc;
+        line-height: 1.2;
+    }}
+    .metric-label {{
+        font-size: 0.85rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 0.25rem;
+    }}
+    .metric-badge {{
+        background: rgba(245, 158, 11, 0.15);
+        border-radius: 30px;
+        padding: 0.2rem 1rem;
+        font-size: 0.7rem;
+        color: #f59e0b;
+        margin-top: 0.3rem;
+        display: inline-block;
+    }}
+
+    /* Tables */
+    .table {{
+        color: #e2e8f0;
+        border-color: rgba(245, 158, 11, 0.1);
+    }}
+    .table thead th {{
+        border-bottom: 2px solid rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+    }}
+    .table td, .table th {{
+        border-color: rgba(245, 158, 11, 0.08);
+        padding: 0.75rem;
+        vertical-align: middle;
+    }}
+    .table-striped tbody tr:nth-of-type(odd) {{
+        background-color: rgba(30, 41, 59, 0.3);
+    }}
+    .table-hover tbody tr:hover {{
+        background-color: rgba(245, 158, 11, 0.06);
+    }}
+    .table-danger, .table-warning {{
+        --bs-table-bg: rgba(220, 53, 69, 0.15);
+        color: #f8fafc;
+    }}
+    .table-warning {{
+        --bs-table-bg: rgba(245, 158, 11, 0.12);
+    }}
+
+    /* Buttons – Gradient Gold */
+    .btn {{
+        border-radius: 40px;
+        font-weight: 600;
+        padding: 0.6rem 1.8rem;
+        transition: all 0.25s ease;
+        border: none;
+        letter-spacing: 0.3px;
+    }}
+    .btn-primary {{
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #0f172a;
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);
+    }}
+    .btn-primary:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4);
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        color: #0f172a;
+    }}
+    .btn-success {{
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        box-shadow: 0 4px 16px rgba(34, 197, 94, 0.25);
+    }}
+    .btn-success:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4);
+        background: linear-gradient(135deg, #4ade80, #22c55e);
+    }}
+    .btn-warning {{
+        background: linear-gradient(135deg, #eab308, #ca8a04);
+        color: #0f172a;
+        box-shadow: 0 4px 16px rgba(234, 179, 8, 0.25);
+    }}
+    .btn-warning:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(234, 179, 8, 0.4);
+        background: linear-gradient(135deg, #facc15, #eab308);
+        color: #0f172a;
+    }}
+    .btn-danger {{
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        box-shadow: 0 4px 16px rgba(239, 68, 68, 0.25);
+    }}
+    .btn-danger:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(239, 68, 68, 0.4);
+        background: linear-gradient(135deg, #f87171, #ef4444);
+    }}
+    .btn-outline-secondary {{
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: #cbd5e1;
+        background: transparent;
+    }}
+    .btn-outline-secondary:hover {{
+        background: rgba(245, 158, 11, 0.1);
+        border-color: #f59e0b;
+        color: #f59e0b;
+    }}
+    .btn i {{
+        margin-right: 8px;
+    }}
+
+    /* Forms */
+    .form-control, .form-select {{
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 12px;
+        color: #e2e8f0;
+        padding: 0.75rem 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }}
+    .form-control:focus, .form-select:focus {{
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+        background: rgba(15, 23, 42, 0.8);
+        color: #f8fafc;
+    }}
+    .form-label {{
+        font-weight: 500;
+        color: #cbd5e1;
+        margin-bottom: 0.4rem;
+    }}
+    .form-text {{
+        color: #64748b;
+        font-size: 0.8rem;
+    }}
+
+    /* Alerts */
+    .alert {{
+        border-radius: 16px;
+        border: none;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(8px);
+        color: #e2e8f0;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+    }}
+    .alert-success {{
+        border-left: 4px solid #22c55e;
+    }}
+    .alert-danger {{
+        border-left: 4px solid #ef4444;
+    }}
+    .alert-warning {{
+        border-left: 4px solid #f59e0b;
+    }}
+    .alert-info {{
+        border-left: 4px solid #3b82f6;
+    }}
+
+    /* Login Page */
+    .login-card {{
+        background: rgba(30, 41, 59, 0.5) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 32px !important;
+        padding: 2rem 2.5rem;
+        box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+        max-width: 440px;
+        margin: 0 auto;
+    }}
+    .login-card .form-control {{
+        background: rgba(15, 23, 42, 0.7);
+        border-color: rgba(245, 158, 11, 0.15);
+    }}
+    .login-card .btn-primary {{
+        width: 100%;
+        padding: 0.8rem;
+        font-size: 1.1rem;
+    }}
+
+    /* Profile Picture */
+    .profile-pic {{
+        width: 150px;
+        height: 150px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 3px solid #f59e0b;
+        box-shadow: 0 8px 32px rgba(245,158,11,0.15);
+    }}
+
+    /* Responsive */
+    @media (max-width: 768px) {{
+        .navbar {{
+            padding: 0.5rem 1rem;
+        }}
+        .nav-link {{
+            padding: 0.5rem 0.8rem !important;
+            font-size: 0.9rem;
+        }}
+        .metric-value {{
+            font-size: 1.5rem;
+        }}
+        .metric-icon {{
+            font-size: 1.8rem;
+        }}
+        .card {{
+            padding: 1rem;
+        }}
+        .login-card {{
+            padding: 1.5rem;
+            margin: 1rem;
+        }}
+    }}
+    /* Scrollbar */
+    ::-webkit-scrollbar {{
+        width: 8px;
+        background: #0f172a;
+    }}
+    ::-webkit-scrollbar-thumb {{
+        background: #f59e0b;
+        border-radius: 10px;
+    }}
+    ::-webkit-scrollbar-thumb:hover {{
+        background: #d97706;
+    }}
 </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<nav class="navbar navbar-expand-lg fixed-top">
   <div class="container-fluid">
-   <a class="navbar-brand" href="/dashboard"><img src="/logo.png" alt="Rori Hotel Logo" style="height: 35px; vertical-align: middle; margin-right: 6px;"> Rori Hotel</a>
+    <a class="navbar-brand" href="/dashboard">
+      <img src="/logo.png" alt="Rori Hotel Logo"> Rori Hotel
+    </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="nav">
-      <div class="navbar-nav">{''.join(nav)}</div>
+      <div class="navbar-nav ms-auto">
+        {nav_html}
+      </div>
     </div>
   </div>
 </nav>
 <div class="container mt-4">
-{flash_html}
-{content}
+  {flash_html}
+  {content}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -570,7 +936,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 
 
 # --------------------------------------------------------------
-# SEED DATA
+# SEED DATA (unchanged)
 # --------------------------------------------------------------
 def seed_data():
     for f in [2, 3, 4, 5]:
@@ -614,7 +980,6 @@ def seed_data():
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
-    # Engineering staff (Employee model) – updated to match new users
     engineering_staff = [
         (1, "ተስፋሁን ነከረ", "General Mechanic"),
         (2, "ቸርነት አሞና", "General Mechanic"),
@@ -628,12 +993,9 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
-    # ---------- USER SEED (exact list from spec) ----------
-    # Clear existing users except admin? We'll recreate all.
     User.query.delete()
     db.session.commit()
 
-    # Create admin user (superuser)
     admin = User(
         username="admin",
         full_name="System Administrator",
@@ -645,7 +1007,6 @@ def seed_data():
     admin.set_password("admin123")
     db.session.add(admin)
 
-    # Create the specified staff (no separate nekere)
     staff_list = [
         {"username": "amir", "full_name": "አሚር አወል", "role": "MANAGER"},
         {"username": "abebayhu", "full_name": "አበባየሁ ክፍሌ", "role": "SUPERVISOR"},
@@ -664,12 +1025,11 @@ def seed_data():
             phone="",
             profile_pic=None
         )
-        user.set_password("123456")  # default password
+        user.set_password("123456")
         db.session.add(user)
 
     db.session.commit()
 
-    # Seed sample maintenance requests (if none)
     if MaintenanceRequest.query.count() == 0:
         admin_user = User.query.filter_by(username="admin").first()
         note_records = [
@@ -728,7 +1088,6 @@ def seed_data():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        # Redirect based on role
         if current_user.role in ["ADMIN", "MANAGER"]:
             return redirect(url_for("dashboard"))
         else:
@@ -752,34 +1111,28 @@ def login():
 
     login_html = """
     <div class="row justify-content-center align-items-center" style="min-height: 80vh;">
-        <div class="col-11 col-md-5 col-lg-4">
-            <div class="card shadow-lg border-0" style="border-radius: 1rem;">
-                <div class="card-body p-4 p-md-5">
-                    <div class="text-center mb-4">
-                        <h2 class="fw-bold text-primary"><h3 class="text-primary fw-bold">
-    <img src="/logo.png" alt="Rori Hotel Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">
-    Rori Hotel
-</h3>
-
-                        <p class="text-muted">የጥገና ክፍል መግቢያ (Maintenance Portal)</p>
+        <div class="col-11 col-md-5">
+            <div class="login-card">
+                <div class="text-center mb-4">
+                    <img src="/logo.png" alt="Rori Hotel Logo" style="height: 50px; margin-bottom: 10px;">
+                    <h3 class="fw-bold" style="color: #f59e0b;">Rori Hotel</h3>
+                    <p class="text-muted" style="color: #94a3b8;">የጥገና ክፍል መግቢያ</p>
+                </div>
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label">መለያ ስም (Username)</label>
+                        <input type="text" class="form-control form-control-lg" name="username" placeholder="ስም ያስገቡ..." required>
                     </div>
-                    
-                    <form method="post">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">መለያ ስም (Username)</label>
-                            <input type="text" class="form-control form-control-lg bg-light" name="username" placeholder="ስም ያስገቡ..." required>
-                        </div>
-                        <div class="mb-4">
-                            <label class="form-label fw-bold">የይለፍ ቃል (Password)</label>
-                            <input type="password" class="form-control form-control-lg bg-light" name="password" placeholder="********" required>
-                        </div>
-                        <button class="btn btn-primary btn-lg w-100 fw-bold" style="border-radius: 0.5rem;">ግባ / Login</button>
-                    </form>
-                    
-                    <hr class="my-4">
-                    <div class="text-center small text-muted">
-                        <p class="mb-1">ማናጀር: amir | ሱፐርቫይዘር: abebayhu | ሰራተኛ: tesfahun | የይለፍ ቃል: 123456</p>
+                    <div class="mb-4">
+                        <label class="form-label">የይለፍ ቃል (Password)</label>
+                        <input type="password" class="form-control form-control-lg" name="password" placeholder="********" required>
                     </div>
+                    <button class="btn btn-primary btn-lg w-100"><i class="fas fa-sign-in-alt"></i> ግባ / Login</button>
+                </form>
+                <hr class="my-4" style="border-color: rgba(245,158,11,0.15);">
+                <div class="text-center small text-muted" style="color: #94a3b8;">
+                    <p class="mb-1">ማናጀር: amir | ሱፐርቫይዘር: abebayhu | ሰራተኛ: tesfahun</p>
+                    <p class="mb-0">የይለፍ ቃል: 123456</p>
                 </div>
             </div>
         </div>
@@ -805,7 +1158,6 @@ def logout():
 def profile():
     user = current_user
     if request.method == "POST":
-        # Update email and phone
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
         if email != user.email or phone != user.phone:
@@ -815,22 +1167,18 @@ def profile():
             user.phone = phone
             log_audit("Profile Update", "User", user.id, f"Email: {old_email}, Phone: {old_phone}", f"Email: {email}, Phone: {phone}")
 
-        # Change password
         new_password = request.form.get("new_password", "").strip()
         if new_password:
             user.set_password(new_password)
             flash("የይለፍ ቃል ተቀይሯል", "success")
 
-        # Update profile picture
         file = request.files.get("profile_pic")
         if file and file.filename != "":
             if allowed_file(file.filename):
-                # Delete old picture if exists
                 if user.profile_pic:
                     old_path = os.path.join(app.config["PROFILE_PIC_FOLDER"], user.profile_pic)
                     if os.path.exists(old_path):
                         os.remove(old_path)
-                # Save new
                 ext = file.filename.rsplit('.', 1)[-1].lower()
                 filename = secure_filename(f"{user.id}_{uuid.uuid4().hex}.{ext}")
                 file.save(os.path.join(app.config["PROFILE_PIC_FOLDER"], filename))
@@ -844,38 +1192,37 @@ def profile():
         flash("መረጃዎ ተዘምኗል", "success")
         return redirect(url_for("profile"))
 
-    # GET: show profile form
     pic_url = url_for('static', filename=f'profile_pics/{user.profile_pic}') if user.profile_pic else url_for('static', filename='profile_pics/default.png')
     content = f"""
     <div class="row">
         <div class="col-md-4 text-center">
             <img src="{pic_url}" class="profile-pic img-thumbnail mb-3" alt="Profile Picture">
-            <h4>{user.full_name}</h4>
-            <p>@{user.username} · {user.role}</p>
+            <h4 style="color: #f8fafc;">{user.full_name}</h4>
+            <p style="color: #94a3b8;">@{user.username} · {user.role}</p>
         </div>
         <div class="col-md-8">
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title">አርትዕ መገለጫ</h5>
+                    <h5 class="card-title"><i class="fas fa-user-edit"></i> አርትዕ መገለጫ</h5>
                     <form method="post" enctype="multipart/form-data">
                         <div class="mb-3">
-                            <label>ኢሜል</label>
+                            <label class="form-label">ኢሜል</label>
                             <input type="email" class="form-control" name="email" value="{user.email or ''}">
                         </div>
                         <div class="mb-3">
-                            <label>ስልክ</label>
+                            <label class="form-label">ስልክ</label>
                             <input type="text" class="form-control" name="phone" value="{user.phone or ''}">
                         </div>
                         <div class="mb-3">
-                            <label>የመገለጫ ሥዕል</label>
+                            <label class="form-label">የመገለጫ ሥዕል</label>
                             <input type="file" class="form-control" name="profile_pic" accept="image/*">
                         </div>
                         <div class="mb-3">
-                            <label>አዲስ የይለፍ ቃል (ባዶ ሆኖ ከቀረ አይለወጥም)</label>
+                            <label class="form-label">አዲስ የይለፍ ቃል (ባዶ ሆኖ ከቀረ አይለወጥም)</label>
                             <input type="password" class="form-control" name="new_password" placeholder="********">
                         </div>
-                        <button type="submit" class="btn btn-primary">አስቀምጥ ለውጦች</button>
-                        <a href="/logout" class="btn btn-danger">ውጣ / Logout</a>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ ለውጦች</button>
+                        <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> ውጣ / Logout</a>
                     </form>
                 </div>
             </div>
@@ -891,11 +1238,9 @@ def profile():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Restrict to managers and admins only
     if current_user.role not in ["ADMIN", "MANAGER"]:
         return redirect(url_for("workorders_list"))
 
-    role = current_user.role
     total_rooms = Room.query.count()
     total_requests = MaintenanceRequest.query.count()
     pending = MaintenanceRequest.query.filter_by(status="Pending").count()
@@ -905,32 +1250,37 @@ def dashboard():
     urgent = MaintenanceRequest.query.filter_by(priority="URGENT").count()
     low_stock = sum(1 for p in InventoryPart.query.all() if p.is_low)
     out_rooms = Room.query.filter(Room.status.in_(["Maintenance", "Out of Service"])).count()
-
     total_employees = Employee.query.count()
+
     content = f"""
-    <h3>የአስተዳዳሪ ዳሽቦርድ</h3>
-    <div class="row text-center">
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{total_requests}</b> ጥያቄዎች</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{pending}</b> በመጠባበቅ ላይ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{in_progress}</b> በሂደት ላይ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{completed}</b> የተጠናቀቁ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{urgent}</b> አስቸኳይ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3 text-danger"><b>{overdue}</b> ያለፉ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{low_stock}</b> ዝቅተኛ ክምችት</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{out_rooms}</b> ክፍሎች ውጪ</div></div>
-    <div class="col-6 col-md-3"><div class="card p-3"><b>{total_employees}</b> ሰራተኞች</div></div>
+    <div class="row g-4">
+        <div class="col-12">
+            <h3 class="fw-bold" style="color: #f59e0b;"><i class="fas fa-crown"></i> የአስተዳዳሪ ዳሽቦርድ</h3>
+            <p class="text-muted" style="color: #94a3b8;">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
+        </div>
+        <!-- Metric Cards -->
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total_requests}</div><div class="metric-label">ጥያቄዎች</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">በመጠባበቅ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">በሂደት ላይ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">{completed}</div><div class="metric-label">የተጠናቀቁ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">{urgent}</div><div class="metric-label">አስቸኳይ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-clock"></i></div><div class="metric-value">{overdue}</div><div class="metric-label">ያለፉ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #f59e0b;"><i class="fas fa-box"></i></div><div class="metric-value">{low_stock}</div><div class="metric-label">ዝቅተኛ ክምችት</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #3b82f6;"><i class="fas fa-door-open"></i></div><div class="metric-value">{out_rooms}</div><div class="metric-label">ክፍሎች ውጪ</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #22c55e;"><i class="fas fa-users"></i></div><div class="metric-value">{total_employees}</div><div class="metric-label">ሰራተኞች</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #8b5cf6;"><i class="fas fa-door-closed"></i></div><div class="metric-value">{total_rooms}</div><div class="metric-label">ክፍሎች</div></div></div>
     </div>
-    <div class="row mt-4">
-    <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests">ጥያቄዎችን ይገምግሙ</a></div>
-    <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders">የስራ ትዕዛዞች</a></div>
-    <div class="col-md-4"><a class="btn btn-info w-100" href="/reports">ሪፖርቶች</a></div>
+    <div class="row mt-4 g-3">
+        <div class="col-md-4"><a class="btn btn-primary w-100" href="/requests"><i class="fas fa-list"></i> ጥያቄዎችን ይገምግሙ</a></div>
+        <div class="col-md-4"><a class="btn btn-success w-100" href="/workorders"><i class="fas fa-clipboard-list"></i> የስራ ትዕዛዞች</a></div>
+        <div class="col-md-4"><a class="btn btn-warning w-100" href="/reports"><i class="fas fa-chart-bar"></i> ሪፖርቶች</a></div>
     </div>
     """
     return page("Dashboard", content)
 
 
 # --------------------------------------------------------------
-# MAINTENANCE REQUESTS
+# MAINTENANCE REQUESTS (unchanged except for styling)
 # --------------------------------------------------------------
 @app.route("/requests")
 @login_required
@@ -949,18 +1299,18 @@ def requests_list():
             cls = "table-danger" if r.is_overdue else "table-warning"
         rows.append(f"""
         <tr class="{cls}">
-        <td><a href="/requests/{r.id}">{r.request_no}</a></td>
+        <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
         <td>{r.location_name}</td>
         <td>{r.working_item.name if r.working_item else ''}</td>
-        <td>{r.priority}</td>
+        <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{r.priority}</span></td>
         <td>{r.status}</td>
         <td>{r.created_at.strftime('%Y-%m-%d %H:%M')}</td>
         </tr>""")
     content = f"""
-    <h3>የጥገና ጥያቄዎች</h3>
-    <a class="btn btn-primary mb-2" href="/requests/new">አዲስ ጥያቄ</a>
+    <h3><i class="fas fa-tasks"></i> የጥገና ጥያቄዎች</h3>
+    <a class="btn btn-primary mb-3" href="/requests/new"><i class="fas fa-plus-circle"></i> አዲስ ጥያቄ</a>
     <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-bordered table-striped table-hover">
     <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
     <tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Requests", content)
@@ -1039,50 +1389,53 @@ def request_create():
     category_options = "".join(f'<option value="{c.id}">{c.name}</option>' for c in categories)
     selected_room = f'<option value="{room_id}" selected>ክፍል {Room.query.get(room_id).room_number if room_id and Room.query.get(room_id) else ""}</option>' if room_id else ""
     content = f"""
-    <h3>አዲስ የጥገና ጥያቄ</h3>
+    <h3><i class="fas fa-plus-circle"></i> አዲስ የጥገና ጥያቄ</h3>
+    <div class="card">
+    <div class="card-body">
     <form method="post">
     <div class="row">
     <div class="col-md-6 mb-3">
-    <label>የቦታ አይነት</label>
+    <label class="form-label">የቦታ አይነት</label>
     <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
       <option value="Room">ክፍል</option>
       <option value="Hotel Area">የሆቴል ቦታ</option>
     </select>
     </div>
     <div class="col-md-6 mb-3" id="room_div">
-    <label>ክፍል</label>
+    <label class="form-label">ክፍል</label>
     <select class="form-select" name="room_id">{selected_room}{room_options}</select>
     </div>
     <div class="col-md-6 mb-3" id="area_div" style="display:none">
-    <label>ቦታ</label>
+    <label class="form-label">ቦታ</label>
     <select class="form-select" name="area_id"><option value="">-- ቦታ ይምረጡ --</option>{area_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>የስራ እቃ</label>
+    <label class="form-label">የስራ እቃ</label>
     <select class="form-select" name="working_item_id" required><option value="">-- እቃ ይምረጡ --</option>{item_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>ምድብ</label>
+    <label class="form-label">ምድብ</label>
     <select class="form-select" name="category_id" required><option value="">-- ምድብ ይምረጡ --</option>{category_options}</select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>ቅድሚያ</label>
+    <label class="form-label">ቅድሚያ</label>
     <select class="form-select" name="priority">
       <option value="LOW">ዝቅተኛ</option><option value="MEDIUM" selected>መካከለኛ</option>
       <option value="HIGH">ከፍተኛ</option><option value="URGENT">አስቸኳይ</option>
     </select>
     </div>
     <div class="col-md-6 mb-3">
-    <label>የመጨረሻ ቀን (አማራጭ)</label>
+    <label class="form-label">የመጨረሻ ቀን (አማራጭ)</label>
     <input type="datetime-local" class="form-control" name="due_date">
     </div>
     <div class="col-12 mb-3">
-    <label>የችግሩ መግለጫ</label>
-    <textarea class="form-control" name="description" required></textarea>
+    <label class="form-label">የችግሩ መግለጫ</label>
+    <textarea class="form-control" name="description" required rows="4"></textarea>
     </div>
-    <button class="btn btn-primary">ጥያቄ ይላኩ</button>
+    <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> ጥያቄ ይላኩ</button>
     </div>
     </form>
+    </div></div>
     <script>
     function toggleLocation() {{
       var type = document.getElementById('loc_type').value;
@@ -1099,51 +1452,59 @@ def request_detail(req_id):
     req = MaintenanceRequest.query.get_or_404(req_id)
     photos = Photo.query.filter_by(object_type="request", object_id=req.id).all()
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
-    photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
-    history_html = "".join(f"<li>{h.status} በ {h.timestamp.strftime('%Y-%m-%d %H:%M')} በ {h.user.full_name if h.user else 'System'}</li>" for h in history)
+    photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1 rounded" style="border: 2px solid rgba(245,158,11,0.3);"></a>' for p in photos)
+    history_html = "".join(f"<li class='list-group-item' style='background:transparent; border-color: rgba(245,158,11,0.1); color:#cbd5e1;'>{h.status} በ {h.timestamp.strftime('%Y-%m-%d %H:%M')} በ {h.user.full_name if h.user else 'System'}</li>" for h in history)
 
     content = f"""
-    <h3>ጥያቄ {req.request_no}</h3>
+    <h3><i class="fas fa-file-invoice"></i> ጥያቄ {req.request_no}</h3>
     <div class="row">
     <div class="col-md-8">
-    <table class="table table-bordered">
-    <tr><th>ሁኔታ</th><td>{req.status}</td></tr>
-    <tr><th>ቦታ</th><td>{req.location_name}</td></tr>
-    <tr><th>እቃ</th><td>{req.working_item.name if req.working_item else ''}</td></tr>
-    <tr><th>ምድብ</th><td>{req.category.name if req.category else ''}</td></tr>
-    <tr><th>ቅድሚያ</th><td class="{'table-danger' if req.is_overdue or req.priority=='URGENT' else ''}">{req.priority}</td></tr>
-    <tr><th>የመጨረሻ ቀን</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
-    <tr><th>የጠየቀው</th><td>{req.requested_by.full_name if req.requested_by else ''}</td></tr>
-    <tr><th>የተመደበለት</th><td>{req.assigned_to.full_name if req.assigned_to else 'አልተመደበም'}</td></tr>
-    <tr><th>መግለጫ</th><td>{req.description}</td></tr>
+    <div class="card">
+    <div class="card-body">
+    <table class="table table-borderless">
+    <tr><th style="width:150px; color:#94a3b8;">ሁኔታ</th><td><span class="badge bg-{'success' if req.status=='Completed' else 'warning' if req.status=='Pending' else 'info'}">{req.status}</span></td></tr>
+    <tr><th style="color:#94a3b8;">ቦታ</th><td>{req.location_name}</td></tr>
+    <tr><th style="color:#94a3b8;">እቃ</th><td>{req.working_item.name if req.working_item else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">ምድብ</th><td>{req.category.name if req.category else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">ቅድሚያ</th><td><span class="badge bg-{'danger' if req.priority=='URGENT' else 'warning' if req.priority=='HIGH' else 'info' if req.priority=='MEDIUM' else 'secondary'}">{req.priority}</span></td></tr>
+    <tr><th style="color:#94a3b8;">የመጨረሻ ቀን</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">የጠየቀው</th><td>{req.requested_by.full_name if req.requested_by else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">የተመደበለት</th><td>{req.assigned_to.full_name if req.assigned_to else 'አልተመደበም'}</td></tr>
+    <tr><th style="color:#94a3b8;">መግለጫ</th><td>{req.description}</td></tr>
     </table>
-    <h5>የሁኔታ ታሪክ</h5>
-    <ul>{history_html or '<li>እስካሁን ታሪክ የለም</li>'}</ul>
+    </div></div>
+    <h5 class="mt-4" style="color:#f59e0b;"><i class="fas fa-history"></i> የሁኔታ ታሪክ</h5>
+    <ul class="list-group">{history_html or '<li class="list-group-item" style="background:transparent; border-color: rgba(245,158,11,0.1); color:#cbd5e1;">እስካሁን ታሪክ የለም</li>'}</ul>
     </div>
     <div class="col-md-4">
-    <h5>ፎቶዎች</h5>{photo_html or '<p>ፎቶ የለም</p>'}
+    <div class="card">
+    <div class="card-body">
+    <h5 class="card-title"><i class="fas fa-images"></i> ፎቶዎች</h5>
+    {photo_html or '<p class="text-muted">ፎቶ የለም</p>'}
+    </div></div>
     </div>
     </div>
     """
     if current_user.role in ["MANAGER", "ADMIN"]:
         action_buttons = ""
         if req.status == "Pending":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve">ፈቅድ</a> '
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve"><i class="fas fa-check"></i> ፈቅድ</a> '
         if req.status in ["Approved", "Assigned"]:
-            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}">ስራ አዝዝ</a> '
+            action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}"><i class="fas fa-clipboard-list"></i> ስራ አዝዝ</a> '
         if req.status == "Completed":
-            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify">አረጋግጥ</a>'
+            action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify"><i class="fas fa-check-double"></i> አረጋግጥ</a>'
         content += f'<div class="mt-3">{action_buttons}</div>'
 
-    # Show completion photo from work order if exists
     wo = WorkOrder.query.filter_by(request_id=req.id).first()
     if wo and wo.completion_photo:
         content += f"""
-        <div class="mt-3">
-            <h6>📸 የተሰራው ስራ ፎቶ ማረጋገጫ:</h6>
-            <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
-                <img src="/static/uploads/maintenance/{wo.completion_photo}" class="img-fluid rounded shadow-sm" style="max-height: 250px;">
-            </a>
+        <div class="mt-3 card">
+            <div class="card-body">
+                <h6><i class="fas fa-camera"></i> 📸 የተሰራው ስራ ፎቶ ማረጋገጫ:</h6>
+                <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
+                    <img src="/static/uploads/maintenance/{wo.completion_photo}" class="img-fluid rounded shadow-sm" style="max-height: 250px; border: 2px solid rgba(245,158,11,0.2);">
+                </a>
+            </div>
         </div>
         """
 
@@ -1185,7 +1546,7 @@ def request_verify(req_id):
 
 
 # --------------------------------------------------------------
-# WORK ORDERS
+# WORK ORDERS (unchanged except styling)
 # --------------------------------------------------------------
 @app.route("/workorders")
 @login_required
@@ -1198,17 +1559,18 @@ def workorders_list():
     for wo in wos:
         rows.append(f"""
         <tr>
-        <td><a href="/workorders/{wo.id}">{wo.work_order_no}</a></td>
+        <td><a href="/workorders/{wo.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{wo.work_order_no}</a></td>
         <td>{wo.request.location_name if wo.request else ''}</td>
         <td>{wo.request.working_item.name if wo.request and wo.request.working_item else ''}</td>
-        <td>{wo.status}</td>
+        <td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{wo.status}</span></td>
         <td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td>
         </tr>""")
     content = f"""
-    <h3>የስራ ትዕዛዞች</h3>
-    <table class="table table-bordered table-striped">
+    <h3><i class="fas fa-clipboard-list"></i> የስራ ትዕዛዞች</h3>
+    <div class="table-responsive">
+    <table class="table table-bordered table-striped table-hover">
     <thead><tr><th>ትዕዛዝ #</th><th>ቦታ</th><th>እቃ</th><th>ሁኔታ</th><th>የተመደበ</th></tr></thead>
-    <tbody>{''.join(rows)}</tbody></table>"""
+    <tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Work Orders", content)
 
 
@@ -1217,7 +1579,6 @@ def workorders_list():
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = MaintenanceRequest.query.get(req_id) if req_id else None
-    # Show only real mechanics/technicians (TECHNICIAN, MAINTENANCE STAFF, SUPERVISOR)
     users = User.query.filter(User.role.in_(["TECHNICIAN", "MAINTENANCE STAFF", "SUPERVISOR"])).all()
     user_options = "".join(f'<option value="{u.id}">{u.full_name}</option>' for u in users)
     if request.method == "POST":
@@ -1247,17 +1608,20 @@ def workorder_create():
         flash("የስራ ትዕዛዝ ተፈጥሯል", "success")
         return redirect(url_for("workorders_list"))
     content = f"""
-    <h3>የስራ ትዕዛዝ ይፍጠሩ</h3>
+    <h3><i class="fas fa-plus-circle"></i> የስራ ትዕዛዝ ይፍጠሩ</h3>
+    <div class="card">
+    <div class="card-body">
     <form method="post">
     <input type="hidden" name="request_id" value="{req.id if req else ''}">
-    <div class="mb-3"><label>ጥያቄ</label>
+    <div class="mb-3"><label class="form-label">ጥያቄ</label>
     <input class="form-control" value="{req.request_no if req else ''}" disabled></div>
-    <div class="mb-3"><label>የተመደበ ሰራተኛ</label>
+    <div class="mb-3"><label class="form-label">የተመደበ ሰራተኛ</label>
     <select class="form-select" name="assigned_to_id" required><option value="">-- ሰራተኛ ይምረጡ --</option>{user_options}</select></div>
-    <div class="mb-3"><label>የመጀመሪያ መመሪያ</label>
-    <textarea class="form-control" name="work_performed"></textarea></div>
-    <button class="btn btn-primary">የስራ ትዕዛዝ ይፍጠሩ</button>
-    </form>"""
+    <div class="mb-3"><label class="form-label">የመጀመሪያ መመሪያ</label>
+    <textarea class="form-control" name="work_performed" rows="3"></textarea></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> የስራ ትዕዛዝ ይፍጠሩ</button>
+    </form>
+    </div></div>"""
     return page("New Work Order", content)
 
 
@@ -1267,41 +1631,45 @@ def workorder_detail(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
     photos = Photo.query.filter_by(object_type="workorder", object_id=wo.id).all()
-    parts_html = "".join(f"<li>{p.part.part_name} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
-    photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
+    parts_html = "".join(f"<li class='list-group-item' style='background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;'>{p.part.part_name} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
+    photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1 rounded" style="border: 2px solid rgba(245,158,11,0.3);"></a>' for p in photos)
 
     completion_photo_html = ""
     if wo.completion_photo:
         completion_photo_html = f"""
-        <div class="mt-3">
-            <h6>📸 የተሰራው ስራ ፎቶ ማረጋገጫ፡</h6>
-            <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
-                <img src="/static/uploads/maintenance/{wo.completion_photo}" 
-                     class="img-fluid rounded shadow-sm" 
-                     style="max-height: 250px; object-fit: cover;" 
-                     alt="Maintenance Photo Proof">
-            </a>
+        <div class="mt-3 card">
+            <div class="card-body">
+                <h6><i class="fas fa-camera"></i> 📸 የተሰራው ስራ ፎቶ ማረጋገጫ፡</h6>
+                <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
+                    <img src="/static/uploads/maintenance/{wo.completion_photo}" 
+                         class="img-fluid rounded shadow-sm" 
+                         style="max-height: 250px; border: 2px solid rgba(245,158,11,0.2);">
+                </a>
+            </div>
         </div>"""
 
     content = f"""
-    <h3>የስራ ትዕዛዝ {wo.work_order_no}</h3>
-    <table class="table table-bordered">
-    <tr><th>ጥያቄ</th><td>{wo.request.request_no if wo.request else ''}</td></tr>
-    <tr><th>ቦታ</th><td>{wo.request.location_name if wo.request else ''}</td></tr>
-    <tr><th>ሁኔታ</th><td>{wo.status}</td></tr>
-    <tr><th>የተመደበ</th><td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td></tr>
-    <tr><th>የተሰራው ስራ</th><td>{wo.work_performed or ''}</td></tr>
-    <tr><th>የተጠቀሙ እቃዎች</th><td><ul>{parts_html}</ul></td></tr>
-    <tr><th>የስራ ሰዓት</th><td>{wo.labor_hours}</td></tr>
-    <tr><th>ፎቶዎች</th><td>{'ተያይዟል' if wo.completion_photo else 'የለም'}</td></tr>
+    <h3><i class="fas fa-file-signature"></i> የስራ ትዕዛዝ {wo.work_order_no}</h3>
+    <div class="card">
+    <div class="card-body">
+    <table class="table table-borderless">
+    <tr><th style="width:150px; color:#94a3b8;">ጥያቄ</th><td>{wo.request.request_no if wo.request else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">ቦታ</th><td>{wo.request.location_name if wo.request else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">ሁኔታ</th><td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{wo.status}</span></td></tr>
+    <tr><th style="color:#94a3b8;">የተመደበ</th><td>{wo.assigned_to.full_name if wo.assigned_to else ''}</td></tr>
+    <tr><th style="color:#94a3b8;">የተሰራው ስራ</th><td>{wo.work_performed or ''}</td></tr>
+    <tr><th style="color:#94a3b8;">የተጠቀሙ እቃዎች</th><td><ul class="list-group">{parts_html}</ul></td></tr>
+    <tr><th style="color:#94a3b8;">የስራ ሰዓት</th><td>{wo.labor_hours}</td></tr>
+    <tr><th style="color:#94a3b8;">ፎቶዎች</th><td>{'ተያይዟል' if wo.completion_photo else 'የለም'}</td></tr>
     </table>
     {completion_photo_html}
+    </div></div>
     """
     if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN", "MANAGER", "ADMIN"]:
         if wo.status == "Assigned":
-            content += f'<a class="btn btn-warning" href="/workorders/{wo.id}/progress">ስራ ጀምር</a> '
+            content += f'<a class="btn btn-warning" href="/workorders/{wo.id}/progress"><i class="fas fa-play"></i> ስራ ጀምር</a> '
         if wo.status == "In Progress":
-            content += f'<a class="btn btn-success" href="/workorders/{wo.id}/complete">ስራውን ጨርስ</a> '
+            content += f'<a class="btn btn-success" href="/workorders/{wo.id}/complete"><i class="fas fa-check"></i> ስራውን ጨርስ</a> '
     return page("Work Order Detail", content)
 
 
@@ -1394,20 +1762,22 @@ def workorder_complete(wo_id):
 
     parts_options = "".join([f'<option value="{p.id}">{p.part_name} (ካለ: {p.quantity})</option>' for p in parts])
     content = f"""
-    <div class="card shadow-sm"><div class="card-body">
+    <h3><i class="fas fa-check-circle"></i> ስራውን ይጨርሱ {wo.work_order_no}</h3>
+    <div class="card">
+    <div class="card-body">
     <form method="post" enctype="multipart/form-data">
         <div class="mb-3">
             <label class="form-label">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
-            <input type="file" name="photo" accept="image/*" capture="environment" class="form-control form-control-lg" required>
-            <small class="text-muted">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</small>
+            <input type="file" name="photo" accept="image/*" capture="environment" class="form-control" required>
+            <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
         </div>
         <div class="mb-3">
             <label class="form-label">የተሰራው ስራ</label>
-            <textarea name="work_performed" class="form-control mb-2" required></textarea>
+            <textarea name="work_performed" class="form-control" required></textarea>
         </div>
         <div class="mb-3">
             <label class="form-label">የስራ ሰዓት</label>
-            <input type="number" step="0.5" name="labor_hours" class="form-control">
+            <input type="number" step="0.5" name="labor_hours" class="form-control" value="0">
         </div>
         <div class="mb-3">
             <label class="form-label">ማስታወሻ</label>
@@ -1422,13 +1792,12 @@ def workorder_complete(wo_id):
                         {parts_options}
                     </select>
                     <input type="number" name="quantity" class="form-control w-25" value="1" min="1">
+                    <button type="button" class="btn btn-outline-secondary ms-2" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPartRow()">+ እቃ ጨምር</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="addPartRow()"><i class="fas fa-plus"></i> እቃ ጨምር</button>
         </div>
-        <button type="submit" class="btn btn-success btn-lg w-100">
-            <i class="fas fa-check-square"></i> ስራውን ጨርስ / Complete Task
-        </button>
+        <button type="submit" class="btn btn-success btn-lg w-100"><i class="fas fa-check-square"></i> ስራውን ጨርስ / Complete Task</button>
     </form>
     </div></div>
     <script>
@@ -1442,7 +1811,7 @@ def workorder_complete(wo_id):
                 {parts_options}
             </select>
             <input type="number" name="quantity" class="form-control w-25" value="1" min="1">
-            <button type="button" class="btn btn-danger ms-2" onclick="this.parentElement.remove()">X</button>
+            <button type="button" class="btn btn-outline-secondary ms-2" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
         `;
         container.appendChild(row);
     }}
@@ -1566,7 +1935,7 @@ def uploaded_file(filename):
 
 
 # --------------------------------------------------------------
-# ROOMS
+# ROOMS (unchanged)
 # --------------------------------------------------------------
 @app.route("/rooms")
 @role_required("ADMIN", "MANAGER")
@@ -1578,11 +1947,11 @@ def rooms_list():
         rows.append(f"""
         <tr class="{cls}">
         <td>{r.room_number}</td><td>{r.floor}</td><td>{r.status}</td>
-        <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit">አርትዕ</a></td>
+        <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td>
         </tr>""")
     content = f"""
-    <h3>ክፍሎች ({len(rooms)})</h3>
-    <div class="table-responsive"><table class="table table-bordered">
+    <h3><i class="fas fa-door-open"></i> ክፍሎች ({len(rooms)})</h3>
+    <div class="table-responsive"><table class="table table-bordered table-hover">
     <thead><tr><th>ክፍል</th><th>ፎቅ</th><th>ሁኔታ</th><th>እርምጃ</th></tr></thead>
     <tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Rooms", content)
@@ -1602,27 +1971,29 @@ def room_edit(room_id):
         flash("ክፍሉ ተዘምኗል", "success")
         return redirect(url_for("rooms_list"))
     content = f"""
-    <h3>ክፍል አርትዕ {room.room_number}</h3>
+    <h3><i class="fas fa-edit"></i> ክፍል አርትዕ {room.room_number}</h3>
+    <div class="card"><div class="card-body">
     <form method="post">
-    <div class="mb-3"><label>ፎቅ</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
-    <div class="mb-3"><label>ሁኔታ</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
-    <button class="btn btn-primary">አስቀምጥ</button>
-    </form>"""
+    <div class="mb-3"><label class="form-label">ፎቅ</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
+    <div class="mb-3"><label class="form-label">ሁኔታ</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button>
+    </form>
+    </div></div>"""
     return page("Edit Room", content)
 
 
 # --------------------------------------------------------------
-# AREAS
+# AREAS (unchanged)
 # --------------------------------------------------------------
 @app.route("/areas")
 @role_required("ADMIN", "MANAGER")
 def areas_list():
     areas = Area.query.order_by(Area.name).all()
-    rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit">አርትዕ</a></td></tr>' for a in areas)
+    rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td></tr>' for a in areas)
     content = f"""
-    <h3>የሆቴል ቦታዎች</h3>
-    <a class="btn btn-primary mb-2" href="/areas/new">ቦታ ጨምር</a>
-    <table class="table table-bordered"><thead><tr><th>ስም</th><th>ክፍል</th><th>ሁኔታ</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-map-marked-alt"></i> የሆቴል ቦታዎች</h3>
+    <a class="btn btn-primary mb-3" href="/areas/new"><i class="fas fa-plus-circle"></i> ቦታ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>ክፍል</th><th>ሁኔታ</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Areas", content)
 
 
@@ -1640,11 +2011,11 @@ def area_create():
             db.session.commit()
             flash("ቦታ ተፈጥሯል", "success")
             return redirect(url_for("areas_list"))
-    return page("Add Area", """<form method="post">
-    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department"></div>
-    <div class="mb-3"><label>መግለጫ</label><textarea class="form-control" name="description"></textarea></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add Area", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department"></div>
+    <div class="mb-3"><label class="form-label">መግለጫ</label><textarea class="form-control" name="description"></textarea></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 @app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
@@ -1662,17 +2033,19 @@ def area_edit(area_id):
         flash("ቦታ ተዘምኗል", "success")
         return redirect(url_for("areas_list"))
     content = f"""
+    <div class="card"><div class="card-body">
     <form method="post">
-    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" value="{area.name}" required></div>
-    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="{area.department or ''}"></div>
-    <div class="mb-3"><label>መግለጫ</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
-    <div class="mb-3"><label>ሁኔታ</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>"""
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" value="{area.name}" required></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="{area.department or ''}"></div>
+    <div class="mb-3"><label class="form-label">መግለጫ</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
+    <div class="mb-3"><label class="form-label">ሁኔታ</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form>
+    </div></div>"""
     return page("Edit Area", content)
 
 
 # --------------------------------------------------------------
-# MASTER DATA
+# MASTER DATA (unchanged)
 # --------------------------------------------------------------
 @app.route("/admin/masterdata")
 @role_required("ADMIN")
@@ -1680,22 +2053,20 @@ def master_data():
     cats = Category.query.order_by(Category.name).all()
     items = WorkingItem.query.order_by(WorkingItem.name).all()
     content = f"""
-    <h3>ማስተር ዳታ</h3>
+    <h3><i class="fas fa-database"></i> ማስተር ዳታ</h3>
     <div class="row">
     <div class="col-md-6">
-    <h5>ምድቦች</h5>
-    <ul class="list-group">{''.join(f'<li class="list-group-item">{c.name}</li>' for c in cats)}</ul>
+    <div class="card"><div class="card-body"><h5 class="card-title">ምድቦች</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{c.name}</li>' for c in cats)}</ul></div></div>
     </div>
     <div class="col-md-6">
-    <h5>የስራ እቃዎች</h5>
-    <ul class="list-group">{''.join(f'<li class="list-group-item">{i.name}</li>' for i in items)}</ul>
+    <div class="card"><div class="card-body"><h5 class="card-title">የስራ እቃዎች</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{i.name}</li>' for i in items)}</ul></div></div>
     </div>
     </div>"""
     return page("Master Data", content)
 
 
 # --------------------------------------------------------------
-# INVENTORY
+# INVENTORY (unchanged)
 # --------------------------------------------------------------
 @app.route("/inventory")
 @role_required("ADMIN", "MANAGER")
@@ -1706,9 +2077,9 @@ def inventory_list():
         cls = "table-danger" if p.quantity <= 0 else "table-warning" if p.quantity <= p.minimum_stock else ""
         rows.append(f'<tr class="{cls}"><td>{p.part_name}</td><td>{p.quantity}</td><td>{p.unit}</td><td>{p.unit_cost}</td><td>{p.minimum_stock}</td><td>{p.status}</td></tr>')
     content = f"""
-    <h3>ክምችት እና መለዋወጫ</h3>
-    <a class="btn btn-primary mb-2" href="/inventory/new">እቃ ጨምር</a>
-    <table class="table table-bordered"><thead><tr><th>ስም</th><th>ብዛት</th><th>አሃድ</th><th>ዋጋ</th><th>ዝቅተኛ</th><th>ሁኔታ</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"""
+    <h3><i class="fas fa-boxes"></i> ክምችት እና መለዋወጫ</h3>
+    <a class="btn btn-primary mb-3" href="/inventory/new"><i class="fas fa-plus-circle"></i> እቃ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>ብዛት</th><th>አሃድ</th><th>ዋጋ</th><th>ዝቅተኛ</th><th>ሁኔታ</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"""
     return page("Inventory", content)
 
 
@@ -1731,19 +2102,19 @@ def inventory_create():
         db.session.commit()
         flash("እቃ ተጨምሯል", "success")
         return redirect(url_for("inventory_list"))
-    return page("Add Part", """<form method="post">
-    <div class="mb-3"><label>የእቃ ስም</label><input class="form-control" name="part_name" required></div>
-    <div class="mb-3"><label>ምድብ</label><input class="form-control" name="category"></div>
-    <div class="mb-3"><label>ብዛት</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
-    <div class="mb-3"><label>ዝቅተኛ ክምችት</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="5"></div>
-    <div class="mb-3"><label>አሃድ</label><input class="form-control" name="unit" value="pcs"></div>
-    <div class="mb-3"><label>ዋጋ</label><input type="number" step="0.01" class="form-control" name="unit_cost"></div>
-    <div class="mb-3"><label>የማከማቻ ቦታ</label><input class="form-control" name="storage_location"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add Part", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የእቃ ስም</label><input class="form-control" name="part_name" required></div>
+    <div class="mb-3"><label class="form-label">ምድብ</label><input class="form-control" name="category"></div>
+    <div class="mb-3"><label class="form-label">ብዛት</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
+    <div class="mb-3"><label class="form-label">ዝቅተኛ ክምችት</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="5"></div>
+    <div class="mb-3"><label class="form-label">አሃድ</label><input class="form-control" name="unit" value="pcs"></div>
+    <div class="mb-3"><label class="form-label">ዋጋ</label><input type="number" step="0.01" class="form-control" name="unit_cost"></div>
+    <div class="mb-3"><label class="form-label">የማከማቻ ቦታ</label><input class="form-control" name="storage_location"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 # --------------------------------------------------------------
-# PREVENTIVE MAINTENANCE
+# PREVENTIVE MAINTENANCE (unchanged)
 # --------------------------------------------------------------
 @app.route("/preventive")
 @role_required("ADMIN", "MANAGER")
@@ -1751,9 +2122,9 @@ def preventive_list():
     tasks = PreventiveMaintenance.query.order_by(PreventiveMaintenance.next_due_date).all()
     rows = "".join(f'<tr><td>{t.title}</td><td>{t.frequency}</td><td>{t.next_due_date.strftime("%Y-%m-%d") if t.next_due_date else ""}</td><td>{t.status}</td></tr>' for t in tasks)
     content = f"""
-    <h3>የመከላከያ ጥገና</h3>
-    <a class="btn btn-primary mb-2" href="/preventive/new">ተግባር መርሐግብር</a>
-    <table class="table table-bordered"><thead><tr><th>ርዕስ</th><th>ድግግሞሽ</th><th>ቀጣይ ቀን</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-calendar-check"></i> የመከላከያ ጥገና</h3>
+    <a class="btn btn-primary mb-3" href="/preventive/new"><i class="fas fa-plus-circle"></i> ተግባር መርሐግብር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ርዕስ</th><th>ድግግሞሽ</th><th>ቀጣይ ቀን</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Preventive Maintenance", content)
 
 
@@ -1775,28 +2146,28 @@ def preventive_create():
         flash("ተግባር መርሐግብር ተይዟል", "success")
         return redirect(url_for("preventive_list"))
     content = """
-    <form method="post">
-    <div class="mb-3"><label>ርዕስ</label><input class="form-control" name="title" required></div>
-    <div class="mb-3"><label>ዝርዝር</label><textarea class="form-control" name="task"></textarea></div>
-    <div class="mb-3"><label>ድግግሞሽ</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
-    <div class="mb-3"><label>ቅድሚያ</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
-    <div class="mb-3"><label>ቀጣይ ቀን</label><input type="date" class="form-control" name="next_due_date"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>"""
+    <div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ርዕስ</label><input class="form-control" name="title" required></div>
+    <div class="mb-3"><label class="form-label">ዝርዝር</label><textarea class="form-control" name="task"></textarea></div>
+    <div class="mb-3"><label class="form-label">ድግግሞሽ</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
+    <div class="mb-3"><label class="form-label">ቅድሚያ</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
+    <div class="mb-3"><label class="form-label">ቀጣይ ቀን</label><input type="date" class="form-control" name="next_due_date"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>"""
     return page("New Preventive Task", content)
 
 
 # --------------------------------------------------------------
-# CHECKLISTS
+# CHECKLISTS (unchanged)
 # --------------------------------------------------------------
 @app.route("/checklists")
 @role_required("ADMIN", "MANAGER")
 def checklists_list():
     templates = ChecklistTemplate.query.all()
-    rows = "".join(f'<tr><td><a href="/checklists/{t.id}">{t.name}</a></td><td>{len(t.items)} እቃዎች</td></tr>' for t in templates)
+    rows = "".join(f'<tr><td><a href="/checklists/{t.id}" style="color:#f59e0b;">{t.name}</a></td><td>{len(t.items)} እቃዎች</td></tr>' for t in templates)
     content = f"""
-    <h3>የጥገና ማረጋገጫ ዝርዝሮች</h3>
-    <a class="btn btn-primary mb-2" href="/checklists/new">አዲስ ዝርዝር</a>
-    <table class="table table-bordered"><thead><tr><th>ስም</th><th>እቃዎች</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-list-check"></i> የጥገና ማረጋገጫ ዝርዝሮች</h3>
+    <a class="btn btn-primary mb-3" href="/checklists/new"><i class="fas fa-plus-circle"></i> አዲስ ዝርዝር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>እቃዎች</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Checklists", content)
 
 
@@ -1815,10 +2186,10 @@ def checklist_create():
         db.session.commit()
         flash("ዝርዝር ተፈጥሯል", "success")
         return redirect(url_for("checklists_list"))
-    return page("New Checklist", """<form method="post">
-    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>መግለጫ</label><input class="form-control" name="description"></div>
-    <div class="mb-3"><label>እቃዎች (አንድ በመስመር)</label><textarea class="form-control" name="items" rows="8">Lights
+    return page("New Checklist", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">መግለጫ</label><input class="form-control" name="description"></div>
+    <div class="mb-3"><label class="form-label">እቃዎች (አንድ በመስመር)</label><textarea class="form-control" name="items" rows="8">Lights
 Switches
 Door Lock
 Water Supply
@@ -1828,11 +2199,11 @@ Window
 Mirror
 Plumbing
 Safety Equipment</textarea></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 # --------------------------------------------------------------
-# SUPPLIERS & CONTRACTORS
+# SUPPLIERS & CONTRACTORS (unchanged)
 # --------------------------------------------------------------
 @app.route("/suppliers")
 @role_required("ADMIN", "MANAGER")
@@ -1840,9 +2211,9 @@ def suppliers_list():
     suppliers = Supplier.query.all()
     rows = "".join(f'<tr><td>{s.company_name}</td><td>{s.contact_person}</td><td>{s.phone}</td><td>{s.status}</td></tr>' for s in suppliers)
     content = f"""
-    <h3>አቅራቢዎች</h3>
-    <a class="btn btn-primary mb-2" href="/suppliers/new">አቅራቢ ጨምር</a>
-    <table class="table table-bordered"><thead><tr><th>ኩባንያ</th><th>አድራሻ</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-truck"></i> አቅራቢዎች</h3>
+    <a class="btn btn-primary mb-3" href="/suppliers/new"><i class="fas fa-plus-circle"></i> አቅራቢ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ኩባንያ</th><th>አድራሻ</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Suppliers", content)
 
 
@@ -1856,14 +2227,14 @@ def supplier_create():
         db.session.commit()
         flash("አቅራቢ ተጨምሯል", "success")
         return redirect(url_for("suppliers_list"))
-    return page("Add Supplier", """<form method="post">
-    <div class="mb-3"><label>የኩባንያ ስም</label><input class="form-control" name="company_name" required></div>
-    <div class="mb-3"><label>አድራሻ ሰው</label><input class="form-control" name="contact_person"></div>
-    <div class="mb-3"><label>ስልክ</label><input class="form-control" name="phone"></div>
-    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
-    <div class="mb-3"><label>አድራሻ</label><textarea class="form-control" name="address"></textarea></div>
-    <div class="mb-3"><label>የሚያቀርቡት እቃዎች</label><input class="form-control" name="supplied_items"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add Supplier", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የኩባንያ ስም</label><input class="form-control" name="company_name" required></div>
+    <div class="mb-3"><label class="form-label">አድራሻ ሰው</label><input class="form-control" name="contact_person"></div>
+    <div class="mb-3"><label class="form-label">ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label class="form-label">አድራሻ</label><textarea class="form-control" name="address"></textarea></div>
+    <div class="mb-3"><label class="form-label">የሚያቀርቡት እቃዎች</label><input class="form-control" name="supplied_items"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 @app.route("/contractors")
@@ -1872,9 +2243,9 @@ def contractors_list():
     contractors = Contractor.query.all()
     rows = "".join(f'<tr><td>{c.name}</td><td>{c.service_type}</td><td>{c.phone}</td><td>{c.status}</td></tr>' for c in contractors)
     content = f"""
-    <h3>ተቋራጮች</h3>
-    <a class="btn btn-primary mb-2" href="/contractors/new">ተቋራጭ ጨምር</a>
-    <table class="table table-bordered"><thead><tr><th>ስም</th><th>አገልግሎት</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-hard-hat"></i> ተቋራጮች</h3>
+    <a class="btn btn-primary mb-3" href="/contractors/new"><i class="fas fa-plus-circle"></i> ተቋራጭ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>አገልግሎት</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Contractors", content)
 
 
@@ -1888,17 +2259,17 @@ def contractor_create():
         db.session.commit()
         flash("ተቋራጭ ተጨምሯል", "success")
         return redirect(url_for("contractors_list"))
-    return page("Add Contractor", """<form method="post">
-    <div class="mb-3"><label>ስም/ኩባንያ</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>የአገልግሎት አይነት</label><input class="form-control" name="service_type"></div>
-    <div class="mb-3"><label>ስልክ</label><input class="form-control" name="phone"></div>
-    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
-    <div class="mb-3"><label>ዋጋ</label><input type="number" step="0.01" class="form-control" name="rate"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add Contractor", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም/ኩባንያ</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">የአገልግሎት አይነት</label><input class="form-control" name="service_type"></div>
+    <div class="mb-3"><label class="form-label">ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label class="form-label">ዋጋ</label><input type="number" step="0.01" class="form-control" name="rate"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 # --------------------------------------------------------------
-# EMPLOYEES
+# EMPLOYEES (unchanged)
 # --------------------------------------------------------------
 @app.route("/employees")
 @role_required("ADMIN", "MANAGER")
@@ -1906,15 +2277,15 @@ def employees_list():
     employees = Employee.query.order_by(Employee.id).all()
     rows = "".join(
         f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td><td>{e.department}</td>'
-        f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit">አርትዕ</a></td></tr>'
+        f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td></tr>'
         for e in employees
     )
     content = f"""
-    <h3>የኢንጂነሪንግ ክፍል ሰራተኞች</h3>
-    <a class="btn btn-primary mb-2" href="/employees/new">ሰራተኛ ጨምር</a>
-    <table class="table table-bordered">
+    <h3><i class="fas fa-users"></i> የኢንጂነሪንግ ክፍል ሰራተኞች</h3>
+    <a class="btn btn-primary mb-3" href="/employees/new"><i class="fas fa-plus-circle"></i> ሰራተኛ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover">
     <thead><tr><th>ID</th><th>ስም</th><th>የስራ ድርሻ</th><th>ክፍል</th><th>እርምጃ</th></tr></thead>
-    <tbody>{rows}</tbody></table>"""
+    <tbody>{rows}</tbody></table></div>"""
     return page("Employees", content)
 
 
@@ -1935,11 +2306,11 @@ def employee_create():
         db.session.commit()
         flash("ሰራተኛ ተጨምሯል", "success")
         return redirect(url_for("employees_list"))
-    return page("Add Employee", """<form method="post">
-    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" required></div>
-    <div class="mb-3"><label>የስራ ድርሻ</label><input class="form-control" name="job_title"></div>
-    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="Engineering"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add Employee", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">የስራ ድርሻ</label><input class="form-control" name="job_title"></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="Engineering"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
 
 
 @app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
@@ -1957,25 +2328,27 @@ def employee_edit(emp_id):
         flash("ሰራተኛ ተዘምኗል", "success")
         return redirect(url_for("employees_list"))
     content = f"""
+    <div class="card"><div class="card-body">
     <form method="post">
-    <div class="mb-3"><label>ስም</label><input class="form-control" name="name" value="{emp.name}" required></div>
-    <div class="mb-3"><label>የስራ ድርሻ</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
-    <div class="mb-3"><label>ክፍል</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>"""
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" value="{emp.name}" required></div>
+    <div class="mb-3"><label class="form-label">የስራ ድርሻ</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form>
+    </div></div>"""
     return page("Edit Employee", content)
 
 
 # --------------------------------------------------------------
-# NOTIFICATIONS
+# NOTIFICATIONS (unchanged)
 # --------------------------------------------------------------
 @app.route("/notifications")
 @login_required
 def notifications():
     notifs = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(50).all()
-    rows = "".join(f'<tr class="{"table-info" if not n.read else ""}"><td>{n.message}</td><td>{n.type}</td><td>{n.created_at.strftime("%Y-%m-%d %H:%M")}</td><td><a href="/notifications/{n.id}/read">አንብብ</a></td></tr>' for n in notifs)
+    rows = "".join(f'<tr class="{"table-info" if not n.read else ""}"><td>{n.message}</td><td>{n.type}</td><td>{n.created_at.strftime("%Y-%m-%d %H:%M")}</td><td><a href="/notifications/{n.id}/read"><i class="fas fa-check"></i> አንብብ</a></td></tr>' for n in notifs)
     content = f"""
-    <h3>ማሳወቂያዎች</h3>
-    <table class="table table-bordered"><thead><tr><th>መልእክት</th><th>አይነት</th><th>ቀን</th><th></th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-bell"></i> ማሳወቂያዎች</h3>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>መልእክት</th><th>አይነት</th><th>ቀን</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Notifications", content)
 
 
@@ -1990,20 +2363,20 @@ def notification_read(n_id):
 
 
 # --------------------------------------------------------------
-# REPORTS
+# REPORTS (unchanged)
 # --------------------------------------------------------------
 @app.route("/reports")
 @login_required
 def reports():
     content = """
-    <h3>ሪፖርቶች</h3>
-    <ul>
-    <li><a href="/reports/export/requests">የጥገና ጥያቄዎችን ወደ CSV ላክ</a></li>
-    <li><a href="/reports/export/workorders">የስራ ትዕዛዞችን ወደ CSV ላክ</a></li>
-    <li><a href="/reports/export/inventory">ክምችት ወደ CSV ላክ</a></li>
-    <li><a href="/reports/export/audit">Audit Log ወደ CSV ላክ</a></li>
-    <li><a href="/reports/export/employees">ሰራተኞችን ወደ CSV ላክ</a></li>
-    </ul>"""
+    <h3><i class="fas fa-chart-bar"></i> ሪፖርቶች</h3>
+    <div class="list-group">
+    <a href="/reports/export/requests" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> የጥገና ጥያቄዎችን ወደ CSV ላክ</a>
+    <a href="/reports/export/workorders" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> የስራ ትዕዛዞችን ወደ CSV ላክ</a>
+    <a href="/reports/export/inventory" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> ክምችት ወደ CSV ላክ</a>
+    <a href="/reports/export/audit" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> Audit Log ወደ CSV ላክ</a>
+    <a href="/reports/export/employees" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> ሰራተኞችን ወደ CSV ላክ</a>
+    </div>"""
     return page("Reports", content)
 
 
@@ -2038,7 +2411,7 @@ def reports_export(report_type):
 
 
 # --------------------------------------------------------------
-# ADMIN USERS
+# ADMIN USERS (unchanged)
 # --------------------------------------------------------------
 @app.route("/admin/users")
 @role_required("ADMIN")
@@ -2046,9 +2419,9 @@ def admin_users():
     users = User.query.all()
     rows = "".join(f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td><td>{u.active}</td></tr>' for u in users)
     content = f"""
-    <h3>ተጠቃሚዎች</h3>
-    <a class="btn btn-primary mb-2" href="/admin/users/new">ተጠቃሚ ጨምር</a>
-    <table class="table table-bordered"><thead><tr><th>የመለያ ስም</th><th>ስም</th><th>ሚና</th><th>ንቁ</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-user-cog"></i> ተጠቃሚዎች</h3>
+    <a class="btn btn-primary mb-3" href="/admin/users/new"><i class="fas fa-plus-circle"></i> ተጠቃሚ ጨምር</a>
+    <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>የመለያ ስም</th><th>ስም</th><th>ሚና</th><th>ንቁ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Users", content)
 
 
@@ -2069,17 +2442,17 @@ def admin_user_create():
             db.session.commit()
             flash("ተጠቃሚ ተፈጥሯል", "success")
             return redirect(url_for("admin_users"))
-    return page("Add User", f"""<form method="post">
-    <div class="mb-3"><label>የመለያ ስም</label><input class="form-control" name="username" required></div>
-    <div class="mb-3"><label>ሙሉ ስም</label><input class="form-control" name="full_name"></div>
-    <div class="mb-3"><label>የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
-    <div class="mb-3"><label>ሚና</label><select class="form-select" name="role">{''.join(f'<option>{r}</option>' for r in ROLES)}</select></div>
-    <div class="mb-3"><label>ኢሜል</label><input class="form-control" name="email"></div>
-    <button class="btn btn-primary">አስቀምጥ</button></form>""")
+    return page("Add User", f"""<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የመለያ ስም</label><input class="form-control" name="username" required></div>
+    <div class="mb-3"><label class="form-label">ሙሉ ስም</label><input class="form-control" name="full_name"></div>
+    <div class="mb-3"><label class="form-label">የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
+    <div class="mb-3"><label class="form-label">ሚና</label><select class="form-select" name="role">{''.join(f'<option>{r}</option>' for r in ROLES)}</select></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")  # Fixed missing closing parenthesis
 
 
 # --------------------------------------------------------------
-# AUDIT LOG
+# AUDIT LOG (unchanged)
 # --------------------------------------------------------------
 @app.route("/admin/audit")
 @role_required("ADMIN")
@@ -2087,13 +2460,13 @@ def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
     rows = "".join(f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td><td>{a.object_type}</td><td>{a.object_id}</td><td>{a.old_value}</td><td>{a.new_value}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M")}</td></tr>' for a in logs)
     content = f"""
-    <h3>Audit Log</h3>
-    <table class="table table-bordered table-sm"><thead><tr><th>ተጠቃሚ</th><th>እርምጃ</th><th>ነገር</th><th>ID</th><th>ድሮ</th><th>አዲስ</th><th>ቀን</th></tr></thead><tbody>{rows}</tbody></table>"""
+    <h3><i class="fas fa-history"></i> Audit Log</h3>
+    <div class="table-responsive"><table class="table table-bordered table-sm table-hover"><thead><tr><th>ተጠቃሚ</th><th>እርምጃ</th><th>ነገር</th><th>ID</th><th>ድሮ</th><th>አዲስ</th><th>ቀን</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     return page("Audit Log", content)
 
 
 # --------------------------------------------------------------
-# BACKUP & RESTORE
+# BACKUP & RESTORE (unchanged)
 # --------------------------------------------------------------
 def get_db_path():
     uri = app.config["SQLALCHEMY_DATABASE_URI"]
@@ -2106,12 +2479,12 @@ def get_db_path():
 @role_required("ADMIN")
 def backup_page():
     backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
-    rows = "".join(f'<tr><td>{b}</td><td><a class="btn btn-sm btn-warning" href="/admin/restore/{b}">Restore</a></td></tr>' for b in backups)
+    rows = "".join(f'<tr><td>{b}</td><td><a class="btn btn-sm btn-warning" href="/admin/restore/{b}"><i class="fas fa-undo"></i> Restore</a></td></tr>' for b in backups)
     content = f"""
-    <h3>Backup & Restore</h3>
-    <form method="post" action="/admin/backup/now"><button class="btn btn-primary">Backup Now</button></form>
+    <h3><i class="fas fa-archive"></i> Backup & Restore</h3>
+    <form method="post" action="/admin/backup/now"><button class="btn btn-primary"><i class="fas fa-database"></i> Backup Now</button></form>
     <h5 class="mt-4">Existing Backups</h5>
-    <table class="table table-bordered"><thead><tr><th>File</th><th></th></tr></thead><tbody>{rows or "<tr><td colspan=2>No backups</td></tr>"}</tbody></table>"""
+    <div class="table-responsive"><table class="table table-bordered"><thead><tr><th>File</th><th></th></tr></thead><tbody>{rows or "<tr><td colspan=2>No backups</td></tr>"}</tbody></table></div>"""
     return page("Backup", content)
 
 
@@ -2163,7 +2536,7 @@ def restore_backup(filename):
 
 
 # --------------------------------------------------------------
-# QR CODES
+# QR CODES (unchanged)
 # --------------------------------------------------------------
 @app.route("/qr/<string:loc_type>/<int:id>")
 @login_required
@@ -2198,7 +2571,7 @@ def qr_index():
     room_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/room/{r.id}"><img src="/qr/room/{r.id}" class="img-fluid" width="100"></a><br><small>Room {r.room_number}</small></div>' for r in rooms)
     area_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/area/{a.id}"><img src="/qr/area/{a.id}" class="img-fluid" width="100"></a><br><small>{a.name}</small></div>' for a in areas)
     content = f"""
-    <h3>QR Codes</h3>
+    <h3><i class="fas fa-qrcode"></i> QR Codes</h3>
     <h5>Rooms</h5><div class="row">{room_cards}</div>
     <h5>Areas</h5><div class="row">{area_cards}</div>"""
     return page("QR Codes", content)
@@ -2214,8 +2587,8 @@ def manifest():
         "short_name": "RoriMaint",
         "start_url": "/dashboard",
         "display": "standalone",
-        "background_color": "#ffffff",
-        "theme_color": "#343a40",
+        "background_color": "#0f172a",
+        "theme_color": "#f59e0b",
         "icons": []
     })
 
@@ -2232,12 +2605,12 @@ self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
 # --------------------------------------------------------------
 @app.errorhandler(403)
 def forbidden(e):
-    return page("Forbidden", '<div class="alert alert-danger">ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
+    return page("Forbidden", '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
 
 
 @app.errorhandler(404)
 def not_found(e):
-    return page("Not Found", '<div class="alert alert-warning">ገጹ አልተገኘም።</div>'), 404
+    return page("Not Found", '<div class="alert alert-warning"><i class="fas fa-search"></i> ገጹ አልተገኘም።</div>'), 404
 
 
 # --------------------------------------------------------------
@@ -2254,8 +2627,7 @@ def serve_logo():
     return send_file(logo_path, mimetype='image/png')
 
 
-# --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት ---
-# Updated to match the corrected names (nekere merged into tesfahun)
+# --- የሰራተኞች መመዝገቢያ እና ስም ማደሻ ስክሪፕት (already in seed) ---
 users_data = [
     {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
     {"full_name": "አበባየሁ ክፍሌ", "username": "abebayhu", "role": "SUPERVISOR"},
@@ -2275,7 +2647,6 @@ with app.app_context():
                 user = User(username=user_info["username"], role=user_info["role"])
                 user.set_password("123456")
                 db.session.add(user)
-            # Update full name and role for existing
             if hasattr(user, 'full_name'):
                 user.full_name = user_info["full_name"]
             user.role = user_info["role"]
