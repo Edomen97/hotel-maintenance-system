@@ -850,6 +850,58 @@ def page(title, content):
         border-color: #f59e0b;
         color: #f59e0b;
     }}
+    /* Quick Action Buttons */
+    .btn-request {{
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        border: none;
+        color: #0f172a;
+    }}
+    .btn-request:hover {{
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        color: #0f172a;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4);
+    }}
+    .btn-workorder {{
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        border: none;
+        color: white;
+    }}
+    .btn-workorder:hover {{
+        background: linear-gradient(135deg, #4ade80, #22c55e);
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4);
+    }}
+    .btn-report {{
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        border: none;
+        color: #0f172a;
+    }}
+    .btn-report:hover {{
+        background: linear-gradient(135deg, #fde68a, #fbbf24);
+        color: #0f172a;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(251, 191, 36, 0.4);
+    }}
+    .quick-btn {{
+        font-size: 1.2rem;
+        font-weight: 700;
+        padding: 1.2rem 1.5rem;
+        border-radius: 50px !important;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        transition: all 0.25s ease;
+        width: 100%;
+        margin-bottom: 0.75rem;
+    }}
+    .quick-btn i {{
+        font-size: 2rem;
+        margin-right: 1.2rem;
+        width: 2.5rem;
+        text-align: center;
+    }}
     .form-control, .form-select {{
         background: rgba(15, 23, 42, 0.6);
         border: 1px solid rgba(245, 158, 11, 0.2);
@@ -1013,6 +1065,15 @@ def page(title, content):
         }}
         .pending-scroll {{
             max-height: 250px;
+        }}
+        .quick-btn {{
+            font-size: 1rem;
+            padding: 1rem 1.2rem;
+        }}
+        .quick-btn i {{
+            font-size: 1.5rem;
+            margin-right: 0.8rem;
+            width: 2rem;
         }}
     }}
     ::-webkit-scrollbar {{
@@ -1310,7 +1371,7 @@ def logout():
 
 
 # --------------------------------------------------------------
-# PROFILE
+# PROFILE (unchanged)
 # --------------------------------------------------------------
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
@@ -1672,7 +1733,7 @@ def public_request_form():
 
 
 # --------------------------------------------------------------
-# MANAGER / ADMIN DASHBOARD
+# MANAGER / ADMIN DASHBOARD (WITH QUICK ACTION BUTTONS)
 # --------------------------------------------------------------
 @app.route("/dashboard")
 @login_required
@@ -1776,12 +1837,36 @@ def dashboard():
         </form>
         """
 
+        # ----- Quick Action Buttons -----
+        quick_actions = """
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="d-grid gap-2">
+                    <a href="/requests" class="btn btn-request quick-btn">
+                        <i class="fas fa-list"></i> የጥገና ጥያቄዎች
+                    </a>
+                    <a href="/workorders" class="btn btn-workorder quick-btn">
+                        <i class="fas fa-clipboard-list"></i> የሥራ ትዕዛዞች
+                    </a>
+                    <a href="/reports" class="btn btn-report quick-btn">
+                        <i class="fas fa-chart-bar"></i> ሪፖርቶች
+                    </a>
+                </div>
+            </div>
+        </div>
+        """
+
         content = f"""
         <div class="row g-4">
             <div class="col-12">
                 <h3 class="fw-bold" style="color: #f59e0b;"><i class="fas fa-crown"></i> የአስተዳዳሪ ዳሽቦርድ</h3>
                 <p class="text-muted" style="color: #94a3b8;">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
             </div>
+        </div>
+
+        {quick_actions}
+
+        <div class="row g-4 mt-2">
             <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total_requests}</div><div class="metric-label">ጥያቄዎች</div></div></div>
             <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">በመጠባበቅ</div></div></div>
             <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">በሂደት ላይ</div></div></div>
@@ -1830,7 +1915,7 @@ def dashboard():
 
 
 # --------------------------------------------------------------
-# REQUESTS ROUTES
+# REQUESTS ROUTES (unchanged)
 # --------------------------------------------------------------
 @app.route("/requests")
 @login_required
@@ -2055,7 +2140,6 @@ def request_detail(req_id):
             </div>
             """
 
-        # Show completion evidence if work is completed/verified/closed
         completion_evidence = ""
         if req.status in ["Completed", "Verified", "Closed"] and req.completion_note:
             evidence_photo = ""
@@ -2235,7 +2319,7 @@ def request_close(req_id):
 
 
 # --------------------------------------------------------------
-# WORK ORDERS - ENHANCED COMPLETION FEATURE
+# WORK ORDERS (unchanged – includes completion feature)
 # --------------------------------------------------------------
 @app.route("/workorders")
 @login_required
@@ -2385,7 +2469,6 @@ def workorder_detail(wo_id):
                 </div>
             </div>"""
 
-        # Determine what actions to show
         show_start_work = False
         show_completion_form = False
         if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]:
@@ -2412,7 +2495,6 @@ def workorder_detail(wo_id):
         </div></div>
         """
 
-        # Action buttons
         if show_start_work:
             content += f'''
             <div class="mt-3">
@@ -2426,7 +2508,6 @@ def workorder_detail(wo_id):
             </div>
             '''
 
-        # Show completion details if already completed
         if wo.status == "Completed" and wo.completion_notes:
             content += f'''
             <div class="mt-3 completion-evidence">
@@ -2449,7 +2530,6 @@ def workorder_detail(wo_id):
 def workorder_start(wo_id):
     try:
         wo = WorkOrder.query.get_or_404(wo_id)
-        # Only assigned staff can start
         if current_user.id != wo.assigned_to_id:
             flash("You are not authorized to start this work.", "danger")
             return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -2475,7 +2555,6 @@ def workorder_start(wo_id):
 @role_required("MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
-    # Ensure the current user is the assigned staff
     if current_user.id != wo.assigned_to_id:
         flash("You are not authorized to complete this work order.", "danger")
         return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -2498,7 +2577,6 @@ def workorder_complete(wo_id):
                 flash("Please enter a completion note describing the work performed.", "danger")
                 return redirect(url_for("workorder_complete", wo_id=wo_id))
 
-            # Handle photo upload
             file = request.files.get("photo")
             filename = None
             if file and file.filename != "":
@@ -2512,7 +2590,6 @@ def workorder_complete(wo_id):
                     flash("Invalid file type. Please upload an image.", "danger")
                     return redirect(url_for("workorder_complete", wo_id=wo_id))
 
-            # Update work order
             wo.completion_notes = completion_note
             if filename:
                 wo.completion_photo = filename
@@ -2521,18 +2598,15 @@ def workorder_complete(wo_id):
             wo.completed_by_id = current_user.id
             wo.updated_at = datetime.utcnow()
 
-            # Update associated request
             if wo.request:
                 wo.request.status = "Completed"
                 wo.request.completed_date = datetime.utcnow()
                 wo.request.completion_note = completion_note
                 wo.request.updated_at = datetime.utcnow()
 
-            # Log status change
             log_status_change(wo.request_id, "Completed", notes=f"Work completed by {current_user.full_name}")
             log_audit("Complete Work", "WorkOrder", wo.id, "In Progress", "Completed")
 
-            # Record parts used
             part_ids = request.form.getlist("part_id")
             quantities = request.form.getlist("quantity")
             for pid, qty in zip(part_ids, quantities):
@@ -2562,16 +2636,12 @@ def workorder_complete(wo_id):
                     except:
                         pass
 
-            # Commit all changes
             db.session.commit()
 
-            # Send notifications
-            # 1. Notify the requester
             if wo.request and wo.request.requested_by_id:
                 notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed",
                              f"The maintenance work for {wo.request.location_name} has been completed by {current_user.full_name}.",
                              "Completed")
-            # 2. Notify managers
             managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
             if managers:
                 notify_users([u.id for u in managers], wo.request_id, "Maintenance Work Completed",
@@ -2587,7 +2657,6 @@ def workorder_complete(wo_id):
             flash(f"An error occurred: {str(e)}", "danger")
             return redirect(url_for("workorder_complete", wo_id=wo_id))
 
-    # GET – show the completion form
     parts_options = "".join([f'<option value="{p.id}">{p.part_name} (qty: {p.quantity})</option>' for p in parts])
     content = f"""
     <h3><i class="fas fa-check-circle"></i> Complete Work: {wo.work_order_no}</h3>
