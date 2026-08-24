@@ -532,11 +532,9 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+# ========== ROBUST SCHEMA MIGRATION ==========
 def ensure_database_schema():
-    """
-    Ensure all required columns and tables exist.
-    This is a safe migration that adds columns if missing.
-    """
+    """Safely add missing columns to maintenance_requests using PRAGMA for SQLite."""
     with app.app_context():
         try:
             # Ensure departments table exists
@@ -544,11 +542,14 @@ def ensure_database_schema():
                 db.create_all()
                 print("Created departments table")
 
-            # Ensure columns exist in maintenance_requests
-            inspector = db.inspect(db.engine)
-            columns = [c['name'] for c in inspector.get_columns('maintenance_requests')]
+            # Use PRAGMA to get column info (SQLite reliable)
+            conn = db.engine.raw_connection()
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(maintenance_requests)")
+            existing_columns = [row[1] for row in cursor.fetchall()]
+            conn.close()
 
-            # List of columns to check and their SQL
+            # Columns to add
             required_columns = {
                 'department_id': 'ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)',
                 'manager_id': 'ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)',
@@ -557,12 +558,12 @@ def ensure_database_schema():
             }
 
             for col, sql in required_columns.items():
-                if col not in columns:
+                if col not in existing_columns:
                     db.engine.execute(sql)
                     print(f"Added column {col} to maintenance_requests")
 
         except Exception as e:
-            print(f"Schema migration warning: {e}")
+            print(f"Schema migration error: {e}")
 
 
 # --------------------------------------------------------------
