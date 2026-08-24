@@ -552,58 +552,59 @@ def add_missing_columns():
 
 
 # --------------------------------------------------------------
-# PAGE FUNCTION WITH LUXURY THEME
+# PAGE FUNCTION WITH LUXURY THEME – UPDATED to use url_for
 # --------------------------------------------------------------
 def page(title, content):
     nav_items = []
     if current_user.is_authenticated:
         if current_user.role == "DEPARTMENT":
-            nav_items.append(('<i class="fas fa-home"></i> Dashboard', '/department'))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', '/requests/new'))
-            nav_items.append(('<i class="fas fa-tasks"></i> My Requests', '/department'))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', '/notifications'))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', '/profile'))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', '/logout'))
+            nav_items.append(('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')))
+            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
+            nav_items.append(('<i class="fas fa-tasks"></i> My Requests', url_for('department_dashboard')))
+            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
+            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
+            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
         elif current_user.role == "EMPLOYEE":
-            nav_items.append(('<i class="fas fa-home"></i> My Dashboard', '/employee/dashboard'))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', '/requests/new'))
-            nav_items.append(('<i class="fas fa-tasks"></i> My Requests', '/employee/dashboard'))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', '/notifications'))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', '/profile'))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', '/logout'))
+            nav_items.append(('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')))
+            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
+            nav_items.append(('<i class="fas fa-tasks"></i> My Requests', url_for('employee_dashboard')))
+            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
+            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
+            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
         elif current_user.role in ["TECHNICIAN", "MAINTENANCE STAFF", "SUPERVISOR"]:
-            nav_items.append(('<i class="fas fa-tools"></i> My Tasks', '/workorders'))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', '/requests/new'))
-            nav_items.append(('<i class="fas fa-tasks"></i> Requests', '/requests'))
-            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', '/workorders'))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', '/notifications'))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', '/profile'))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', '/logout'))
+            nav_items.append(('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')))
+            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
+            nav_items.append(('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')))
+            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')))
+            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
+            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
+            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
         else:
-            nav_items.append(('<i class="fas fa-home"></i> Dashboard', '/dashboard'))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', '/requests/new'))
-            nav_items.append(('<i class="fas fa-tasks"></i> All Requests', '/requests'))
-            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', '/workorders'))
+            # ADMIN / MANAGER / other
+            nav_items.append(('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')))
+            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
+            nav_items.append(('<i class="fas fa-tasks"></i> All Requests', url_for('requests_list')))
+            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')))
             if current_user.role in ["ADMIN", "MANAGER"]:
-                nav_items.append(('<i class="fas fa-door-open"></i> Rooms', '/rooms'))
-                nav_items.append(('<i class="fas fa-map-marked-alt"></i> Areas', '/areas'))
-                nav_items.append(('<i class="fas fa-boxes"></i> Inventory', '/inventory'))
-                nav_items.append(('<i class="fas fa-calendar-check"></i> Preventive', '/preventive'))
-                nav_items.append(('<i class="fas fa-list-check"></i> Checklists', '/checklists'))
-                nav_items.append(('<i class="fas fa-truck"></i> Suppliers', '/suppliers'))
-                nav_items.append(('<i class="fas fa-hard-hat"></i> Contractors', '/contractors'))
-                nav_items.append(('<i class="fas fa-users"></i> Employees', '/employees'))
+                nav_items.append(('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')))
+                nav_items.append(('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')))
+                nav_items.append(('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')))
+                nav_items.append(('<i class="fas fa-calendar-check"></i> Preventive', url_for('preventive_list')))
+                nav_items.append(('<i class="fas fa-list-check"></i> Checklists', url_for('checklists_list')))
+                nav_items.append(('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')))
+                nav_items.append(('<i class="fas fa-hard-hat"></i> Contractors', url_for('contractors_list')))
+                nav_items.append(('<i class="fas fa-users"></i> Employees', url_for('employees_list')))
             if current_user.role == "ADMIN":
-                nav_items.append(('<i class="fas fa-user-cog"></i> Users', '/admin/users'))
-                nav_items.append(('<i class="fas fa-database"></i> Master Data', '/admin/masterdata'))
-                nav_items.append(('<i class="fas fa-history"></i> Audit Log', '/admin/audit'))
-                nav_items.append(('<i class="fas fa-archive"></i> Backup', '/admin/backup'))
-            nav_items.append(('<i class="fas fa-chart-bar"></i> Reports', '/reports'))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', '/notifications'))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', '/profile'))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', '/logout'))
+                nav_items.append(('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')))
+                nav_items.append(('<i class="fas fa-database"></i> Master Data', url_for('master_data')))
+                nav_items.append(('<i class="fas fa-history"></i> Audit Log', url_for('audit_logs')))
+                nav_items.append(('<i class="fas fa-archive"></i> Backup', url_for('backup_page')))
+            nav_items.append(('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')))
+            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
+            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
+            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
     else:
-        nav_items.append(('<i class="fas fa-sign-in-alt"></i> Login', '/login'))
+        nav_items.append(('<i class="fas fa-sign-in-alt"></i> Login', url_for('login')))
 
     nav_html = "".join(f'<a class="nav-link" href="{url}">{label}</a>' for label, url in nav_items)
 
@@ -611,7 +612,7 @@ def page(title, content):
     if current_user.is_authenticated:
         unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
         bell_html = f"""
-        <a class="nav-link" href="/notifications" style="position:relative;">
+        <a class="nav-link" href="{url_for('notifications')}" style="position:relative;">
             <i class="fas fa-bell"></i>
             {f'<span class="badge bg-danger" style="position:absolute; top:-5px; right:-5px; font-size:0.7rem;">{unread_count}</span>' if unread_count > 0 else ''}
         </a>
@@ -1092,7 +1093,7 @@ def page(title, content):
 <body>
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container-fluid">
-    <a class="navbar-brand" href="/dashboard">
+    <a class="navbar-brand" href="{{ url_for('dashboard') }}">
       <img src="/logo.png" alt="Rori Hotel Logo"> Rori Hotel
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
