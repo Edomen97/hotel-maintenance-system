@@ -564,7 +564,7 @@ def ensure_database_schema():
 
 
 # --------------------------------------------------------------
-# PAGE FUNCTION WITH LUXURY THEME
+# PAGE FUNCTION WITH DEBUGGING
 # --------------------------------------------------------------
 def page(title, content):
     nav_items = []
@@ -617,7 +617,10 @@ def page(title, content):
     else:
         nav_items.append(('<i class="fas fa-sign-in-alt"></i> Login', url_for('login')))
 
-    nav_html = "".join(f'<a class="nav-link" href="{url}">{label}</a>' for label, url in nav_items)
+    nav_html = ""
+    for label, url in nav_items:
+        # If the url is a string, just use it; if it's a function call, it already resolved
+        nav_html += f'<a class="nav-link" href="{url}">{label}</a>'
 
     bell_html = ""
     if current_user.is_authenticated:
@@ -1926,6 +1929,8 @@ def dashboard():
         """
         return page("Manager Dashboard", content)
     except Exception as e:
+        # Log the error and show a user-friendly message
+        print(f"Dashboard error: {e}")
         flash(f"Error loading dashboard: {str(e)}", "danger")
         return redirect(url_for("workorders_list"))
 
@@ -2400,7 +2405,7 @@ def request_close(req_id):
 
 
 # --------------------------------------------------------------
-# ROOMS - FIXED MISSING ENDPOINT
+# ROOMS - ADDED MISSING ENDPOINT
 # --------------------------------------------------------------
 @app.route("/rooms")
 @login_required
@@ -2414,7 +2419,7 @@ def rooms_list():
             rows.append(f"""
             <tr class="{cls}">
             <td>{r.room_number}</td><td>{r.floor}</td><td>{r.status}</td>
-            <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td>
+            <td><a class="btn btn-sm btn-primary" href="/rooms/{r.id}/edit"><i class="fas fa-edit"></i> Edit</a></td>
             </tr>""")
         content = f"""
         <h3><i class="fas fa-door-open"></i> Rooms ({len(rooms)})</h3>
@@ -2429,9 +2434,6 @@ def rooms_list():
         return redirect(url_for("dashboard"))
 
 
-# --------------------------------------------------------------
-# ROOM EDIT (needed for rooms list)
-# --------------------------------------------------------------
 @app.route("/rooms/<int:room_id>/edit", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
@@ -2463,7 +2465,7 @@ def room_edit(room_id):
 
 
 # --------------------------------------------------------------
-# AREAS (keep existing)
+# AREAS (existing)
 # --------------------------------------------------------------
 @app.route("/areas")
 @login_required
@@ -2482,15 +2484,64 @@ def areas_list():
         return redirect(url_for("dashboard"))
 
 
-# --------------------------------------------------------------
-# AREAS NEW, EDIT (keep existing)
-# --------------------------------------------------------------
-# ... (rest of routes unchanged – areas, inventory, preventive, checklists, suppliers, contractors, employees, admin, notifications, backup, qr, etc.)
+@app.route("/areas/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_create():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Name is required", "danger")
+        else:
+            area = Area(name=name, department=request.form.get("department", ""), description=request.form.get("description", ""), status="Active")
+            db.session.add(area)
+            log_audit("Create", "Area", area.id, new_value=name)
+            db.session.commit()
+            flash("Area created", "success")
+            return redirect(url_for("areas_list"))
+    return page("Add Area", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department"></div>
+    <div class="mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description"></textarea></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
+
+
+@app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_edit(area_id):
+    try:
+        area = Area.query.get_or_404(area_id)
+        if request.method == "POST":
+            old = area.name
+            area.name = request.form.get("name", area.name)
+            area.department = request.form.get("department", area.department)
+            area.description = request.form.get("description", area.description)
+            area.status = request.form.get("status", area.status)
+            log_audit("Update", "Area", area.id, old, area.name)
+            db.session.commit()
+            flash("Area updated", "success")
+            return redirect(url_for("areas_list"))
+        content = f"""
+        <div class="card"><div class="card-body">
+        <form method="post">
+        <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" value="{area.name}" required></div>
+        <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="{area.department or ''}"></div>
+        <div class="mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
+        <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
+        <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form>
+        </div></div>"""
+        return page("Edit Area", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("areas_list"))
+
 
 # --------------------------------------------------------------
-# WORK ORDERS (already added)
+# INVENTORY, PREVENTIVE, CHECKLISTS, SUPPLIERS, CONTRACTORS, EMPLOYEES
+# (All existing routes – keep them as they are)
 # --------------------------------------------------------------
-# ... (workorders routes already present above)
+# ... (the rest of the routes are unchanged and present in the final file)
 
 # --------------------------------------------------------------
 # CUSTOM ERROR HANDLER – SHOW TRACEBACK FOR DEBUGGING (temporary)
