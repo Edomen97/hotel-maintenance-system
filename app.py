@@ -126,7 +126,7 @@ class Area(db.Model):
     __tablename__ = "areas"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
-    department = db.Column(db.String(120))  # Legacy, kept for compatibility
+    department = db.Column(db.String(120))  # Legacy
     description = db.Column(db.Text)
     status = db.Column(db.String(20), default="Active")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -172,11 +172,11 @@ class MaintenanceRequest(db.Model):
     status = db.Column(db.String(30), default="Pending")
     requested_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    manager_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
+    manager_id = db.Column(db.Integer, db.ForeignKey("users.id"))       # NEW
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))  # NEW
     due_date = db.Column(db.DateTime)
-    completed_date = db.Column(db.DateTime)
-    completion_note = db.Column(db.Text)
+    completed_date = db.Column(db.DateTime)       # NEW
+    completion_note = db.Column(db.Text)          # NEW
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -458,7 +458,7 @@ def load_user(user_id):
 
 
 # --------------------------------------------------------------
-# HELPERS
+# HELPER FUNCTIONS
 # --------------------------------------------------------------
 def role_required(*roles):
     def decorator(fn):
@@ -530,6 +530,33 @@ def work_order_no_generator():
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# ===== ADD MISSING COLUMNS FUNCTION =====
+def add_missing_columns():
+    """Add any missing columns to the maintenance_requests table."""
+    try:
+        inspector = db.inspect(db.engine)
+        columns = [c['name'] for c in inspector.get_columns('maintenance_requests')]
+        # Check and add missing columns
+        if 'department_id' not in columns:
+            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)')
+            print("Added column department_id")
+        if 'manager_id' not in columns:
+            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)')
+            print("Added column manager_id")
+        if 'completion_note' not in columns:
+            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT')
+            print("Added column completion_note")
+        if 'completed_date' not in columns:
+            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME')
+            print("Added column completed_date")
+        # Also ensure the departments table exists
+        if not db.engine.dialect.has_table(db.engine, 'departments'):
+            db.create_all()
+            print("Created departments table")
+    except Exception as e:
+        print(f"Warning: Could not add columns: {e}")
 
 
 # --------------------------------------------------------------
@@ -969,17 +996,6 @@ def page(title, content):
         padding: 10px 15px;
         border-radius: 10px;
         border-left: 3px solid #f59e0b;
-    }}
-    .notification-badge {{
-        position: relative;
-    }}
-    .notification-badge .badge {{
-        position: absolute;
-        top: -5px;
-        right: -8px;
-        font-size: 0.65rem;
-        padding: 0.2rem 0.45rem;
-        border-radius: 50%;
     }}
     @media (max-width: 768px) {{
         .navbar {{
@@ -2244,24 +2260,31 @@ def workorder_create():
     req = MaintenanceRequest.query.get(req_id) if req_id else None
     users = User.query.filter(User.role.in_(["TECHNICIAN", "MAINTENANCE STAFF", "SUPERVISOR"])).all()
     user_options = "".join(f'<option value="{u.id}">{u.full_name}</option>' for u in users)
+    
     if request.method == "POST":
         try:
             request_id = request.form.get("request_id", type=int)
             assigned_to_id = request.form.get("assigned_to_id", type=int)
             work_performed = request.form.get("work_performed", "")
+            
+            # Validate assigned_to_id
+            if not assigned_to_id or assigned_to_id <= 0:
+                flash("Please select a valid maintenance staff member.", "danger")
+                return redirect(url_for("workorder_create", request_id=request_id))
+            
             req = MaintenanceRequest.query.get_or_404(request_id)
-
+            
             # Validate request status
             if req.status not in ["Approved", "Assigned"]:
                 flash("ይህ ጥያቄ እስካሁን አልጸደቀም። በመጀመሪያ ያጽድቁት", "danger")
                 return redirect(url_for("request_detail", req_id=request_id))
-
+            
             # Check for existing active work order
             existing_wo = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
             if existing_wo:
                 flash("This request already has an active work order. Please complete or cancel it before creating a new one.", "warning")
                 return redirect(url_for("workorder_detail", wo_id=existing_wo.id))
-
+            
             # Create work order
             wo = WorkOrder(
                 work_order_no=work_order_no_generator(),
@@ -2270,37 +2293,42 @@ def workorder_create():
                 status="Assigned",
                 work_performed=work_performed,
             )
-
-            # Update request status
+            
+            # Update request
             req.status = "Assigned"
             req.assigned_to_id = assigned_to_id
-
+            
             # Log status change
             assigned_user = User.query.get(assigned_to_id)
             log_status_change(req.id, "Assigned", notes=f"Assigned to {assigned_user.full_name if assigned_user else 'Unknown'}")
-
-            # Add work order and commit in one transaction
+            
             db.session.add(wo)
-            db.session.flush()  # To get wo.id for audit/notifications
-
+            db.session.flush()  # get wo.id
+            
             log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
-
-            # Notifications
-            notify_users([assigned_to_id], req.id, "Work Assigned",
-                         f"You have been assigned to work order {wo.work_order_no} for request {req.request_no}.",
-                         "Assigned")
-            notify_users([req.requested_by_id], req.id, "Work Assigned",
-                         f"Maintenance staff has been assigned to your request {req.request_no}.",
-                         "Assigned")
-
+            
+            # Notifications – only if user exists
+            if assigned_to_id:
+                notify_users([assigned_to_id], req.id, "Work Assigned",
+                             f"You have been assigned to work order {wo.work_order_no} for request {req.request_no}.",
+                             "Assigned")
+            if req.requested_by_id:
+                notify_users([req.requested_by_id], req.id, "Work Assigned",
+                             f"Maintenance staff has been assigned to your request {req.request_no}.",
+                             "Assigned")
+            
             db.session.commit()
             flash("የስራ ትዕዛዝ ተፈጥሯል", "success")
             return redirect(url_for("workorders_list"))
+            
         except Exception as e:
             db.session.rollback()
-            flash(f"Error: {str(e)}", "danger")
-            return redirect(url_for("workorder_create", request_id=req_id))
-
+            import traceback
+            print("WorkOrder creation error:", traceback.format_exc())
+            flash("An error occurred while creating the work order. Please try again.", "danger")
+            return redirect(url_for("workorder_create", request_id=request_id))
+    
+    # GET – show the form
     content = f"""
     <h3><i class="fas fa-plus-circle"></i> የስራ ትዕዛዝ ይፍጠሩ</h3>
     <div class="card">
@@ -2320,9 +2348,8 @@ def workorder_create():
 
 
 # --------------------------------------------------------------
-# REMAINING ROUTES (Rooms, Areas, Inventory, etc.) 
-# All kept as in the previous version – unchanged.
-# To keep the answer concise, we include them with their original implementation.
+# OTHER ROUTES (Rooms, Areas, Inventory, Preventive, Checklists, Suppliers, Contractors, Employees, Reports, Admin, Backup, QR, etc.)
+# All kept as in previous version – we include them below.
 # --------------------------------------------------------------
 @app.route("/rooms")
 @login_required
@@ -2379,13 +2406,495 @@ def room_edit(room_id):
         return redirect(url_for("rooms_list"))
 
 
-# --- Quick reference for the remaining routes (they are unchanged from earlier) ---
-# We'll include them with identical code as before, but to save space we can state they remain.
-# In the final file, they are all present.
+@app.route("/areas")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def areas_list():
+    try:
+        areas = Area.query.order_by(Area.name).all()
+        rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td></tr>' for a in areas)
+        content = f"""
+        <h3><i class="fas fa-map-marked-alt"></i> የሆቴል ቦታዎች</h3>
+        <a class="btn btn-primary mb-3" href="/areas/new"><i class="fas fa-plus-circle"></i> ቦታ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>ክፍል</th><th>ሁኔታ</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Areas", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
 
-# --------------------------------------------------------------
-# NOTIFICATIONS
-# --------------------------------------------------------------
+
+@app.route("/areas/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_create():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("ስም ያስፈልጋል", "danger")
+        else:
+            try:
+                area = Area(name=name, department=request.form.get("department", ""), description=request.form.get("description", ""), status="Active")
+                db.session.add(area)
+                log_audit("Create", "Area", area.id, new_value=name)
+                db.session.commit()
+                flash("ቦታ ተፈጥሯል", "success")
+                return redirect(url_for("areas_list"))
+            except Exception as e:
+                flash(f"Error: {str(e)}", "danger")
+    return page("Add Area", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department"></div>
+    <div class="mb-3"><label class="form-label">መግለጫ</label><textarea class="form-control" name="description"></textarea></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_edit(area_id):
+    try:
+        area = Area.query.get_or_404(area_id)
+        if request.method == "POST":
+            old = area.name
+            area.name = request.form.get("name", area.name)
+            area.department = request.form.get("department", area.department)
+            area.description = request.form.get("description", area.description)
+            area.status = request.form.get("status", area.status)
+            log_audit("Update", "Area", area.id, old, area.name)
+            db.session.commit()
+            flash("ቦታ ተዘምኗል", "success")
+            return redirect(url_for("areas_list"))
+        content = f"""
+        <div class="card"><div class="card-body">
+        <form method="post">
+        <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" value="{area.name}" required></div>
+        <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="{area.department or ''}"></div>
+        <div class="mb-3"><label class="form-label">መግለጫ</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
+        <div class="mb-3"><label class="form-label">ሁኔታ</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
+        <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form>
+        </div></div>"""
+        return page("Edit Area", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("areas_list"))
+
+
+@app.route("/admin/masterdata")
+@role_required("ADMIN")
+def master_data():
+    cats = Category.query.order_by(Category.name).all()
+    items = WorkingItem.query.order_by(WorkingItem.name).all()
+    content = f"""
+    <h3><i class="fas fa-database"></i> ማስተር ዳታ</h3>
+    <div class="row">
+    <div class="col-md-6">
+    <div class="card"><div class="card-body"><h5 class="card-title">ምድቦች</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{c.name}</li>' for c in cats)}</ul></div></div>
+    </div>
+    <div class="col-md-6">
+    <div class="card"><div class="card-body"><h5 class="card-title">የስራ እቃዎች</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{i.name}</li>' for i in items)}</ul></div></div>
+    </div>
+    </div>"""
+    return page("Master Data", content)
+
+
+@app.route("/inventory")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def inventory_list():
+    try:
+        parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
+        rows = []
+        for p in parts:
+            cls = "table-danger" if p.quantity <= 0 else "table-warning" if p.quantity <= p.minimum_stock else ""
+            rows.append(f'<tr class="{cls}"><td>{p.part_name}</td><td>{p.quantity}</td><td>{p.unit}</td><td>{p.unit_cost}</td><td>{p.minimum_stock}</td><td>{p.status}</td></tr>')
+        content = f"""
+        <h3><i class="fas fa-boxes"></i> ክምችት እና መለዋወጫ</h3>
+        <a class="btn btn-primary mb-3" href="/inventory/new"><i class="fas fa-plus-circle"></i> እቃ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>ብዛት</th><th>አሃድ</th><th>ዋጋ</th><th>ዝቅተኛ</th><th>ሁኔታ</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"""
+        return page("Inventory", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/inventory/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def inventory_create():
+    if request.method == "POST":
+        try:
+            part = InventoryPart(
+                part_name=request.form.get("part_name"),
+                category=request.form.get("category"),
+                quantity=float(request.form.get("quantity", 0)),
+                minimum_stock=float(request.form.get("minimum_stock", 5)),
+                unit=request.form.get("unit", "pcs"),
+                unit_cost=float(request.form.get("unit_cost", 0)),
+                storage_location=request.form.get("storage_location"),
+                status="Active",
+            )
+            db.session.add(part)
+            log_audit("Create", "InventoryPart", part.id, new_value=part.part_name)
+            db.session.commit()
+            flash("እቃ ተጨምሯል", "success")
+            return redirect(url_for("inventory_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("Add Part", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የእቃ ስም</label><input class="form-control" name="part_name" required></div>
+    <div class="mb-3"><label class="form-label">ምድብ</label><input class="form-control" name="category"></div>
+    <div class="mb-3"><label class="form-label">ብዛት</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
+    <div class="mb-3"><label class="form-label">ዝቅተኛ ክምችት</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="5"></div>
+    <div class="mb-3"><label class="form-label">አሃድ</label><input class="form-control" name="unit" value="pcs"></div>
+    <div class="mb-3"><label class="form-label">ዋጋ</label><input type="number" step="0.01" class="form-control" name="unit_cost"></div>
+    <div class="mb-3"><label class="form-label">የማከማቻ ቦታ</label><input class="form-control" name="storage_location"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/preventive")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def preventive_list():
+    try:
+        tasks = PreventiveMaintenance.query.order_by(PreventiveMaintenance.next_due_date).all()
+        rows = "".join(f'<tr><td>{t.title}</td><td>{t.frequency}</td><td>{t.next_due_date.strftime("%Y-%m-%d") if t.next_due_date else ""}</td><td>{t.status}</td></tr>' for t in tasks)
+        content = f"""
+        <h3><i class="fas fa-calendar-check"></i> የመከላከያ ጥገና</h3>
+        <a class="btn btn-primary mb-3" href="/preventive/new"><i class="fas fa-plus-circle"></i> ተግባር መርሐግብር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ርዕስ</th><th>ድግግሞሽ</th><th>ቀጣይ ቀን</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Preventive Maintenance", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/preventive/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def preventive_create():
+    if request.method == "POST":
+        try:
+            task = PreventiveMaintenance(
+                title=request.form.get("title"),
+                task=request.form.get("task"),
+                frequency=request.form.get("frequency", "Monthly"),
+                priority=request.form.get("priority", "MEDIUM"),
+                next_due_date=datetime.strptime(request.form.get("next_due_date"), "%Y-%m-%d") if request.form.get("next_due_date") else datetime.utcnow() + timedelta(days=30),
+                status="Scheduled",
+            )
+            db.session.add(task)
+            log_audit("Create", "PreventiveMaintenance", task.id, new_value=task.title)
+            db.session.commit()
+            flash("ተግባር መርሐግብር ተይዟል", "success")
+            return redirect(url_for("preventive_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    content = """
+    <div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ርዕስ</label><input class="form-control" name="title" required></div>
+    <div class="mb-3"><label class="form-label">ዝርዝር</label><textarea class="form-control" name="task"></textarea></div>
+    <div class="mb-3"><label class="form-label">ድግግሞሽ</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
+    <div class="mb-3"><label class="form-label">ቅድሚያ</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
+    <div class="mb-3"><label class="form-label">ቀጣይ ቀን</label><input type="date" class="form-control" name="next_due_date"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>"""
+    return page("New Preventive Task", content)
+
+
+@app.route("/checklists")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def checklists_list():
+    try:
+        templates = ChecklistTemplate.query.all()
+        rows = "".join(f'<tr><td><a href="/checklists/{t.id}" style="color:#f59e0b;">{t.name}</a></td><td>{len(t.items)} እቃዎች</td></tr>' for t in templates)
+        content = f"""
+        <h3><i class="fas fa-list-check"></i> የጥገና ማረጋገጫ ዝርዝሮች</h3>
+        <a class="btn btn-primary mb-3" href="/checklists/new"><i class="fas fa-plus-circle"></i> አዲስ ዝርዝር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>እቃዎች</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Checklists", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/checklists/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def checklist_create():
+    if request.method == "POST":
+        try:
+            name = request.form.get("name")
+            items = request.form.get("items", "").splitlines()
+            tpl = ChecklistTemplate(name=name, description=request.form.get("description", ""))
+            for i, item in enumerate(items):
+                if item.strip():
+                    tpl.items.append(ChecklistTemplateItem(item_text=item.strip(), order=i))
+            db.session.add(tpl)
+            log_audit("Create", "ChecklistTemplate", tpl.id, new_value=name)
+            db.session.commit()
+            flash("ዝርዝር ተፈጥሯል", "success")
+            return redirect(url_for("checklists_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("New Checklist", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">መግለጫ</label><input class="form-control" name="description"></div>
+    <div class="mb-3"><label class="form-label">እቃዎች (አንድ በመስመር)</label><textarea class="form-control" name="items" rows="8">Lights
+Switches
+Door Lock
+Water Supply
+Toilet
+AC
+Window
+Mirror
+Plumbing
+Safety Equipment</textarea></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/suppliers")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def suppliers_list():
+    try:
+        suppliers = Supplier.query.all()
+        rows = "".join(f'<tr><td>{s.company_name}</td><td>{s.contact_person}</td><td>{s.phone}</td><td>{s.status}</td></tr>' for s in suppliers)
+        content = f"""
+        <h3><i class="fas fa-truck"></i> አቅራቢዎች</h3>
+        <a class="btn btn-primary mb-3" href="/suppliers/new"><i class="fas fa-plus-circle"></i> አቅራቢ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ኩባንያ</th><th>አድራሻ</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Suppliers", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/suppliers/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def supplier_create():
+    if request.method == "POST":
+        try:
+            s = Supplier(company_name=request.form.get("company_name"), contact_person=request.form.get("contact_person"), phone=request.form.get("phone"), email=request.form.get("email"), address=request.form.get("address"), supplied_items=request.form.get("supplied_items"), status="Active")
+            db.session.add(s)
+            log_audit("Create", "Supplier", s.id, new_value=s.company_name)
+            db.session.commit()
+            flash("አቅራቢ ተጨምሯል", "success")
+            return redirect(url_for("suppliers_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("Add Supplier", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የኩባንያ ስም</label><input class="form-control" name="company_name" required></div>
+    <div class="mb-3"><label class="form-label">አድራሻ ሰው</label><input class="form-control" name="contact_person"></div>
+    <div class="mb-3"><label class="form-label">ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label class="form-label">አድራሻ</label><textarea class="form-control" name="address"></textarea></div>
+    <div class="mb-3"><label class="form-label">የሚያቀርቡት እቃዎች</label><input class="form-control" name="supplied_items"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/contractors")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def contractors_list():
+    try:
+        contractors = Contractor.query.all()
+        rows = "".join(f'<tr><td>{c.name}</td><td>{c.service_type}</td><td>{c.phone}</td><td>{c.status}</td></tr>' for c in contractors)
+        content = f"""
+        <h3><i class="fas fa-hard-hat"></i> ተቋራጮች</h3>
+        <a class="btn btn-primary mb-3" href="/contractors/new"><i class="fas fa-plus-circle"></i> ተቋራጭ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>ስም</th><th>አገልግሎት</th><th>ስልክ</th><th>ሁኔታ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Contractors", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/contractors/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def contractor_create():
+    if request.method == "POST":
+        try:
+            c = Contractor(name=request.form.get("name"), service_type=request.form.get("service_type"), phone=request.form.get("phone"), email=request.form.get("email"), rate=float(request.form.get("rate", 0) or 0), status="Active")
+            db.session.add(c)
+            log_audit("Create", "Contractor", c.id, new_value=c.name)
+            db.session.commit()
+            flash("ተቋራጭ ተጨምሯል", "success")
+            return redirect(url_for("contractors_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("Add Contractor", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም/ኩባንያ</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">የአገልግሎት አይነት</label><input class="form-control" name="service_type"></div>
+    <div class="mb-3"><label class="form-label">ስልክ</label><input class="form-control" name="phone"></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <div class="mb-3"><label class="form-label">ዋጋ</label><input type="number" step="0.01" class="form-control" name="rate"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/employees")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employees_list():
+    try:
+        employees = Employee.query.order_by(Employee.id).all()
+        rows = "".join(
+            f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td><td>{e.department}</td>'
+            f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit"><i class="fas fa-edit"></i> አርትዕ</a></td></tr>'
+            for e in employees
+        )
+        content = f"""
+        <h3><i class="fas fa-users"></i> የኢንጂነሪንግ ክፍል ሰራተኞች</h3>
+        <a class="btn btn-primary mb-3" href="/employees/new"><i class="fas fa-plus-circle"></i> ሰራተኛ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover">
+        <thead><tr><th>ID</th><th>ስም</th><th>የስራ ድርሻ</th><th>ክፍል</th><th>እርምጃ</th></tr></thead>
+        <tbody>{rows}</tbody></table></div>"""
+        return page("Employees", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/employees/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employee_create():
+    if request.method == "POST":
+        try:
+            name = request.form.get("name", "").strip()
+            job_title = request.form.get("job_title", "").strip()
+            department = request.form.get("department", "Engineering").strip()
+            if not name:
+                flash("ስም ያስፈልጋል", "danger")
+                return redirect(url_for("employee_create"))
+            emp = Employee(name=name, job_title=job_title, department=department)
+            db.session.add(emp)
+            db.session.flush()
+            log_audit("Create", "Employee", emp.id, new_value=name)
+            db.session.commit()
+            flash("ሰራተኛ ተጨምሯል", "success")
+            return redirect(url_for("employees_list"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("Add Employee", """<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" required></div>
+    <div class="mb-3"><label class="form-label">የስራ ድርሻ</label><input class="form-control" name="job_title"></div>
+    <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="Engineering"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employee_edit(emp_id):
+    try:
+        emp = Employee.query.get_or_404(emp_id)
+        if request.method == "POST":
+            old_name = emp.name
+            emp.name = request.form.get("name", emp.name).strip()
+            emp.job_title = request.form.get("job_title", emp.job_title).strip()
+            emp.department = request.form.get("department", emp.department).strip()
+            emp.updated_at = datetime.utcnow()
+            log_audit("Update", "Employee", emp.id, old_name, emp.name)
+            db.session.commit()
+            flash("ሰራተኛ ተዘምኗል", "success")
+            return redirect(url_for("employees_list"))
+        content = f"""
+        <div class="card"><div class="card-body">
+        <form method="post">
+        <div class="mb-3"><label class="form-label">ስም</label><input class="form-control" name="name" value="{emp.name}" required></div>
+        <div class="mb-3"><label class="form-label">የስራ ድርሻ</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
+        <div class="mb-3"><label class="form-label">ክፍል</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
+        <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form>
+        </div></div>"""
+        return page("Edit Employee", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("employees_list"))
+
+
+@app.route("/reports")
+@login_required
+def reports():
+    try:
+        if current_user.role in ["ADMIN", "MANAGER"]:
+            content = """
+            <h3><i class="fas fa-chart-bar"></i> ሪፖርቶች</h3>
+            <div class="list-group">
+            <a href="/reports/export/requests" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> የጥገና ጥያቄዎችን ወደ CSV ላክ</a>
+            <a href="/reports/export/workorders" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> የስራ ትዕዛዞችን ወደ CSV ላክ</a>
+            <a href="/reports/export/inventory" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> ክምችት ወደ CSV ላክ</a>
+            <a href="/reports/export/audit" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> Audit Log ወደ CSV ላክ</a>
+            <a href="/reports/export/employees" class="list-group-item list-group-item-action" style="background:rgba(30,41,59,0.5); border-color:rgba(245,158,11,0.1); color:#cbd5e1;"><i class="fas fa-file-csv"></i> ሰራተኞችን ወደ CSV ላክ</a>
+            </div>
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h5 class="card-title">Quick Stats</h5>
+                    <ul class="list-group">
+                        <li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">በጠቅላላ ጥያቄዎች: {MaintenanceRequest.query.count()}</li>
+                        <li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">ያልተጠናቀቁ: {MaintenanceRequest.query.filter(MaintenanceRequest.status != 'Completed').count()}</li>
+                    </ul>
+                </div>
+            </div>
+            """
+            return page("Reports", content)
+        else:
+            content = f"""
+            <h3><i class="fas fa-chart-bar"></i> ሪፖርቶች</h3>
+            <div class="card">
+                <div class="card-body">
+                    <p>የእርስዎ የስራ ሪፖርቶች እዚህ ይታያሉ።</p>
+                    <ul class="list-group">
+                        <li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">የተሾሙ ጥያቄዎች: {MaintenanceRequest.query.filter_by(assigned_to_id=current_user.id).count()}</li>
+                        <li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">ያልተጠናቀቁ: {MaintenanceRequest.query.filter_by(assigned_to_id=current_user.id).filter(MaintenanceRequest.status != 'Completed').count()}</li>
+                    </ul>
+                </div>
+            </div>
+            """
+            return page("Reports", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/reports/export/<report_type>")
+@login_required
+def reports_export(report_type):
+    if current_user.role not in ["ADMIN", "MANAGER"]:
+        flash("ይህን ሪፖርት ለማውረድ ፍቃድ የለዎትም", "danger")
+        return redirect(url_for("reports"))
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        if report_type == "requests":
+            writer.writerow(["Request No", "Location", "Item", "Category", "Priority", "Status", "Created"])
+            for r in MaintenanceRequest.query.order_by(MaintenanceRequest.created_at).all():
+                writer.writerow([r.request_no, r.location_name, r.working_item.name if r.working_item else "", r.category.name if r.category else "", r.priority, r.status, r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else ""])
+        elif report_type == "workorders":
+            writer.writerow(["WO No", "Request", "Assigned To", "Status", "Created"])
+            for wo in WorkOrder.query.order_by(WorkOrder.created_at).all():
+                writer.writerow([wo.work_order_no, wo.request.request_no if wo.request else "", wo.assigned_to.full_name if wo.assigned_to else "", wo.status, wo.created_at.strftime("%Y-%m-%d %H:%M") if wo.created_at else ""])
+        elif report_type == "inventory":
+            writer.writerow(["Part Name", "Quantity", "Min Stock", "Unit Cost", "Status"])
+            for p in InventoryPart.query.order_by(InventoryPart.part_name).all():
+                writer.writerow([p.part_name, p.quantity, p.minimum_stock, p.unit_cost, p.status])
+        elif report_type == "employees":
+            writer.writerow(["ID", "Name", "Job Title", "Department"])
+            for e in Employee.query.order_by(Employee.id).all():
+                writer.writerow([e.id, e.name, e.job_title, e.department])
+        elif report_type == "audit":
+            writer.writerow(["User", "Action", "Object Type", "Object ID", "Old", "New", "Date"])
+            for a in AuditLog.query.order_by(AuditLog.created_at.desc()).limit(1000).all():
+                writer.writerow([a.user.full_name if a.user else "", a.action, a.object_type, a.object_id, a.old_value, a.new_value, a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""])
+        else:
+            abort(404)
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={report_type}.csv"})
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("reports"))
+
+
 @app.route("/notifications")
 @login_required
 def notifications():
@@ -2416,7 +2925,7 @@ def notifications():
         """
         return page("Notifications", content)
     except Exception as e:
-        flash(f"Error loading notifications: {str(e)}", "danger")
+        flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
 
@@ -2437,16 +2946,268 @@ def notification_mark_read(n_id):
 
 
 # --------------------------------------------------------------
-# OTHER ROUTES (Areas, Inventory, Preventive, Checklists, Suppliers, Contractors, Employees, Reports, Admin, Backup, QR, etc.)
-# These are kept exactly as they were in the previous working version. 
-# We include a placeholder to indicate they are present.
+# ADMIN USERS, AUDIT LOG, BACKUP, QR CODES, PWA, ERROR HANDLING
 # --------------------------------------------------------------
-# ... (full routes are included in the final file)
-# To keep the final answer within a reasonable length, I will include only the essential fix.
-# The final file provided to the user will contain the complete working code with all routes.
+@app.route("/admin/users")
+@role_required("ADMIN")
+def admin_users():
+    try:
+        users = User.query.all()
+        rows = "".join(f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td><td>{u.active}</td></tr>' for u in users)
+        content = f"""
+        <h3><i class="fas fa-user-cog"></i> ተጠቃሚዎች</h3>
+        <a class="btn btn-primary mb-3" href="/admin/users/new"><i class="fas fa-plus-circle"></i> ተጠቃሚ ጨምር</a>
+        <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>የመለያ ስም</th><th>ስም</th><th>ሚና</th><th>ንቁ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Users", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/users/new", methods=["GET", "POST"])
+@role_required("ADMIN")
+def admin_user_create():
+    if request.method == "POST":
+        try:
+            username = request.form.get("username")
+            password = request.form.get("password")
+            role = request.form.get("role")
+            if User.query.filter_by(username=username).first():
+                flash("የመለያ ስም አለ", "danger")
+            else:
+                u = User(username=username, full_name=request.form.get("full_name"), role=role, email=request.form.get("email"))
+                u.set_password(password)
+                db.session.add(u)
+                log_audit("Create", "User", u.id, new_value=username)
+                db.session.commit()
+                flash("ተጠቃሚ ተፈጥሯል", "success")
+                return redirect(url_for("admin_users"))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    return page("Add User", f"""<div class="card"><div class="card-body"><form method="post">
+    <div class="mb-3"><label class="form-label">የመለያ ስም</label><input class="form-control" name="username" required></div>
+    <div class="mb-3"><label class="form-label">ሙሉ ስም</label><input class="form-control" name="full_name"></div>
+    <div class="mb-3"><label class="form-label">የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
+    <div class="mb-3"><label class="form-label">ሚና</label><select class="form-select" name="role">{''.join(f'<option>{r}</option>' for r in ROLES)}</select></div>
+    <div class="mb-3"><label class="form-label">ኢሜል</label><input class="form-control" name="email"></div>
+    <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div></div>""")
+
+
+@app.route("/admin/audit")
+@role_required("ADMIN")
+def audit_logs():
+    try:
+        logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
+        rows = "".join(f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td><td>{a.object_type}</td><td>{a.object_id}</td><td>{a.old_value}</td><td>{a.new_value}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""}</td></tr>' for a in logs)
+        content = f"""
+        <h3><i class="fas fa-history"></i> Audit Log</h3>
+        <div class="table-responsive"><table class="table table-bordered table-sm table-hover"><thead><tr><th>ተጠቃሚ</th><th>እርምጃ</th><th>ነገር</th><th>ID</th><th>ድሮ</th><th>አዲስ</th><th>ቀን</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+        return page("Audit Log", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+def get_db_path():
+    uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    if uri.startswith("sqlite:///"):
+        return uri.replace("sqlite:///", "")
+    return os.path.join(BASE_DIR, "hotel_maintenance.db")
+
+
+@app.route("/admin/backup")
+@role_required("ADMIN")
+def backup_page():
+    try:
+        backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
+        rows = "".join(f'<tr><td>{b}</td><td><a class="btn btn-sm btn-warning" href="/admin/restore/{b}"><i class="fas fa-undo"></i> Restore</a></td></tr>' for b in backups)
+        content = f"""
+        <h3><i class="fas fa-archive"></i> Backup & Restore</h3>
+        <form method="post" action="/admin/backup/now"><button class="btn btn-primary"><i class="fas fa-database"></i> Backup Now</button></form>
+        <h5 class="mt-4">Existing Backups</h5>
+        <div class="table-responsive"><table class="table table-bordered"><thead><tr><th>File</th><th></th></tr></thead><tbody>{rows or "<tr><td colspan=2>No backups</td></tr>"}</tbody></table></div>"""
+        return page("Backup", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/backup/now", methods=["POST"])
+@role_required("ADMIN")
+def backup_now():
+    try:
+        filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        filepath = os.path.join(BACKUP_FOLDER, filename)
+        src = sqlite3.connect(get_db_path())
+        dst = sqlite3.connect(filepath)
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        log_audit("Backup", "Database", filename)
+        db.session.commit()
+        flash("Backup created", "success")
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+    return redirect(url_for("backup_page"))
+
+
+@app.route("/admin/restore/<filename>")
+@role_required("ADMIN")
+def restore_backup(filename):
+    if not filename.endswith(".db"):
+        abort(400)
+    try:
+        filepath = os.path.join(BACKUP_FOLDER, filename)
+        if not os.path.exists(filepath):
+            flash("Backup not found", "danger")
+            return redirect(url_for("backup_page"))
+        safety = os.path.join(BACKUP_FOLDER, f"safety_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+        src = sqlite3.connect(get_db_path())
+        dst = sqlite3.connect(safety)
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+
+        src = sqlite3.connect(filepath)
+        dst = sqlite3.connect(get_db_path())
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        db.session.remove()
+        log_audit("Restore", "Database", filename)
+        db.session.commit()
+        flash("Database restored. Safety backup: " + safety, "success")
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+    return redirect(url_for("backup_page"))
+
+
+@app.route("/qr")
+@login_required
+def qr_index():
+    try:
+        rooms = Room.query.order_by(Room.room_number).all()
+        areas = Area.query.order_by(Area.name).all()
+        room_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/room/{r.id}"><img src="/qr/room/{r.id}" class="img-fluid" width="100"></a><br><small>Room {r.room_number}</small></div>' for r in rooms)
+        area_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/area/{a.id}"><img src="/qr/area/{a.id}" class="img-fluid" width="100"></a><br><small>{a.name}</small></div>' for a in areas)
+        content = f"""
+        <h3><i class="fas fa-qrcode"></i> QR Codes</h3>
+        <h5>Rooms</h5><div class="row">{room_cards}</div>
+        <h5>Areas</h5><div class="row">{area_cards}</div>"""
+        return page("QR Codes", content)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/qr/<string:loc_type>/<int:id>")
+@login_required
+def qr_code(loc_type, id):
+    if loc_type == "room":
+        obj = Room.query.get_or_404(id)
+        url = url_for("public_request_form", _external=True) + f"?room_id={obj.id}"
+        label = f"Room {obj.room_number}"
+    elif loc_type == "area":
+        obj = Area.query.get_or_404(id)
+        url = url_for("public_request_form", _external=True) + f"?area_id={obj.id}"
+        label = obj.name
+    else:
+        abort(404)
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    log_audit("QR Scan/View", loc_type.capitalize(), id, new_value=url)
+    db.session.commit()
+    return send_file(buf, mimetype="image/png", download_name=f"{label.replace(' ', '_')}_qr.png")
+
+
+@app.route("/manifest.json")
+def manifest():
+    return jsonify({
+        "name": "Rori Hotel Maintenance",
+        "short_name": "RoriMaint",
+        "start_url": "/dashboard",
+        "display": "standalone",
+        "background_color": "#0f172a",
+        "theme_color": "#f59e0b",
+        "icons": []
+    })
+
+
+@app.route("/sw.js")
+def service_worker():
+    return Response("""self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => self.clients.claim());
+self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return page("Forbidden", '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> ይህን ገጽ ለማየት ፍቃድ የለዎትም።</div>'), 403
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return page("Not Found", '<div class="alert alert-warning"><i class="fas fa-search"></i> ገጹ አልተገኘም።</div>'), 404
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    import traceback
+    print("500 Error:", traceback.format_exc())
+    return page(
+        "Server Error",
+        '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> የሰርቨር ስህተት ተከስቷል። እባክዎ ቆይተው እንደገና ይሞክሩ።</div>'
+    ), 500
+
 
 # --------------------------------------------------------------
-# FINAL APP RUN
+# INIT
 # --------------------------------------------------------------
+with app.app_context():
+    db.create_all()
+    add_missing_columns()   # ADDED: safe column migration
+    seed_data()
+
+
+@app.route('/logo.png')
+def serve_logo():
+    logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
+    return send_file(logo_path, mimetype='image/png')
+
+
+users_data = [
+    {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
+    {"full_name": "አበባየሁ ክፍሌ", "username": "abebayhu", "role": "SUPERVISOR"},
+    {"full_name": "ተስፋሁን ነከረ", "username": "tesfahun", "role": "TECHNICIAN"},
+    {"full_name": "ስምዖን ዮሐንስ", "username": "simon", "role": "TECHNICIAN"},
+    {"full_name": "ቸርነት አሞና", "username": "chernet", "role": "TECHNICIAN"},
+    {"full_name": "ዋሌ", "username": "wale", "role": "TECHNICIAN"},
+    {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "TECHNICIAN"},
+]
+
+with app.app_context():
+    try:
+        db.create_all()
+        for user_info in users_data:
+            user = User.query.filter_by(username=user_info["username"]).first()
+            if not user:
+                user = User(username=user_info["username"], role=user_info["role"])
+                user.set_password("123456")
+                db.session.add(user)
+            if hasattr(user, 'full_name'):
+                user.full_name = user_info["full_name"]
+            user.role = user_info["role"]
+        db.session.commit()
+    except Exception as e:
+        print("Setup error:", e)
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
