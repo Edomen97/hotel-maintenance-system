@@ -532,28 +532,37 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def add_missing_columns():
-    """Add missing columns to maintenance_requests if they don't exist."""
-    try:
-        inspector = db.inspect(db.engine)
-        columns = [c['name'] for c in inspector.get_columns('maintenance_requests')]
-        if 'department_id' not in columns:
-            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)')
-            print("Added column department_id")
-        if 'manager_id' not in columns:
-            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)')
-            print("Added column manager_id")
-        if 'completion_note' not in columns:
-            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT')
-            print("Added column completion_note")
-        if 'completed_date' not in columns:
-            db.engine.execute('ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME')
-            print("Added column completed_date")
-        if not db.engine.dialect.has_table(db.engine, 'departments'):
-            db.create_all()
-            print("Created departments table")
-    except Exception as e:
-        print(f"Warning: Could not add columns: {e}")
+def ensure_database_schema():
+    """
+    Ensure all required columns and tables exist.
+    This is a safe migration that adds columns if missing.
+    """
+    with app.app_context():
+        try:
+            # Ensure departments table exists
+            if not db.engine.dialect.has_table(db.engine, 'departments'):
+                db.create_all()
+                print("Created departments table")
+
+            # Ensure columns exist in maintenance_requests
+            inspector = db.inspect(db.engine)
+            columns = [c['name'] for c in inspector.get_columns('maintenance_requests')]
+
+            # List of columns to check and their SQL
+            required_columns = {
+                'department_id': 'ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)',
+                'manager_id': 'ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)',
+                'completion_note': 'ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT',
+                'completed_date': 'ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME'
+            }
+
+            for col, sql in required_columns.items():
+                if col not in columns:
+                    db.engine.execute(sql)
+                    print(f"Added column {col} to maintenance_requests")
+
+        except Exception as e:
+            print(f"Schema migration warning: {e}")
 
 
 # --------------------------------------------------------------
@@ -1547,7 +1556,7 @@ def employee_dashboard():
 
 
 # --------------------------------------------------------------
-# DEPARTMENT DASHBOARD (FIXED with null safety)
+# DEPARTMENT DASHBOARD (FIXED – safe attribute access, error handling)
 # --------------------------------------------------------------
 @app.route("/department")
 @login_required
@@ -1591,7 +1600,10 @@ def department_dashboard():
         """
         return page("Department Dashboard", content)
     except Exception as e:
-        flash(f"Error loading department dashboard: {str(e)}", "danger")
+        # Log the actual error to console (Render logs will show it)
+        import traceback
+        print("Department Dashboard error:", traceback.format_exc())
+        flash(f"Error loading department dashboard. Please contact support.", "danger")
         return redirect(url_for("login"))
 
 
@@ -1749,7 +1761,7 @@ def public_request_form():
 
 
 # --------------------------------------------------------------
-# MANAGER / ADMIN DASHBOARD (WITH QUICK ACTION BUTTONS)
+# MANAGER / ADMIN DASHBOARD (unchanged)
 # --------------------------------------------------------------
 @app.route("/dashboard")
 @login_required
@@ -2413,7 +2425,7 @@ def request_close(req_id):
 # --------------------------------------------------------------
 with app.app_context():
     db.create_all()
-    add_missing_columns()
+    ensure_database_schema()  # Safe migration
     seed_data()
 
 
