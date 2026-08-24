@@ -1563,49 +1563,41 @@ def employee_dashboard():
 @login_required
 @role_required("DEPARTMENT")
 def department_dashboard():
-    try:
-        # Only show requests submitted by this department user
-        my_requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
-        rows = []
-        for r in my_requests:
-            # Safe attribute access – avoid AttributeError if related objects are None
-            working_name = r.working_item.name if r.working_item else 'N/A'
-            location = r.location_name if hasattr(r, 'location_name') else 'Unknown'
-            category_name = r.category.name if r.category else 'N/A'
-            status_badge = 'success' if r.status in ['Completed', 'Closed'] else 'warning' if r.status == 'Pending' else 'info'
-            priority_badge = 'danger' if r.priority == 'URGENT' else 'warning' if r.priority == 'HIGH' else 'info' if r.priority == 'MEDIUM' else 'secondary'
-            rows.append(f"""
-            <tr>
-            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
-            <td>{r.location_name}</td>
-            <td>{working_name}</td>
-            <td><span class="badge bg-{priority_badge}">{r.priority}</span></td>
-            <td><span class="badge bg-{status_badge}">{r.status}</span></td>
-            <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
-            </tr>""")
-        content = f"""
-        <h3><i class="fas fa-building"></i> የዲፓርትመንት ዳሽቦርድ</h3>
-        <p class="text-muted">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
-        <a class="btn btn-primary mb-3" href="/requests/new"><i class="fas fa-plus-circle"></i> አዲስ የጥገና ጥያቄ</a>
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title"><i class="fas fa-list"></i> የእኔ ጥያቄዎች</h5>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-striped table-hover">
-                        <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
-                        <tbody>{''.join(rows) or '<tr><td colspan="6" class="text-center">እስካሁን ምንም ጥያቄ አልተላከም</td></tr>'}</tbody>
-                    </table>
-                </div>
+    # REMOVED try/except – let errors bubble up to the 500 handler
+    my_requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+    rows = []
+    for r in my_requests:
+        working_name = r.working_item.name if r.working_item else 'N/A'
+        location = r.location_name if hasattr(r, 'location_name') else 'Unknown'
+        category_name = r.category.name if r.category else 'N/A'
+        status_badge = 'success' if r.status in ['Completed', 'Closed'] else 'warning' if r.status == 'Pending' else 'info'
+        priority_badge = 'danger' if r.priority == 'URGENT' else 'warning' if r.priority == 'HIGH' else 'info' if r.priority == 'MEDIUM' else 'secondary'
+        rows.append(f"""
+        <tr>
+        <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
+        <td>{r.location_name}</td>
+        <td>{working_name}</td>
+        <td><span class="badge bg-{priority_badge}">{r.priority}</span></td>
+        <td><span class="badge bg-{status_badge}">{r.status}</span></td>
+        <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
+        </tr>""")
+    content = f"""
+    <h3><i class="fas fa-building"></i> የዲፓርትመንት ዳሽቦርድ</h3>
+    <p class="text-muted">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
+    <a class="btn btn-primary mb-3" href="/requests/new"><i class="fas fa-plus-circle"></i> አዲስ የጥገና ጥያቄ</a>
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title"><i class="fas fa-list"></i> የእኔ ጥያቄዎች</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover">
+                    <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
+                    <tbody>{''.join(rows) or '<tr><td colspan="6" class="text-center">እስካሁን ምንም ጥያቄ አልተላከም</td></tr>'}</tbody>
+                </table>
             </div>
         </div>
-        """
-        return page("Department Dashboard", content)
-    except Exception as e:
-        # Log the actual error to console (Render logs will show it)
-        import traceback
-        print("Department Dashboard error:", traceback.format_exc())
-        flash(f"Error loading department dashboard. Please contact support.", "danger")
-        return redirect(url_for("login"))
+    </div>
+    """
+    return page("Department Dashboard", content)
 
 
 # --------------------------------------------------------------
@@ -2422,11 +2414,28 @@ def request_close(req_id):
 # --------------------------------------------------------------
 
 # --------------------------------------------------------------
+# CUSTOM ERROR HANDLER – SHOW TRACEBACK FOR DEBUGGING
+# --------------------------------------------------------------
+@app.errorhandler(500)
+def internal_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    return f"""
+    <h1>500 Internal Server Error</h1>
+    <h3>Full traceback:</h3>
+    <pre style="background:#1e1e1e; color:#d4d4d4; padding:20px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-wrap:break-word;">
+{tb}
+    </pre>
+    <p><strong>Please copy this traceback and send it to the developer.</strong></p>
+    """, 500
+
+
+# --------------------------------------------------------------
 # INIT
 # --------------------------------------------------------------
 with app.app_context():
     db.create_all()
-    ensure_database_schema()  # Safe migration
+    ensure_database_schema()
     seed_data()
 
 
