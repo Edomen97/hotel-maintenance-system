@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import traceback
 import secrets
+from markupsafe import escape
 
 from flask import (
     Flask,
