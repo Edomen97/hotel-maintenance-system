@@ -4,9 +4,11 @@ import os
 import sqlite3
 import uuid
 import base64
+import logging
 from datetime import datetime, timedelta
 from functools import wraps
 import traceback
+import secrets
 
 from flask import (
     Flask,
@@ -15,11 +17,11 @@ from flask import (
     get_flashed_messages,
     jsonify,
     redirect,
-    render_template_string,
     request,
     send_file,
     url_for,
     Response,
+    session,
 )
 from flask_login import (
     LoginManager,
@@ -36,6 +38,15 @@ from werkzeug.utils import secure_filename
 import qrcode
 import qrcode.image.svg
 
+# --------------------------------------------------------------
+# Logging setup
+# --------------------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------
+# Configuration and folders
+# --------------------------------------------------------------
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
 PROFILE_PIC_FOLDER = os.path.join(BASE_DIR, "static", "profile_pics")
@@ -53,6 +64,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
+app.config["DEBUG"] = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -61,22 +73,14 @@ login_manager.login_view = "login"
 ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE", "DEPARTMENT"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
 REQUEST_STATUSES = [
-    "Pending",
-    "Approved",
-    "Assigned",
-    "In Progress",
-    "Completed",
-    "Verified",
-    "Closed",
-    "Rejected",
-    "Overdue",
+    "Pending", "Approved", "Assigned", "In Progress", "Completed",
+    "Verified", "Closed", "Rejected", "Overdue",
 ]
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", "xlsx", "csv"}
 
-
 # --------------------------------------------------------------
-# MODELS
+# MODELS (unchanged from original)
 # --------------------------------------------------------------
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -97,7 +101,6 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-
 class Department(db.Model):
     __tablename__ = "departments"
     id = db.Column(db.Integer, primary_key=True)
@@ -105,12 +108,10 @@ class Department(db.Model):
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-
 class Floor(db.Model):
     __tablename__ = "floors"
     id = db.Column(db.Integer, primary_key=True)
     floor_number = db.Column(db.Integer, unique=True, nullable=False)
-
 
 class Room(db.Model):
     __tablename__ = "rooms"
@@ -120,7 +121,6 @@ class Room(db.Model):
     status = db.Column(db.String(30), default="Available")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 class Area(db.Model):
     __tablename__ = "areas"
@@ -132,20 +132,17 @@ class Area(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
 class Category(db.Model):
     __tablename__ = "categories"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.Text)
 
-
 class WorkingItem(db.Model):
     __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.Text)
-
 
 class Employee(db.Model):
     __tablename__ = "employees"
@@ -155,7 +152,6 @@ class Employee(db.Model):
     department = db.Column(db.String(80), default="Engineering")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 class MaintenanceRequest(db.Model):
     __tablename__ = "maintenance_requests"
@@ -206,7 +202,6 @@ class MaintenanceRequest(db.Model):
             return True
         return False
 
-
 class WorkOrder(db.Model):
     __tablename__ = "work_orders"
     id = db.Column(db.Integer, primary_key=True)
@@ -229,7 +224,6 @@ class WorkOrder(db.Model):
     verified_by = db.relationship("User", foreign_keys=[verified_by_id])
     parts_used = db.relationship("WorkOrderPart", back_populates="work_order", cascade="all, delete-orphan")
 
-
 class WorkOrderPart(db.Model):
     __tablename__ = "work_order_parts"
     id = db.Column(db.Integer, primary_key=True)
@@ -240,7 +234,6 @@ class WorkOrderPart(db.Model):
 
     work_order = db.relationship("WorkOrder", back_populates="parts_used")
     part = db.relationship("InventoryPart")
-
 
 class InventoryPart(db.Model):
     __tablename__ = "inventory_parts"
@@ -263,7 +256,6 @@ class InventoryPart(db.Model):
     def is_low(self):
         return self.quantity <= self.minimum_stock
 
-
 class StockMovement(db.Model):
     __tablename__ = "stock_movements"
     id = db.Column(db.Integer, primary_key=True)
@@ -279,7 +271,6 @@ class StockMovement(db.Model):
     part = db.relationship("InventoryPart")
     user = db.relationship("User")
 
-
 class Supplier(db.Model):
     __tablename__ = "suppliers"
     id = db.Column(db.Integer, primary_key=True)
@@ -292,7 +283,6 @@ class Supplier(db.Model):
     status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
 
-
 class Contractor(db.Model):
     __tablename__ = "contractors"
     id = db.Column(db.Integer, primary_key=True)
@@ -303,7 +293,6 @@ class Contractor(db.Model):
     rate = db.Column(db.Float)
     status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
-
 
 class PreventiveMaintenance(db.Model):
     __tablename__ = "preventive_maintenance"
@@ -325,7 +314,6 @@ class PreventiveMaintenance(db.Model):
     area = db.relationship("Area", foreign_keys=[area_id])
     assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
 
-
 class ChecklistTemplate(db.Model):
     __tablename__ = "checklist_templates"
     id = db.Column(db.Integer, primary_key=True)
@@ -335,7 +323,6 @@ class ChecklistTemplate(db.Model):
 
     items = db.relationship("ChecklistTemplateItem", back_populates="template", cascade="all, delete-orphan")
 
-
 class ChecklistTemplateItem(db.Model):
     __tablename__ = "checklist_template_items"
     id = db.Column(db.Integer, primary_key=True)
@@ -344,7 +331,6 @@ class ChecklistTemplateItem(db.Model):
     order = db.Column(db.Integer, default=0)
 
     template = db.relationship("ChecklistTemplate", back_populates="items")
-
 
 class Inspection(db.Model):
     __tablename__ = "inspections"
@@ -375,7 +361,6 @@ class Inspection(db.Model):
         total = len(self.items)
         return round(self.pass_count / total * 100, 1) if total else 0
 
-
 class InspectionItem(db.Model):
     __tablename__ = "inspection_items"
     id = db.Column(db.Integer, primary_key=True)
@@ -385,7 +370,6 @@ class InspectionItem(db.Model):
     notes = db.Column(db.Text)
 
     inspection = db.relationship("Inspection", back_populates="items")
-
 
 class Photo(db.Model):
     __tablename__ = "photos"
@@ -399,7 +383,6 @@ class Photo(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     uploaded_by = db.relationship("User")
-
 
 class Notification(db.Model):
     __tablename__ = "notifications"
@@ -416,7 +399,6 @@ class Notification(db.Model):
     user = db.relationship("User", foreign_keys=[user_id])
     request = db.relationship("MaintenanceRequest", foreign_keys=[request_id])
 
-
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
     id = db.Column(db.Integer, primary_key=True)
@@ -431,7 +413,6 @@ class AuditLog(db.Model):
 
     user = db.relationship("User")
 
-
 class StatusHistory(db.Model):
     __tablename__ = "status_history"
     id = db.Column(db.Integer, primary_key=True)
@@ -444,22 +425,23 @@ class StatusHistory(db.Model):
     request = db.relationship("MaintenanceRequest", foreign_keys=[request_id])
     user = db.relationship("User", foreign_keys=[user_id])
 
-
 class Setting(db.Model):
     __tablename__ = "settings"
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.Text)
 
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# --------------------------------------------------------------
+# HELPER FUNCTIONS (with CSRF and escaping)
+# --------------------------------------------------------------
+def escape_html(text):
+    """Return escaped HTML safe string or empty string."""
+    return escape(text) if text is not None else ""
 
-# --------------------------------------------------------------
-# HELPER FUNCTIONS
-# --------------------------------------------------------------
 def role_required(*roles):
     def decorator(fn):
         @wraps(fn)
@@ -472,7 +454,6 @@ def role_required(*roles):
         return wrapper
     return decorator
 
-
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
     log = AuditLog(
         user_id=current_user.id if current_user.is_authenticated else None,
@@ -484,7 +465,6 @@ def log_audit(action, object_type=None, object_id=None, old_value=None, new_valu
         ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
     )
     db.session.add(log)
-
 
 def create_notification(user_id, request_id, title, message, notification_type="General", link=None):
     if not user_id:
@@ -501,12 +481,10 @@ def create_notification(user_id, request_id, title, message, notification_type="
     )
     db.session.add(notif)
 
-
 def notify_users(user_ids, request_id, title, message, notification_type="General", link=None):
     for uid in user_ids:
         if uid:
             create_notification(uid, request_id, title, message, notification_type, link)
-
 
 def log_status_change(request_id, status, user_id=None, notes=None):
     if not user_id:
@@ -519,53 +497,58 @@ def log_status_change(request_id, status, user_id=None, notes=None):
     )
     db.session.add(hist)
 
-
 def request_no_generator():
     return f"R-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
-
 
 def work_order_no_generator():
     return f"WO-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
 
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
 def ensure_database_schema():
-    """Safely add missing columns to maintenance_requests using PRAGMA for SQLite."""
     with app.app_context():
         try:
             if not db.engine.dialect.has_table(db.engine, 'departments'):
                 db.create_all()
-                print("Created departments table")
-
+                logger.info("Created departments table")
             conn = db.engine.raw_connection()
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(maintenance_requests)")
             existing_columns = [row[1] for row in cursor.fetchall()]
             conn.close()
-
             required_columns = {
                 'department_id': 'ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)',
                 'manager_id': 'ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)',
                 'completion_note': 'ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT',
                 'completed_date': 'ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME'
             }
-
             for col, sql in required_columns.items():
                 if col not in existing_columns:
                     db.engine.execute(sql)
-                    print(f"Added column {col} to maintenance_requests")
-
+                    logger.info(f"Added column {col} to maintenance_requests")
         except Exception as e:
-            print(f"Schema migration error: {e}")
+            logger.error(f"Schema migration error: {e}")
 
+# CSRF helpers
+def generate_csrf_token():
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(16)
+    return session["_csrf_token"]
+
+def validate_csrf_token():
+    token = request.form.get("_csrf_token")
+    if not token or token != session.get("_csrf_token"):
+        abort(400, "CSRF token validation failed")
+
+def csrf_input():
+    return f'<input type="hidden" name="_csrf_token" value="{generate_csrf_token()}">'
 
 # --------------------------------------------------------------
-# PAGE FUNCTION WITH LUXURY THEME
+# PAGE FUNCTION WITH ESCAPING AND CSRF TOKEN
 # --------------------------------------------------------------
 def page(title, content):
+    """Render a page with a common layout and escape all user‑provided content."""
     nav_items = []
     if current_user.is_authenticated:
         if current_user.role == "DEPARTMENT":
@@ -591,7 +574,7 @@ def page(title, content):
             nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
             nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
         else:
-            # ADMIN / MANAGER / other
+            # ADMIN / MANAGER
             nav_items.append(('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')))
             nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
             nav_items.append(('<i class="fas fa-tasks"></i> All Requests', url_for('requests_list')))
@@ -619,7 +602,7 @@ def page(title, content):
 
     nav_html = ""
     for label, url in nav_items:
-        nav_html += f'<a class="nav-link" href="{url}">{label}</a>'
+        nav_html += f'<a class="nav-link" href="{escape(url)}">{label}</a>'
 
     bell_html = ""
     if current_user.is_authenticated:
@@ -631,28 +614,27 @@ def page(title, content):
         </a>
         """
 
+    flash_messages = get_flashed_messages(with_categories=True)
     flash_html = "".join(
-        f'<div class="alert alert-{cat} alert-dismissible fade show">{msg}</div>'
-        for cat, msg in get_flashed_messages(with_categories=True)
+        f'<div class="alert alert-{escape(cat)} alert-dismissible fade show">{escape(msg)}</div>'
+        for cat, msg in flash_messages
     )
+
+    csrf_token = generate_csrf_token()
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} | Rori Hotel Maintenance</title>
+<title>{escape(title)} | Rori Hotel Maintenance</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="manifest" href="/manifest.json">
 <style>
-    /* LUXURY THEME */
+    /* LUXURY THEME (unchanged) */
     @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&display=swap');
-    * {{
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }}
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
         font-family: 'Inter', sans-serif;
         background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
@@ -660,446 +642,85 @@ def page(title, content):
         color: #e2e8f0;
         padding-top: 70px;
     }}
-    .navbar {{
-        background: rgba(15, 23, 42, 0.75) !important;
-        backdrop-filter: blur(16px) saturate(180%);
-        -webkit-backdrop-filter: blur(16px) saturate(180%);
-        border-bottom: 1px solid rgba(245, 158, 11, 0.25);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-        padding: 0.75rem 1.5rem;
-    }}
-    .navbar-brand {{
-        font-weight: 700;
-        font-size: 1.4rem;
-        letter-spacing: 0.5px;
-        color: #f59e0b !important;
-        text-shadow: 0 2px 8px rgba(245,158,11,0.3);
-    }}
-    .navbar-brand img {{
-        height: 38px;
-        vertical-align: middle;
-        margin-right: 10px;
-        filter: drop-shadow(0 2px 6px rgba(245,158,11,0.2));
-    }}
-    .nav-link {{
-        color: #cbd5e1 !important;
-        font-weight: 500;
-        padding: 0.6rem 1.2rem !important;
-        border-radius: 40px;
-        transition: all 0.25s ease;
-        margin: 0 0.1rem;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }}
-    .nav-link i {{
-        font-size: 1.1rem;
-        width: 1.5rem;
-        text-align: center;
-        color: #f59e0b;
-        transition: color 0.2s;
-    }}
-    .nav-link:hover {{
-        background: rgba(245, 158, 11, 0.12);
-        color: #f59e0b !important;
-        transform: translateY(-1px);
-    }}
-    .nav-link:hover i {{
-        color: #fbbf24;
-    }}
-    .navbar-nav .active {{
-        background: rgba(245, 158, 11, 0.18);
-        color: #f59e0b !important;
-        box-shadow: 0 0 20px rgba(245,158,11,0.08);
-    }}
-    .navbar-toggler {{
-        border-color: rgba(245,158,11,0.4);
-    }}
-    .navbar-toggler-icon {{
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(245,158,11,0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
-    }}
-    .container {{
-        max-width: 1280px;
-        padding: 1.5rem;
-    }}
-    .card {{
-        background: rgba(30, 41, 59, 0.6) !important;
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(245, 158, 11, 0.15);
-        border-radius: 20px !important;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-        transition: transform 0.25s ease, box-shadow 0.3s ease;
-        color: #e2e8f0;
-        padding: 1.25rem;
-        margin-bottom: 1.5rem;
-    }}
-    .card:hover {{
-        transform: translateY(-4px);
-        box-shadow: 0 16px 48px rgba(0,0,0,0.4);
-        border-color: rgba(245, 158, 11, 0.3);
-    }}
-    .card-title {{
-        font-weight: 600;
-        color: #f59e0b;
-        letter-spacing: 0.3px;
-    }}
-    .metric-card {{
-        background: rgba(30, 41, 59, 0.5);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(245, 158, 11, 0.12);
-        border-radius: 20px;
-        padding: 1.2rem 1rem;
-        text-align: center;
-        transition: all 0.3s ease;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-    }}
-    .metric-card:hover {{
-        transform: translateY(-6px);
-        border-color: #f59e0b;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-    }}
-    .metric-icon {{
-        font-size: 2.2rem;
-        color: #f59e0b;
-        margin-bottom: 0.5rem;
-        opacity: 0.9;
-    }}
-    .metric-value {{
-        font-size: 2rem;
-        font-weight: 700;
-        color: #f8fafc;
-        line-height: 1.2;
-    }}
-    .metric-label {{
-        font-size: 0.85rem;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-top: 0.25rem;
-    }}
-    .table {{
-        color: #e2e8f0;
-        border-color: rgba(245, 158, 11, 0.1);
-    }}
-    .table thead th {{
-        border-bottom: 2px solid rgba(245, 158, 11, 0.2);
-        color: #f59e0b;
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.5px;
-        padding: 8px 10px;
-    }}
-    .table td {{
-        padding: 8px 10px;
-        vertical-align: middle;
-        border-color: rgba(245, 158, 11, 0.08);
-    }}
-    .table-striped tbody tr:nth-of-type(odd) {{
-        background-color: rgba(30, 41, 59, 0.3);
-    }}
-    .table-hover tbody tr:hover {{
-        background-color: rgba(245, 158, 11, 0.06);
-    }}
-    .btn {{
-        border-radius: 40px;
-        font-weight: 600;
-        padding: 0.6rem 1.8rem;
-        transition: all 0.25s ease;
-        border: none;
-        letter-spacing: 0.3px;
-    }}
-    .btn-primary {{
-        background: linear-gradient(135deg, #f59e0b, #d97706);
-        color: #0f172a;
-        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);
-    }}
-    .btn-primary:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4);
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        color: #0f172a;
-    }}
-    .btn-success {{
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        box-shadow: 0 4px 16px rgba(34, 197, 94, 0.25);
-    }}
-    .btn-success:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4);
-        background: linear-gradient(135deg, #4ade80, #22c55e);
-    }}
-    .btn-warning {{
-        background: linear-gradient(135deg, #eab308, #ca8a04);
-        color: #0f172a;
-        box-shadow: 0 4px 16px rgba(234, 179, 8, 0.25);
-    }}
-    .btn-warning:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(234, 179, 8, 0.4);
-        background: linear-gradient(135deg, #facc15, #eab308);
-        color: #0f172a;
-    }}
-    .btn-danger {{
-        background: linear-gradient(135deg, #ef4444, #dc2626);
-        box-shadow: 0 4px 16px rgba(239, 68, 68, 0.25);
-    }}
-    .btn-danger:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(239, 68, 68, 0.4);
-        background: linear-gradient(135deg, #f87171, #ef4444);
-    }}
-    .btn-outline-secondary {{
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        color: #cbd5e1;
-        background: transparent;
-    }}
-    .btn-outline-secondary:hover {{
-        background: rgba(245, 158, 11, 0.1);
-        border-color: #f59e0b;
-        color: #f59e0b;
-    }}
-    .btn-request {{
-        background: linear-gradient(135deg, #f59e0b, #d97706);
-        border: none;
-        color: #0f172a;
-    }}
-    .btn-request:hover {{
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        color: #0f172a;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4);
-    }}
-    .btn-workorder {{
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        border: none;
-        color: white;
-    }}
-    .btn-workorder:hover {{
-        background: linear-gradient(135deg, #4ade80, #22c55e);
-        color: white;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4);
-    }}
-    .btn-report {{
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        border: none;
-        color: #0f172a;
-    }}
-    .btn-report:hover {{
-        background: linear-gradient(135deg, #fde68a, #fbbf24);
-        color: #0f172a;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 28px rgba(251, 191, 36, 0.4);
-    }}
-    .quick-btn {{
-        font-size: 1.2rem;
-        font-weight: 700;
-        padding: 1.2rem 1.5rem;
-        border-radius: 50px !important;
-        text-align: left;
-        display: flex;
-        align-items: center;
-        transition: all 0.25s ease;
-        width: 100%;
-        margin-bottom: 0.75rem;
-    }}
-    .quick-btn i {{
-        font-size: 2rem;
-        margin-right: 1.2rem;
-        width: 2.5rem;
-        text-align: center;
-    }}
-    .form-control, .form-select {{
-        background: rgba(15, 23, 42, 0.6);
-        border: 1px solid rgba(245, 158, 11, 0.2);
-        border-radius: 12px;
-        color: #e2e8f0;
-        padding: 0.75rem 1rem;
-        transition: border-color 0.2s, box-shadow 0.2s;
-    }}
-    .form-control:focus, .form-select:focus {{
-        border-color: #f59e0b;
-        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
-        background: rgba(15, 23, 42, 0.8);
-        color: #f8fafc;
-    }}
-    .form-label {{
-        font-weight: 500;
-        color: #cbd5e1;
-        margin-bottom: 0.4rem;
-    }}
-    .alert {{
-        border-radius: 16px;
-        border: none;
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(8px);
-        color: #e2e8f0;
-        padding: 1rem 1.5rem;
-        margin-bottom: 1.5rem;
-    }}
-    .alert-success {{
-        border-left: 4px solid #22c55e;
-    }}
-    .alert-danger {{
-        border-left: 4px solid #ef4444;
-    }}
-    .alert-warning {{
-        border-left: 4px solid #f59e0b;
-    }}
-    .login-card {{
-        background: rgba(30, 41, 59, 0.5) !important;
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(245, 158, 11, 0.2);
-        border-radius: 32px !important;
-        padding: 2rem 2.5rem;
-        box-shadow: 0 24px 80px rgba(0,0,0,0.5);
-        max-width: 440px;
-        margin: 0 auto;
-    }}
-    .profile-pic {{
-        width: 150px;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 50%;
-        border: 3px solid #f59e0b;
-        box-shadow: 0 8px 32px rgba(245,158,11,0.15);
-    }}
-    .pending-scroll {{
-        max-height: 350px;
-        overflow-y: auto;
-        padding: 10px;
-        border-radius: 12px;
-        scrollbar-width: thin;
-        scrollbar-color: #f59e0b #1e293b;
-    }}
-    .pending-scroll::-webkit-scrollbar {{
-        width: 6px;
-    }}
-    .pending-scroll::-webkit-scrollbar-track {{
-        background: #1e293b;
-        border-radius: 10px;
-    }}
-    .pending-scroll::-webkit-scrollbar-thumb {{
-        background: #f59e0b;
-        border-radius: 10px;
-    }}
-    .pending-scroll::-webkit-scrollbar-thumb:hover {{
-        background: #d97706;
-    }}
-    .req-id-badge {{
-        font-size: 0.82rem;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-        max-width: 110px;
-        overflow: hidden;
-        display: inline-block;
-        background: rgba(245, 158, 11, 0.12);
-        padding: 2px 10px;
-        border-radius: 20px;
-        color: #f59e0b;
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.2s;
-    }}
-    .req-id-badge:hover {{
-        background: rgba(245, 158, 11, 0.25);
-        color: #fbbf24;
-    }}
-    .qr-modal img {{
-        max-width: 200px;
-        margin: 0 auto;
-        display: block;
-    }}
-    .timeline {{
-        position: relative;
-        padding-left: 30px;
-    }}
-    .timeline::before {{
-        content: '';
-        position: absolute;
-        left: 10px;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: rgba(245, 158, 11, 0.3);
-    }}
-    .timeline-item {{
-        position: relative;
-        margin-bottom: 20px;
-    }}
-    .timeline-item::before {{
-        content: '';
-        position: absolute;
-        left: -24px;
-        top: 5px;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: #f59e0b;
-        border: 2px solid #0f172a;
-    }}
-    .timeline-item .time {{
-        font-size: 0.8rem;
-        color: #94a3b8;
-    }}
-    .timeline-item .content {{
-        background: rgba(30, 41, 59, 0.4);
-        padding: 10px 15px;
-        border-radius: 10px;
-        border-left: 3px solid #f59e0b;
-    }}
-    .completion-evidence {{
-        border: 2px solid rgba(245, 158, 11, 0.2);
-        border-radius: 16px;
-        padding: 1.25rem;
-        background: rgba(30, 41, 59, 0.4);
-        margin-top: 1rem;
-    }}
+    .navbar {{ background: rgba(15, 23, 42, 0.75) !important; backdrop-filter: blur(16px) saturate(180%); border-bottom: 1px solid rgba(245, 158, 11, 0.25); box-shadow: 0 8px 32px rgba(0,0,0,0.4); padding: 0.75rem 1.5rem; }}
+    .navbar-brand {{ font-weight: 700; font-size: 1.4rem; letter-spacing: 0.5px; color: #f59e0b !important; text-shadow: 0 2px 8px rgba(245,158,11,0.3); }}
+    .navbar-brand img {{ height: 38px; vertical-align: middle; margin-right: 10px; filter: drop-shadow(0 2px 6px rgba(245,158,11,0.2)); }}
+    .nav-link {{ color: #cbd5e1 !important; font-weight: 500; padding: 0.6rem 1.2rem !important; border-radius: 40px; transition: all 0.25s ease; margin: 0 0.1rem; display: flex; align-items: center; gap: 8px; }}
+    .nav-link i {{ font-size: 1.1rem; width: 1.5rem; text-align: center; color: #f59e0b; transition: color 0.2s; }}
+    .nav-link:hover {{ background: rgba(245, 158, 11, 0.12); color: #f59e0b !important; transform: translateY(-1px); }}
+    .nav-link:hover i {{ color: #fbbf24; }}
+    .navbar-nav .active {{ background: rgba(245, 158, 11, 0.18); color: #f59e0b !important; box-shadow: 0 0 20px rgba(245,158,11,0.08); }}
+    .navbar-toggler {{ border-color: rgba(245,158,11,0.4); }}
+    .navbar-toggler-icon {{ background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(245,158,11,0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e"); }}
+    .container {{ max-width: 1280px; padding: 1.5rem; }}
+    .card {{ background: rgba(30, 41, 59, 0.6) !important; backdrop-filter: blur(8px); border: 1px solid rgba(245, 158, 11, 0.15); border-radius: 20px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.25); transition: transform 0.25s ease, box-shadow 0.3s ease; color: #e2e8f0; padding: 1.25rem; margin-bottom: 1.5rem; }}
+    .card:hover {{ transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,0.4); border-color: rgba(245, 158, 11, 0.3); }}
+    .card-title {{ font-weight: 600; color: #f59e0b; letter-spacing: 0.3px; }}
+    .metric-card {{ background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(8px); border: 1px solid rgba(245, 158, 11, 0.12); border-radius: 20px; padding: 1.2rem 1rem; text-align: center; transition: all 0.3s ease; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }}
+    .metric-card:hover {{ transform: translateY(-6px); border-color: #f59e0b; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }}
+    .metric-icon {{ font-size: 2.2rem; color: #f59e0b; margin-bottom: 0.5rem; opacity: 0.9; }}
+    .metric-value {{ font-size: 2rem; font-weight: 700; color: #f8fafc; line-height: 1.2; }}
+    .metric-label {{ font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.25rem; }}
+    .table {{ color: #e2e8f0; border-color: rgba(245, 158, 11, 0.1); }}
+    .table thead th {{ border-bottom: 2px solid rgba(245, 158, 11, 0.2); color: #f59e0b; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; padding: 8px 10px; }}
+    .table td {{ padding: 8px 10px; vertical-align: middle; border-color: rgba(245, 158, 11, 0.08); }}
+    .table-striped tbody tr:nth-of-type(odd) {{ background-color: rgba(30, 41, 59, 0.3); }}
+    .table-hover tbody tr:hover {{ background-color: rgba(245, 158, 11, 0.06); }}
+    .btn {{ border-radius: 40px; font-weight: 600; padding: 0.6rem 1.8rem; transition: all 0.25s ease; border: none; letter-spacing: 0.3px; }}
+    .btn-primary {{ background: linear-gradient(135deg, #f59e0b, #d97706); color: #0f172a; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25); }}
+    .btn-primary:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #0f172a; }}
+    .btn-success {{ background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 16px rgba(34, 197, 94, 0.25); }}
+    .btn-success:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4); background: linear-gradient(135deg, #4ade80, #22c55e); }}
+    .btn-warning {{ background: linear-gradient(135deg, #eab308, #ca8a04); color: #0f172a; box-shadow: 0 4px 16px rgba(234, 179, 8, 0.25); }}
+    .btn-warning:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(234, 179, 8, 0.4); background: linear-gradient(135deg, #facc15, #eab308); color: #0f172a; }}
+    .btn-danger {{ background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 16px rgba(239, 68, 68, 0.25); }}
+    .btn-danger:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(239, 68, 68, 0.4); background: linear-gradient(135deg, #f87171, #ef4444); }}
+    .btn-outline-secondary {{ border: 1px solid rgba(245, 158, 11, 0.3); color: #cbd5e1; background: transparent; }}
+    .btn-outline-secondary:hover {{ background: rgba(245, 158, 11, 0.1); border-color: #f59e0b; color: #f59e0b; }}
+    .btn-request {{ background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: #0f172a; }}
+    .btn-request:hover {{ background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #0f172a; transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245, 158, 11, 0.4); }}
+    .btn-workorder {{ background: linear-gradient(135deg, #22c55e, #16a34a); border: none; color: white; }}
+    .btn-workorder:hover {{ background: linear-gradient(135deg, #4ade80, #22c55e); color: white; transform: translateY(-2px); box-shadow: 0 8px 28px rgba(34, 197, 94, 0.4); }}
+    .btn-report {{ background: linear-gradient(135deg, #fbbf24, #f59e0b); border: none; color: #0f172a; }}
+    .btn-report:hover {{ background: linear-gradient(135deg, #fde68a, #fbbf24); color: #0f172a; transform: translateY(-2px); box-shadow: 0 8px 28px rgba(251, 191, 36, 0.4); }}
+    .quick-btn {{ font-size: 1.2rem; font-weight: 700; padding: 1.2rem 1.5rem; border-radius: 50px !important; text-align: left; display: flex; align-items: center; transition: all 0.25s ease; width: 100%; margin-bottom: 0.75rem; }}
+    .quick-btn i {{ font-size: 2rem; margin-right: 1.2rem; width: 2.5rem; text-align: center; }}
+    .form-control, .form-select {{ background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 12px; color: #e2e8f0; padding: 0.75rem 1rem; transition: border-color 0.2s, box-shadow 0.2s; }}
+    .form-control:focus, .form-select:focus {{ border-color: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15); background: rgba(15, 23, 42, 0.8); color: #f8fafc; }}
+    .form-label {{ font-weight: 500; color: #cbd5e1; margin-bottom: 0.4rem; }}
+    .alert {{ border-radius: 16px; border: none; background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(8px); color: #e2e8f0; padding: 1rem 1.5rem; margin-bottom: 1.5rem; }}
+    .alert-success {{ border-left: 4px solid #22c55e; }}
+    .alert-danger {{ border-left: 4px solid #ef4444; }}
+    .alert-warning {{ border-left: 4px solid #f59e0b; }}
+    .login-card {{ background: rgba(30, 41, 59, 0.5) !important; backdrop-filter: blur(20px); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 32px !important; padding: 2rem 2.5rem; box-shadow: 0 24px 80px rgba(0,0,0,0.5); max-width: 440px; margin: 0 auto; }}
+    .profile-pic {{ width: 150px; height: 150px; object-fit: cover; border-radius: 50%; border: 3px solid #f59e0b; box-shadow: 0 8px 32px rgba(245,158,11,0.15); }}
+    .pending-scroll {{ max-height: 350px; overflow-y: auto; padding: 10px; border-radius: 12px; scrollbar-width: thin; scrollbar-color: #f59e0b #1e293b; }}
+    .pending-scroll::-webkit-scrollbar {{ width: 6px; }}
+    .pending-scroll::-webkit-scrollbar-track {{ background: #1e293b; border-radius: 10px; }}
+    .pending-scroll::-webkit-scrollbar-thumb {{ background: #f59e0b; border-radius: 10px; }}
+    .pending-scroll::-webkit-scrollbar-thumb:hover {{ background: #d97706; }}
+    .req-id-badge {{ font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; max-width: 110px; overflow: hidden; display: inline-block; background: rgba(245, 158, 11, 0.12); padding: 2px 10px; border-radius: 20px; color: #f59e0b; font-weight: 600; text-decoration: none; transition: all 0.2s; }}
+    .req-id-badge:hover {{ background: rgba(245, 158, 11, 0.25); color: #fbbf24; }}
+    .qr-modal img {{ max-width: 200px; margin: 0 auto; display: block; }}
+    .timeline {{ position: relative; padding-left: 30px; }}
+    .timeline::before {{ content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: rgba(245, 158, 11, 0.3); }}
+    .timeline-item {{ position: relative; margin-bottom: 20px; }}
+    .timeline-item::before {{ content: ''; position: absolute; left: -24px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b; border: 2px solid #0f172a; }}
+    .timeline-item .time {{ font-size: 0.8rem; color: #94a3b8; }}
+    .timeline-item .content {{ background: rgba(30, 41, 59, 0.4); padding: 10px 15px; border-radius: 10px; border-left: 3px solid #f59e0b; }}
+    .completion-evidence {{ border: 2px solid rgba(245, 158, 11, 0.2); border-radius: 16px; padding: 1.25rem; background: rgba(30, 41, 59, 0.4); margin-top: 1rem; }}
     @media (max-width: 768px) {{
-        .navbar {{
-            padding: 0.5rem 1rem;
-        }}
-        .nav-link {{
-            padding: 0.5rem 0.8rem !important;
-            font-size: 0.9rem;
-        }}
-        .metric-value {{
-            font-size: 1.5rem;
-        }}
-        .login-card {{
-            padding: 1.5rem;
-            margin: 1rem;
-        }}
-        .pending-scroll {{
-            max-height: 250px;
-        }}
-        .quick-btn {{
-            font-size: 1rem;
-            padding: 1rem 1.2rem;
-        }}
-        .quick-btn i {{
-            font-size: 1.5rem;
-            margin-right: 0.8rem;
-            width: 2rem;
-        }}
+        .navbar {{ padding: 0.5rem 1rem; }}
+        .nav-link {{ padding: 0.5rem 0.8rem !important; font-size: 0.9rem; }}
+        .metric-value {{ font-size: 1.5rem; }}
+        .login-card {{ padding: 1.5rem; margin: 1rem; }}
+        .pending-scroll {{ max-height: 250px; }}
+        .quick-btn {{ font-size: 1rem; padding: 1rem 1.2rem; }}
+        .quick-btn i {{ font-size: 1.5rem; margin-right: 0.8rem; width: 2rem; }}
     }}
-    ::-webkit-scrollbar {{
-        width: 8px;
-        background: #0f172a;
-    }}
-    ::-webkit-scrollbar-thumb {{
-        background: #f59e0b;
-        border-radius: 10px;
-    }}
-    ::-webkit-scrollbar-thumb:hover {{
-        background: #d97706;
-    }}
+    ::-webkit-scrollbar {{ width: 8px; background: #0f172a; }}
+    ::-webkit-scrollbar-thumb {{ background: #f59e0b; border-radius: 10px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: #d97706; }}
 </style>
 </head>
 <body>
@@ -1126,15 +747,19 @@ def page(title, content):
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+const csrfToken = "{csrf_token}";
 </script>
 </body>
 </html>"""
 
-
 # --------------------------------------------------------------
-# SEED DATA
+# SEED DATA (FIXED: no unconditional delete)
 # --------------------------------------------------------------
 def seed_data():
+    if User.query.first():
+        logger.info("Users already exist, skipping seed.")
+        return
+
     departments = [
         "Housekeeping", "Front Office", "Engineering", "Food & Beverage",
         "Administration", "Security", "Maintenance", "Other"
@@ -1197,9 +822,6 @@ def seed_data():
         if not Employee.query.get(emp_id):
             db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
 
-    User.query.delete()
-    db.session.commit()
-
     admin = User(
         username="admin",
         full_name="System Administrator",
@@ -1208,7 +830,8 @@ def seed_data():
         phone="",
         profile_pic=None
     )
-    admin.set_password("admin123")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    admin.set_password(admin_password)
     db.session.add(admin)
 
     staff_list = [
@@ -1288,10 +911,11 @@ def seed_data():
                 )
                 db.session.add(req)
         db.session.commit()
-
+    logger.info("Seed data loaded successfully.")
+    logger.warning("Default passwords are used for staff (123456). Please change them immediately.")
 
 # --------------------------------------------------------------
-# ROOT ROUTE
+# ROUTES
 # --------------------------------------------------------------
 @app.route("/")
 def index():
@@ -1306,27 +930,16 @@ def index():
             return redirect(url_for("workorders_list"))
     return redirect(url_for("login"))
 
-
-# --------------------------------------------------------------
-# AUTH
-# --------------------------------------------------------------
+# ---------- AUTH ----------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        if current_user.role in ["ADMIN", "MANAGER"]:
-            return redirect(url_for("dashboard"))
-        elif current_user.role == "DEPARTMENT":
-            return redirect(url_for("department_dashboard"))
-        elif current_user.role == "EMPLOYEE":
-            return redirect(url_for("employee_dashboard"))
-        else:
-            return redirect(url_for("workorders_list"))
-
+        return redirect(url_for("dashboard"))
     if request.method == "POST":
+        validate_csrf_token()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         user = User.query.filter_by(username=username).first()
-
         if user and user.check_password(password) and user.active:
             login_user(user)
             log_audit("Login", "User", user.id)
@@ -1339,40 +952,38 @@ def login():
                 return redirect(url_for("employee_dashboard"))
             else:
                 return redirect(url_for("workorders_list"))
-
-        flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል", "danger")
-
-    login_html = """
+        flash("Invalid username or password", "danger")
+    login_html = f"""
     <div class="row justify-content-center align-items-center" style="min-height: 80vh;">
         <div class="col-11 col-md-5">
             <div class="login-card">
                 <div class="text-center mb-4">
                     <img src="/logo.png" alt="Rori Hotel Logo" style="height: 50px; margin-bottom: 10px;">
                     <h3 class="fw-bold" style="color: #f59e0b;">Rori Hotel</h3>
-                    <p class="text-muted" style="color: #94a3b8;">የጥገና ክፍል መግቢያ</p>
+                    <p class="text-muted" style="color: #94a3b8;">Maintenance Login</p>
                 </div>
                 <form method="post">
+                    {csrf_input()}
                     <div class="mb-3">
-                        <label class="form-label">መለያ ስም (Username)</label>
-                        <input type="text" class="form-control form-control-lg" name="username" placeholder="ስም ያስገቡ..." required>
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control form-control-lg" name="username" placeholder="Enter username" required>
                     </div>
                     <div class="mb-4">
-                        <label class="form-label">የይለፍ ቃል (Password)</label>
+                        <label class="form-label">Password</label>
                         <input type="password" class="form-control form-control-lg" name="password" placeholder="********" required>
                     </div>
-                    <button class="btn btn-primary btn-lg w-100"><i class="fas fa-sign-in-alt"></i> ግባ / Login</button>
+                    <button class="btn btn-primary btn-lg w-100"><i class="fas fa-sign-in-alt"></i> Login</button>
                 </form>
                 <hr class="my-4" style="border-color: rgba(245,158,11,0.15);">
                 <div class="text-center small text-muted" style="color: #94a3b8;">
-                    <p class="mb-1">ማናጀር: amir | ሱፐርቫይዘር: abebayhu | ሰራተኛ: tesfahun</p>
-                    <p class="mb-0">የይለፍ ቃል: 123456</p>
+                    <p class="mb-1">Manager: amir | Supervisor: abebayhu | Technician: tesfahun</p>
+                    <p class="mb-0">Password: 123456</p>
                 </div>
             </div>
         </div>
     </div>
     """
     return page("Login", login_html)
-
 
 @app.route("/logout")
 @login_required
@@ -1382,15 +993,13 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-
-# --------------------------------------------------------------
-# PROFILE
-# --------------------------------------------------------------
+# ---------- PROFILE ----------
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
     user = current_user
     if request.method == "POST":
+        validate_csrf_token()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
         if email != user.email or phone != user.phone:
@@ -1399,12 +1008,10 @@ def profile():
             user.email = email
             user.phone = phone
             log_audit("Profile Update", "User", user.id, f"Email: {old_email}, Phone: {old_phone}", f"Email: {email}, Phone: {phone}")
-
         new_password = request.form.get("new_password", "").strip()
         if new_password:
             user.set_password(new_password)
-            flash("የይለፍ ቃል ተቀይሯል", "success")
-
+            flash("Password updated", "success")
         file = request.files.get("profile_pic")
         if file and file.filename != "":
             if allowed_file(file.filename):
@@ -1417,57 +1024,53 @@ def profile():
                 file.save(os.path.join(app.config["PROFILE_PIC_FOLDER"], filename))
                 user.profile_pic = filename
                 log_audit("Profile Pic Update", "User", user.id, old_value=user.profile_pic, new_value=filename)
-                flash("የመገለጫ ሥዕል ተለውጧል", "success")
+                flash("Profile picture updated", "success")
             else:
-                flash("ልክ ያልሆነ የፋይል አይነት", "danger")
-
+                flash("Invalid file type", "danger")
         db.session.commit()
-        flash("መረጃዎ ተዘምኗል", "success")
+        flash("Profile updated", "success")
         return redirect(url_for("profile"))
-
     pic_url = url_for('static', filename=f'profile_pics/{user.profile_pic}') if user.profile_pic else url_for('static', filename='profile_pics/default.png')
     content = f"""
     <div class="row">
         <div class="col-md-4 text-center">
             <img src="{pic_url}" class="profile-pic img-thumbnail mb-3" alt="Profile Picture">
-            <h4 style="color: #f8fafc;">{user.full_name}</h4>
-            <p style="color: #94a3b8;">@{user.username} · {user.role}</p>
+            <h4 style="color: #f8fafc;">{escape_html(user.full_name)}</h4>
+            <p style="color: #94a3b8;">@{escape_html(user.username)} · {escape_html(user.role)}</p>
         </div>
         <div class="col-md-8">
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title"><i class="fas fa-user-edit"></i> አርትዕ መገለጫ</h5>
+                    <h5 class="card-title"><i class="fas fa-user-edit"></i> Edit Profile</h5>
                     <form method="post" enctype="multipart/form-data">
+                        {csrf_input()}
                         <div class="mb-3">
-                            <label class="form-label">ኢሜል</label>
-                            <input type="email" class="form-control" name="email" value="{user.email or ''}">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" name="email" value="{escape_html(user.email or '')}">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">ስልክ</label>
-                            <input type="text" class="form-control" name="phone" value="{user.phone or ''}">
+                            <label class="form-label">Phone</label>
+                            <input type="text" class="form-control" name="phone" value="{escape_html(user.phone or '')}">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">የመገለጫ ሥዕል</label>
+                            <label class="form-label">Profile Picture</label>
                             <input type="file" class="form-control" name="profile_pic" accept="image/*">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">አዲስ የይለፍ ቃል (ባዶ ሆኖ ከቀረ አይለወጥም)</label>
+                            <label class="form-label">New Password (leave blank to keep current)</label>
                             <input type="password" class="form-control" name="new_password" placeholder="********">
                         </div>
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ ለውጦች</button>
-                        <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> ውጣ / Logout</a>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+                        <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
                     </form>
                 </div>
             </div>
         </div>
     </div>
     """
-    return page("መገለጫ", content)
+    return page("Profile", content)
 
-
-# --------------------------------------------------------------
-# EMPLOYEE / REQUESTER DASHBOARD
-# --------------------------------------------------------------
+# ---------- EMPLOYEE DASHBOARD ----------
 @app.route("/employee/dashboard")
 @login_required
 @role_required("EMPLOYEE")
@@ -1486,14 +1089,14 @@ def employee_dashboard():
         for r in requests:
             rows += f"""
             <tr>
-            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
-            <td>{r.description[:50] + '...' if r.description and len(r.description) > 50 else r.description or 'N/A'}</td>
-            <td>{r.department.name if r.department else 'N/A'}</td>
-            <td>{r.location_name}</td>
-            <td>{r.category.name if r.category else 'N/A'}</td>
-            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{r.priority}</span></td>
-            <td><span class="badge bg-{'success' if r.status=='Completed' or r.status=='Closed' else 'warning' if r.status=='Pending' else 'info'}">{r.status}</span></td>
-            <td>{r.assigned_to.full_name if r.assigned_to else 'Not assigned'}</td>
+            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{escape_html(r.request_no)}</a></td>
+            <td>{escape_html(r.description[:50] + '...' if r.description and len(r.description) > 50 else r.description or 'N/A')}</td>
+            <td>{escape_html(r.department.name if r.department else 'N/A')}</td>
+            <td>{escape_html(r.location_name)}</td>
+            <td>{escape_html(r.category.name if r.category else 'N/A')}</td>
+            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{escape_html(r.priority)}</span></td>
+            <td><span class="badge bg-{'success' if r.status in ('Completed','Closed') else 'warning' if r.status=='Pending' else 'info'}">{escape_html(r.status)}</span></td>
+            <td>{escape_html(r.assigned_to.full_name if r.assigned_to else 'Not assigned')}</td>
             <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
             <td>{r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else ''}</td>
             <td>{r.completed_date.strftime('%Y-%m-%d %H:%M') if r.completed_date else ''}</td>
@@ -1502,7 +1105,7 @@ def employee_dashboard():
 
         content = f"""
         <h3><i class="fas fa-user-circle"></i> My Dashboard</h3>
-        <p class="text-muted">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
+        <p class="text-muted">Welcome, {escape_html(current_user.full_name)}!</p>
 
         <div class="row g-4 mb-4">
             <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total}</div><div class="metric-label">Total Requests</div></div></div>
@@ -1521,17 +1124,8 @@ def employee_dashboard():
                     <table class="table table-bordered table-striped table-hover">
                         <thead>
                             <tr>
-                                <th>Request ID</th>
-                                <th>Issue</th>
-                                <th>Department</th>
-                                <th>Location</th>
-                                <th>Category</th>
-                                <th>Priority</th>
-                                <th>Status</th>
-                                <th>Assigned To</th>
-                                <th>Created</th>
-                                <th>Updated</th>
-                                <th>Completed</th>
+                                <th>Request ID</th><th>Issue</th><th>Department</th><th>Location</th><th>Category</th>
+                                <th>Priority</th><th>Status</th><th>Assigned To</th><th>Created</th><th>Updated</th><th>Completed</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1553,10 +1147,7 @@ def employee_dashboard():
         flash(f"Error loading dashboard: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
-# --------------------------------------------------------------
-# DEPARTMENT DASHBOARD
-# --------------------------------------------------------------
+# ---------- DEPARTMENT DASHBOARD ----------
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -1571,24 +1162,24 @@ def department_dashboard():
         priority_badge = 'danger' if r.priority == 'URGENT' else 'warning' if r.priority == 'HIGH' else 'info' if r.priority == 'MEDIUM' else 'secondary'
         rows.append(f"""
         <tr>
-        <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
-        <td>{r.location_name}</td>
-        <td>{working_name}</td>
-        <td><span class="badge bg-{priority_badge}">{r.priority}</span></td>
-        <td><span class="badge bg-{status_badge}">{r.status}</span></td>
+        <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{escape_html(r.request_no)}</a></td>
+        <td>{escape_html(r.location_name)}</td>
+        <td>{escape_html(working_name)}</td>
+        <td><span class="badge bg-{priority_badge}">{escape_html(r.priority)}</span></td>
+        <td><span class="badge bg-{status_badge}">{escape_html(r.status)}</span></td>
         <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
         </tr>""")
     content = f"""
-    <h3><i class="fas fa-building"></i> የዲፓርትመንት ዳሽቦርድ</h3>
-    <p class="text-muted">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
-    <a class="btn btn-primary mb-3" href="/requests/new"><i class="fas fa-plus-circle"></i> አዲስ የጥገና ጥያቄ</a>
+    <h3><i class="fas fa-building"></i> Department Dashboard</h3>
+    <p class="text-muted">Welcome, {escape_html(current_user.full_name)}!</p>
+    <a class="btn btn-primary mb-3" href="/requests/new"><i class="fas fa-plus-circle"></i> New Request</a>
     <div class="card">
         <div class="card-body">
-            <h5 class="card-title"><i class="fas fa-list"></i> የእኔ ጥያቄዎች</h5>
+            <h5 class="card-title"><i class="fas fa-list"></i> My Requests</h5>
             <div class="table-responsive">
                 <table class="table table-bordered table-striped table-hover">
-                    <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
-                    <tbody>{''.join(rows) or '<tr><td colspan="6" class="text-center">እስካሁን ምንም ጥያቄ አልተላከም</td></tr>'}</tbody>
+                    <thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>
+                    <tbody>{''.join(rows) or '<tr><td colspan="6" class="text-center">No requests yet.</td></tr>'}</tbody>
                 </table>
             </div>
         </div>
@@ -1596,10 +1187,7 @@ def department_dashboard():
     """
     return page("Department Dashboard", content)
 
-
-# --------------------------------------------------------------
-# PUBLIC / NEW ROUTE (NO LOGIN REQUIRED)
-# --------------------------------------------------------------
+# ---------- PUBLIC REQUEST FORM ----------
 @app.route("/new", methods=["GET", "POST"])
 def public_request_form():
     rooms = Room.query.order_by(Room.room_number).all()
@@ -1609,6 +1197,7 @@ def public_request_form():
     departments = Department.query.order_by(Department.name).all()
 
     if request.method == "POST":
+        validate_csrf_token()
         location_type = request.form.get("location_type")
         room_id = request.form.get("room_id", type=int)
         area_id = request.form.get("area_id", type=int)
@@ -1620,26 +1209,26 @@ def public_request_form():
         due_date = request.form.get("due_date")
 
         if location_type not in ["Room", "Hotel Area"]:
-            flash("የቦታ አይነት ልክ አይደለም", "danger")
+            flash("Invalid location type", "danger")
             return redirect(url_for("public_request_form"))
 
         if location_type == "Room":
             room = Room.query.get(room_id)
             if not room or not (201 <= int(room.room_number) <= 300):
-                flash("ልክ ያልሆነ ክፍል። ክፍሉ ከ201-300 መሆን አለበት።", "danger")
+                flash("Invalid room. Room numbers must be between 201 and 300.", "danger")
                 return redirect(url_for("public_request_form"))
             floor = room.floor
             area_id = None
         else:
             area = Area.query.get(area_id)
             if not area:
-                flash("ልክ ያልሆነ ቦታ", "danger")
+                flash("Invalid area", "danger")
                 return redirect(url_for("public_request_form"))
             floor = None
             room_id = None
 
         if not description:
-            flash("የችግሩ መግለጫ ያስፈልጋል", "danger")
+            flash("Description is required", "danger")
             return redirect(url_for("public_request_form"))
 
         due = datetime.strptime(due_date, "%Y-%m-%dT%H:%M") if due_date else datetime.utcnow() + timedelta(hours=PRIORITIES.get(priority, 24))
@@ -1674,92 +1263,89 @@ def public_request_form():
                          f"Your request {req.request_no} has been submitted successfully.", "Request Submitted")
 
         db.session.commit()
-        flash("ጥያቄዎ በተሳካ ሁኔታ ተልኳል! ማናጀሩ በቅርቡ ያጸድቃል።", "success")
+        flash("Request submitted successfully!", "success")
         return redirect(url_for("public_request_form"))
 
-    room_options = "".join(f'<option value="{r.id}">ክፍል {r.room_number} (ፎቅ {r.floor})</option>' for r in rooms)
-    area_options = "".join(f'<option value="{a.id}">{a.name}</option>' for a in areas)
-    item_options = "".join(f'<option value="{i.id}">{i.name}</option>' for i in items)
-    category_options = "".join(f'<option value="{c.id}">{c.name}</option>' for c in categories)
-    dept_options = "".join(f'<option value="{d.id}">{d.name}</option>' for d in departments)
+    room_options = "".join(f'<option value="{r.id}">Room {r.room_number} (Floor {r.floor})</option>' for r in rooms)
+    area_options = "".join(f'<option value="{a.id}">{escape_html(a.name)}</option>' for a in areas)
+    item_options = "".join(f'<option value="{i.id}">{escape_html(i.name)}</option>' for i in items)
+    category_options = "".join(f'<option value="{c.id}">{escape_html(c.name)}</option>' for c in categories)
+    dept_options = "".join(f'<option value="{d.id}">{escape_html(d.name)}</option>' for d in departments)
 
     content = f"""
-    <h3><i class="fas fa-plus-circle"></i> አዲስ የጥገና ጥያቄ</h3>
+    <h3><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>
     <div class="card">
     <div class="card-body">
     <form method="post" enctype="multipart/form-data">
-    <div class="row">
-    <div class="col-md-6 mb-3">
-    <label class="form-label">የቦታ አይነት</label>
-    <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
-      <option value="Room">ክፍል</option>
-      <option value="Hotel Area">የሆቴል ቦታ</option>
-    </select>
-    </div>
-    <div class="col-md-6 mb-3" id="room_div">
-    <label class="form-label">ክፍል</label>
-    <select class="form-select" name="room_id">{room_options}</select>
-    </div>
-    <div class="col-md-6 mb-3" id="area_div" style="display:none">
-    <label class="form-label">ቦታ</label>
-    <select class="form-select" name="area_id"><option value="">-- ቦታ ይምረጡ --</option>{area_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">ዲፓርትመንት</label>
-    <select class="form-select" name="department_id" required><option value="">-- ዲፓርትመንት ይምረጡ --</option>{dept_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">የስራ እቃ</label>
-    <select class="form-select" name="working_item_id" required><option value="">-- እቃ ይምረጡ --</option>{item_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">ምድብ</label>
-    <select class="form-select" name="category_id" required><option value="">-- ምድብ ይምረጡ --</option>{category_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">ቅድሚያ</label>
-    <select class="form-select" name="priority">
-      <option value="LOW">ዝቅተኛ</option><option value="MEDIUM" selected>መካከለኛ</option>
-      <option value="HIGH">ከፍተኛ</option><option value="URGENT">አስቸኳይ</option>
-    </select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">የመጨረሻ ቀን (አማራጭ)</label>
-    <input type="datetime-local" class="form-control" name="due_date">
-    </div>
-    <div class="col-12 mb-3">
-    <label class="form-label">የችግሩ መግለጫ</label>
-    <textarea class="form-control" name="description" required rows="4"></textarea>
-    </div>
-    <div class="col-12 mb-3">
-    <label class="form-label">ፎቶ (አማራጭ)</label>
-    <input type="file" class="form-control" name="photo" accept="image/*">
-    </div>
-    <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> ጥያቄ ያስገቡ / Submit Request</button>
-    </div>
+        {csrf_input()}
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Location Type</label>
+                <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
+                    <option value="Room">Room</option>
+                    <option value="Hotel Area">Hotel Area</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3" id="room_div">
+                <label class="form-label">Room</label>
+                <select class="form-select" name="room_id">{room_options}</select>
+            </div>
+            <div class="col-md-6 mb-3" id="area_div" style="display:none">
+                <label class="form-label">Area</label>
+                <select class="form-select" name="area_id"><option value="">-- Select Area --</option>{area_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Department</label>
+                <select class="form-select" name="department_id" required><option value="">-- Select Department --</option>{dept_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Working Item</label>
+                <select class="form-select" name="working_item_id" required><option value="">-- Select Item --</option>{item_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Category</label>
+                <select class="form-select" name="category_id" required><option value="">-- Select Category --</option>{category_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Priority</label>
+                <select class="form-select" name="priority">
+                    <option value="LOW">Low</option><option value="MEDIUM" selected>Medium</option>
+                    <option value="HIGH">High</option><option value="URGENT">Urgent</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Due Date (optional)</label>
+                <input type="datetime-local" class="form-control" name="due_date">
+            </div>
+            <div class="col-12 mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="description" required rows="4"></textarea>
+            </div>
+            <div class="col-12 mb-3">
+                <label class="form-label">Photo (optional)</label>
+                <input type="file" class="form-control" name="photo" accept="image/*">
+            </div>
+            <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>
+        </div>
     </form>
     </div></div>
     <script>
     function toggleLocation() {{
-      var type = document.getElementById('loc_type').value;
-      document.getElementById('room_div').style.display = type === 'Room' ? 'block' : 'none';
-      document.getElementById('area_div').style.display = type === 'Hotel Area' ? 'block' : 'none';
+        var type = document.getElementById('loc_type').value;
+        document.getElementById('room_div').style.display = type === 'Room' ? 'block' : 'none';
+        document.getElementById('area_div').style.display = type === 'Hotel Area' ? 'block' : 'none';
     }}
     </script>
     """
     return page("New Request (Public)", content)
 
-
-# --------------------------------------------------------------
-# MANAGER / ADMIN DASHBOARD
-# --------------------------------------------------------------
+# ---------- MANAGER / ADMIN DASHBOARD ----------
 @app.route("/dashboard")
 @login_required
 def dashboard():
     if current_user.role not in ["ADMIN", "MANAGER"]:
-        flash("ይህ ገጽ ለአስተዳዳሪዎች ብቻ ነው", "danger")
+        flash("This page is for administrators only", "danger")
         return redirect(url_for("workorders_list"))
-
     try:
         dept_filter = request.args.get('department', type=int)
         area_filter = request.args.get('area', type=int)
@@ -1796,22 +1382,23 @@ def dashboard():
         for r in reqs:
             rows += f"""
             <tr>
-            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
-            <td>{r.description[:40] + '...' if r.description and len(r.description) > 40 else r.description or 'N/A'}</td>
-            <td>{r.department.name if r.department else 'N/A'}</td>
-            <td>{r.location_name}</td>
-            <td>{r.category.name if r.category else 'N/A'}</td>
-            <td>{r.requested_by.full_name if r.requested_by else 'Guest'}</td>
-            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{r.priority}</span></td>
-            <td><span class="badge bg-{'success' if r.status=='Completed' or r.status=='Closed' else 'warning' if r.status=='Pending' else 'info'}">{r.status}</span></td>
-            <td>{r.assigned_to.full_name if r.assigned_to else 'Not assigned'}</td>
+            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{escape_html(r.request_no)}</a></td>
+            <td>{escape_html(r.description[:40] + '...' if r.description and len(r.description) > 40 else r.description or 'N/A')}</td>
+            <td>{escape_html(r.department.name if r.department else 'N/A')}</td>
+            <td>{escape_html(r.location_name)}</td>
+            <td>{escape_html(r.category.name if r.category else 'N/A')}</td>
+            <td>{escape_html(r.requested_by.full_name if r.requested_by else 'Guest')}</td>
+            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{escape_html(r.priority)}</span></td>
+            <td><span class="badge bg-{'success' if r.status in ('Completed','Closed') else 'warning' if r.status=='Pending' else 'info'}">{escape_html(r.status)}</span></td>
+            <td>{escape_html(r.assigned_to.full_name if r.assigned_to else 'Not assigned')}</td>
             <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
             <td>
                 <a href="/requests/{r.id}" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a>
-                {f'<a href="/requests/{r.id}/approve" class="btn btn-sm btn-success"><i class="fas fa-check"></i></a>' if r.status == "Pending" else ''}
+                {f'<form method="post" action="/requests/{r.id}/approve" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i></button></form>' if r.status == "Pending" else ''}
+                {f'<form method="post" action="/requests/{r.id}/reject" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i></button></form>' if r.status == "Pending" else ''}
                 {f'<a href="/workorders/new?request_id={r.id}" class="btn btn-sm btn-warning"><i class="fas fa-clipboard-list"></i></a>' if r.status in ["Approved", "Assigned"] else ''}
-                {f'<a href="/requests/{r.id}/verify" class="btn btn-sm btn-success"><i class="fas fa-check-double"></i></a>' if r.status == "Completed" else ''}
-                {f'<a href="/requests/{r.id}/close" class="btn btn-sm btn-secondary"><i class="fas fa-archive"></i></a>' if r.status == "Verified" else ''}
+                {f'<form method="post" action="/requests/{r.id}/verify" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check-double"></i></button></form>' if r.status == "Completed" else ''}
+                {f'<form method="post" action="/requests/{r.id}/close" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-sm btn-secondary"><i class="fas fa-archive"></i></button></form>' if r.status == "Verified" else ''}
             </td>
             </tr>
             """
@@ -1822,14 +1409,14 @@ def dashboard():
                 <label class="form-label">Department</label>
                 <select class="form-select" name="department">
                     <option value="">All Departments</option>
-                    {''.join(f'<option value="{d.id}" {"selected" if dept_filter == d.id else ""}>{d.name}</option>' for d in departments)}
+                    {''.join(f'<option value="{d.id}" {"selected" if dept_filter == d.id else ""}>{escape_html(d.name)}</option>' for d in departments)}
                 </select>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Area</label>
                 <select class="form-select" name="area">
                     <option value="">All Areas</option>
-                    {''.join(f'<option value="{a.id}" {"selected" if area_filter == a.id else ""}>{a.name}</option>' for a in areas)}
+                    {''.join(f'<option value="{a.id}" {"selected" if area_filter == a.id else ""}>{escape_html(a.name)}</option>' for a in areas)}
                 </select>
             </div>
             <div class="col-md-2">
@@ -1860,13 +1447,13 @@ def dashboard():
             <div class="col-12">
                 <div class="d-grid gap-2">
                     <a href="{url_for('requests_list')}" class="btn btn-request quick-btn">
-                        <i class="fas fa-list"></i> የጥገና ጥያቄዎች
+                        <i class="fas fa-list"></i> Maintenance Requests
                     </a>
                     <a href="{url_for('workorders_list')}" class="btn btn-workorder quick-btn">
-                        <i class="fas fa-clipboard-list"></i> የሥራ ትዕዛዞች
+                        <i class="fas fa-clipboard-list"></i> Work Orders
                     </a>
                     <a href="{url_for('reports')}" class="btn btn-report quick-btn">
-                        <i class="fas fa-chart-bar"></i> ሪፖርቶች
+                        <i class="fas fa-chart-bar"></i> Reports
                     </a>
                 </div>
             </div>
@@ -1876,24 +1463,24 @@ def dashboard():
         content = f"""
         <div class="row g-4">
             <div class="col-12">
-                <h3 class="fw-bold" style="color: #f59e0b;"><i class="fas fa-crown"></i> የአስተዳዳሪ ዳሽቦርድ</h3>
-                <p class="text-muted" style="color: #94a3b8;">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
+                <h3 class="fw-bold" style="color: #f59e0b;"><i class="fas fa-crown"></i> Manager Dashboard</h3>
+                <p class="text-muted" style="color: #94a3b8;">Welcome, {escape_html(current_user.full_name)}!</p>
             </div>
         </div>
 
         {quick_actions}
 
         <div class="row g-4 mt-2">
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total_requests}</div><div class="metric-label">ጥያቄዎች</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">በመጠባበቅ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">በሂደት ላይ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">{completed}</div><div class="metric-label">የተጠናቀቁ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">{urgent}</div><div class="metric-label">አስቸኳይ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-clock"></i></div><div class="metric-value">{overdue}</div><div class="metric-label">ያለፉ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #f59e0b;"><i class="fas fa-box"></i></div><div class="metric-value">{low_stock}</div><div class="metric-label">ዝቅተኛ ክምችት</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #3b82f6;"><i class="fas fa-door-open"></i></div><div class="metric-value">{out_rooms}</div><div class="metric-label">ክፍሎች ውጪ</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #22c55e;"><i class="fas fa-users"></i></div><div class="metric-value">{total_employees}</div><div class="metric-label">ሰራተኞች</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #8b5cf6;"><i class="fas fa-door-closed"></i></div><div class="metric-value">{total_rooms}</div><div class="metric-label">ክፍሎች</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total_requests}</div><div class="metric-label">Requests</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">In Progress</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">{urgent}</div><div class="metric-label">Urgent</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card" style="border-color: rgba(239, 68, 68, 0.3);"><div class="metric-icon" style="color: #ef4444;"><i class="fas fa-clock"></i></div><div class="metric-value">{overdue}</div><div class="metric-label">Overdue</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #f59e0b;"><i class="fas fa-box"></i></div><div class="metric-value">{low_stock}</div><div class="metric-label">Low Stock</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #3b82f6;"><i class="fas fa-door-open"></i></div><div class="metric-value">{out_rooms}</div><div class="metric-label">Out of Service</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #22c55e;"><i class="fas fa-users"></i></div><div class="metric-value">{total_employees}</div><div class="metric-label">Employees</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color: #8b5cf6;"><i class="fas fa-door-closed"></i></div><div class="metric-value">{total_rooms}</div><div class="metric-label">Rooms</div></div></div>
         </div>
 
         <div class="card mt-4">
@@ -1904,17 +1491,8 @@ def dashboard():
                     <table class="table table-bordered table-striped table-hover">
                         <thead>
                             <tr>
-                                <th>Request ID</th>
-                                <th>Issue</th>
-                                <th>Department</th>
-                                <th>Location</th>
-                                <th>Category</th>
-                                <th>Requester</th>
-                                <th>Priority</th>
-                                <th>Status</th>
-                                <th>Assigned To</th>
-                                <th>Created</th>
-                                <th>Actions</th>
+                                <th>Request ID</th><th>Issue</th><th>Department</th><th>Location</th><th>Category</th>
+                                <th>Requester</th><th>Priority</th><th>Status</th><th>Assigned To</th><th>Created</th><th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1930,10 +1508,7 @@ def dashboard():
         flash(f"Error loading dashboard: {str(e)}", "danger")
         return redirect(url_for("workorders_list"))
 
-
-# --------------------------------------------------------------
-# REPORTS
-# --------------------------------------------------------------
+# ---------- REPORTS ----------
 @app.route("/reports")
 @login_required
 def reports():
@@ -1986,10 +1561,7 @@ def reports():
         flash(f"Error loading reports: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
-# --------------------------------------------------------------
-# REQUESTS ROUTES
-# --------------------------------------------------------------
+# ---------- REQUESTS ----------
 @app.route("/requests")
 @login_required
 def requests_list():
@@ -2005,17 +1577,15 @@ def requests_list():
 
         rows = []
         for r in reqs:
-            cls = ""
-            if r.is_overdue or r.priority == "URGENT":
-                cls = "table-danger" if r.is_overdue else "table-warning"
+            cls = "table-danger" if r.is_overdue else "table-warning" if r.priority == "URGENT" else ""
             rows.append(f"""
             <tr class="{cls}">
-            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{r.request_no}</a></td>
-            <td>{r.location_name}</td>
-            <td>{r.working_item.name if r.working_item else 'N/A'}</td>
-            <td>{r.department.name if r.department else 'N/A'}</td>
-            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{r.priority}</span></td>
-            <td>{r.status}</td>
+            <td><a href="/requests/{r.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{escape_html(r.request_no)}</a></td>
+            <td>{escape_html(r.location_name)}</td>
+            <td>{escape_html(r.working_item.name if r.working_item else 'N/A')}</td>
+            <td>{escape_html(r.department.name if r.department else 'N/A')}</td>
+            <td><span class="badge bg-{'danger' if r.priority=='URGENT' else 'warning' if r.priority=='HIGH' else 'info' if r.priority=='MEDIUM' else 'secondary'}">{escape_html(r.priority)}</span></td>
+            <td>{escape_html(r.status)}</td>
             <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
             </tr>""")
         content = f"""
@@ -2030,7 +1600,6 @@ def requests_list():
         flash(f"Error loading requests: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/requests/new", methods=["GET", "POST"])
 @login_required
 def request_create():
@@ -2041,6 +1610,7 @@ def request_create():
     departments = Department.query.order_by(Department.name).all()
     room_id = request.args.get("room_id", type=int)
     if request.method == "POST":
+        validate_csrf_token()
         location_type = request.form.get("location_type")
         room_id = request.form.get("room_id", type=int)
         area_id = request.form.get("area_id", type=int)
@@ -2110,10 +1680,10 @@ def request_create():
         return redirect(url_for("requests_list"))
 
     room_options = "".join(f'<option value="{r.id}">Room {r.room_number} (Floor {r.floor})</option>' for r in rooms)
-    area_options = "".join(f'<option value="{a.id}">{a.name}</option>' for a in areas)
-    item_options = "".join(f'<option value="{i.id}">{i.name}</option>' for i in items)
-    category_options = "".join(f'<option value="{c.id}">{c.name}</option>' for c in categories)
-    dept_options = "".join(f'<option value="{d.id}">{d.name}</option>' for d in departments)
+    area_options = "".join(f'<option value="{a.id}">{escape_html(a.name)}</option>' for a in areas)
+    item_options = "".join(f'<option value="{i.id}">{escape_html(i.name)}</option>' for i in items)
+    category_options = "".join(f'<option value="{c.id}">{escape_html(c.name)}</option>' for c in categories)
+    dept_options = "".join(f'<option value="{d.id}">{escape_html(d.name)}</option>' for d in departments)
     selected_room = f'<option value="{room_id}" selected>Room {Room.query.get(room_id).room_number if room_id and Room.query.get(room_id) else ""}</option>' if room_id else ""
 
     content = f"""
@@ -2121,70 +1691,68 @@ def request_create():
     <div class="card">
     <div class="card-body">
     <form method="post" enctype="multipart/form-data">
-    <div class="row">
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Location Type</label>
-    <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
-      <option value="Room">Room</option>
-      <option value="Hotel Area">Hotel Area</option>
-    </select>
-    </div>
-    <div class="col-md-6 mb-3" id="room_div">
-    <label class="form-label">Room</label>
-    <select class="form-select" name="room_id">{selected_room}{room_options}</select>
-    </div>
-    <div class="col-md-6 mb-3" id="area_div" style="display:none">
-    <label class="form-label">Area</label>
-    <select class="form-select" name="area_id"><option value="">-- Select Area --</option>{area_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Working Item</label>
-    <select class="form-select" name="working_item_id" required><option value="">-- Select Item --</option>{item_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Category</label>
-    <select class="form-select" name="category_id" required><option value="">-- Select Category --</option>{category_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Department</label>
-    <select class="form-select" name="department_id" required><option value="">-- Select Department --</option>{dept_options}</select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Priority</label>
-    <select class="form-select" name="priority">
-      <option value="LOW">Low</option><option value="MEDIUM" selected>Medium</option>
-      <option value="HIGH">High</option><option value="URGENT">Urgent</option>
-    </select>
-    </div>
-    <div class="col-md-6 mb-3">
-    <label class="form-label">Due Date (optional)</label>
-    <input type="datetime-local" class="form-control" name="due_date">
-    </div>
-    <div class="col-12 mb-3">
-    <label class="form-label">Description</label>
-    <textarea class="form-control" name="description" required rows="4"></textarea>
-    </div>
-    <div class="col-12 mb-3">
-    <label class="form-label">Photo (optional)</label>
-    <input type="file" class="form-control" name="photo" accept="image/*">
-    </div>
-    <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>
-    </div>
+        {csrf_input()}
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Location Type</label>
+                <select class="form-select" name="location_type" id="loc_type" onchange="toggleLocation()" required>
+                    <option value="Room">Room</option>
+                    <option value="Hotel Area">Hotel Area</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3" id="room_div">
+                <label class="form-label">Room</label>
+                <select class="form-select" name="room_id">{selected_room}{room_options}</select>
+            </div>
+            <div class="col-md-6 mb-3" id="area_div" style="display:none">
+                <label class="form-label">Area</label>
+                <select class="form-select" name="area_id"><option value="">-- Select Area --</option>{area_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Working Item</label>
+                <select class="form-select" name="working_item_id" required><option value="">-- Select Item --</option>{item_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Category</label>
+                <select class="form-select" name="category_id" required><option value="">-- Select Category --</option>{category_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Department</label>
+                <select class="form-select" name="department_id" required><option value="">-- Select Department --</option>{dept_options}</select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Priority</label>
+                <select class="form-select" name="priority">
+                    <option value="LOW">Low</option><option value="MEDIUM" selected>Medium</option>
+                    <option value="HIGH">High</option><option value="URGENT">Urgent</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Due Date (optional)</label>
+                <input type="datetime-local" class="form-control" name="due_date">
+            </div>
+            <div class="col-12 mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="description" required rows="4"></textarea>
+            </div>
+            <div class="col-12 mb-3">
+                <label class="form-label">Photo (optional)</label>
+                <input type="file" class="form-control" name="photo" accept="image/*">
+            </div>
+            <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>
+        </div>
     </form>
     </div></div>
     <script>
     function toggleLocation() {{
-      var type = document.getElementById('loc_type').value;
-      document.getElementById('room_div').style.display = type === 'Room' ? 'block' : 'none';
-      document.getElementById('area_div').style.display = type === 'Hotel Area' ? 'block' : 'none';
+        var type = document.getElementById('loc_type').value;
+        document.getElementById('room_div').style.display = type === 'Room' ? 'block' : 'none';
+        document.getElementById('area_div').style.display = type === 'Hotel Area' ? 'block' : 'none';
     }}
     </script>"""
     return page("New Request", content)
 
-
-# --------------------------------------------------------------
-# REQUEST DETAIL
-# --------------------------------------------------------------
+# ---------- REQUEST DETAIL ----------
 @app.route("/requests/<int:req_id>")
 @login_required
 def request_detail(req_id):
@@ -2210,8 +1778,8 @@ def request_detail(req_id):
             <div class="timeline-item">
                 <span class="time">{h.timestamp.strftime('%Y-%m-%d %H:%M') if h.timestamp else ''}</span>
                 <div class="content">
-                    <strong>{h.status}</strong> - by {user_name}
-                    {f'<br><span style="color:#94a3b8;font-size:0.9rem;">{h.notes}</span>' if h.notes else ''}
+                    <strong>{escape_html(h.status)}</strong> - by {escape_html(user_name)}
+                    {f'<br><span style="color:#94a3b8;font-size:0.9rem;">{escape_html(h.notes)}</span>' if h.notes else ''}
                 </div>
             </div>
             """
@@ -2232,63 +1800,65 @@ def request_detail(req_id):
             completion_evidence = f'''
             <div class="completion-evidence">
                 <h6><i class="fas fa-check-circle" style="color:#22c55e;"></i> Work Completion Evidence</h6>
-                <p><strong>Work Performed:</strong> {req.completion_note}</p>
-                <p><strong>Completed By:</strong> {wo.completed_by.full_name if wo and wo.completed_by else 'N/A'}</p>
+                <p><strong>Work Performed:</strong> {escape_html(req.completion_note)}</p>
+                <p><strong>Completed By:</strong> {escape_html(wo.completed_by.full_name if wo and wo.completed_by else 'N/A')}</p>
                 <p><strong>Completed At:</strong> {req.completed_date.strftime('%Y-%m-%d %H:%M') if req.completed_date else ''}</p>
                 {evidence_photo}
             </div>
             '''
 
         content = f"""
-        <h3><i class="fas fa-file-invoice"></i> Request {req.request_no}</h3>
+        <h3><i class="fas fa-file-invoice"></i> Request {escape_html(req.request_no)}</h3>
         <div class="row">
-        <div class="col-md-8">
-        <div class="card">
-        <div class="card-body">
-        <table class="table table-borderless">
-        <tr><th style="width:150px; color:#94a3b8;">Status</th><td><span class="badge bg-{'success' if req.status=='Completed' or req.status=='Closed' else 'warning' if req.status=='Pending' else 'info'}">{req.status}</span></td></tr>
-        <tr><th style="color:#94a3b8;">Location</th><td>{req.location_name}</td></tr>
-        <tr><th style="color:#94a3b8;">Item</th><td>{req.working_item.name if req.working_item else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Category</th><td>{req.category.name if req.category else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Department</th><td>{req.department.name if req.department else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Priority</th><td><span class="badge bg-{'danger' if req.priority=='URGENT' else 'warning' if req.priority=='HIGH' else 'info' if req.priority=='MEDIUM' else 'secondary'}">{req.priority}</span></td></tr>
-        <tr><th style="color:#94a3b8;">Due Date</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
-        <tr><th style="color:#94a3b8;">Requester</th><td>{req.requested_by.full_name if req.requested_by else 'Guest'}</td></tr>
-        <tr><th style="color:#94a3b8;">Assigned To</th><td>{req.assigned_to.full_name if req.assigned_to else 'Not assigned'}</td></tr>
-        <tr><th style="color:#94a3b8;">Completed At</th><td>{req.completed_date.strftime('%Y-%m-%d %H:%M') if req.completed_date else ''}</td></tr>
-        <tr><th style="color:#94a3b8;">Completion Note</th><td>{req.completion_note or ''}</td></tr>
-        <tr><th style="color:#94a3b8;">Description</th><td>{req.description or ''}</td></tr>
-        </table>
-        {completion_evidence}
-        </div></div>
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table table-borderless">
+                            <tr><th style="width:150px; color:#94a3b8;">Status</th><td><span class="badge bg-{'success' if req.status in ('Completed','Closed') else 'warning' if req.status=='Pending' else 'info'}">{escape_html(req.status)}</span></td></tr>
+                            <tr><th style="color:#94a3b8;">Location</th><td>{escape_html(req.location_name)}</td></tr>
+                            <tr><th style="color:#94a3b8;">Item</th><td>{escape_html(req.working_item.name if req.working_item else 'N/A')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Category</th><td>{escape_html(req.category.name if req.category else 'N/A')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Department</th><td>{escape_html(req.department.name if req.department else 'N/A')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Priority</th><td><span class="badge bg-{'danger' if req.priority=='URGENT' else 'warning' if req.priority=='HIGH' else 'info' if req.priority=='MEDIUM' else 'secondary'}">{escape_html(req.priority)}</span></td></tr>
+                            <tr><th style="color:#94a3b8;">Due Date</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else ''}</td></tr>
+                            <tr><th style="color:#94a3b8;">Requester</th><td>{escape_html(req.requested_by.full_name if req.requested_by else 'Guest')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Assigned To</th><td>{escape_html(req.assigned_to.full_name if req.assigned_to else 'Not assigned')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Completed At</th><td>{req.completed_date.strftime('%Y-%m-%d %H:%M') if req.completed_date else ''}</td></tr>
+                            <tr><th style="color:#94a3b8;">Completion Note</th><td>{escape_html(req.completion_note or '')}</td></tr>
+                            <tr><th style="color:#94a3b8;">Description</th><td>{escape_html(req.description or '')}</td></tr>
+                        </table>
+                        {completion_evidence}
+                    </div>
+                </div>
 
-        <h5 class="mt-4" style="color:#f59e0b;"><i class="fas fa-clock"></i> Activity Timeline</h5>
-        <div class="timeline">
-            {timeline_html or '<p class="text-muted">No activity recorded yet.</p>'}
-        </div>
-        </div>
+                <h5 class="mt-4" style="color:#f59e0b;"><i class="fas fa-clock"></i> Activity Timeline</h5>
+                <div class="timeline">
+                    {timeline_html or '<p class="text-muted">No activity recorded yet.</p>'}
+                </div>
+            </div>
 
-        <div class="col-md-4">
-        <div class="card">
-        <div class="card-body">
-        <h5 class="card-title"><i class="fas fa-images"></i> Photos</h5>
-        {photo_html or '<p class="text-muted">No photos</p>'}
-        </div></div>
-        </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-images"></i> Photos</h5>
+                        {photo_html or '<p class="text-muted">No photos</p>'}
+                    </div>
+                </div>
+            </div>
         </div>
         """
 
         if current_user.role in ["MANAGER", "ADMIN"]:
             action_buttons = ""
             if req.status == "Pending":
-                action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/approve"><i class="fas fa-check"></i> Approve</a> '
-                action_buttons += f'<a class="btn btn-danger" href="/requests/{req.id}/reject"><i class="fas fa-times"></i> Reject</a> '
+                action_buttons += f'<form method="post" action="/requests/{req.id}/approve" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button></form> '
+                action_buttons += f'<form method="post" action="/requests/{req.id}/reject" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-danger"><i class="fas fa-times"></i> Reject</button></form> '
             if req.status in ["Approved", "Assigned"]:
                 action_buttons += f'<a class="btn btn-warning" href="/workorders/new?request_id={req.id}"><i class="fas fa-clipboard-list"></i> Create Work Order</a> '
             if req.status == "Completed":
-                action_buttons += f'<a class="btn btn-success" href="/requests/{req.id}/verify"><i class="fas fa-check-double"></i> Verify</a> '
+                action_buttons += f'<form method="post" action="/requests/{req.id}/verify" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-success"><i class="fas fa-check-double"></i> Verify</button></form> '
             if req.status == "Verified":
-                action_buttons += f'<a class="btn btn-secondary" href="/requests/{req.id}/close"><i class="fas fa-archive"></i> Close</a>'
+                action_buttons += f'<form method="post" action="/requests/{req.id}/close" style="display:inline;">{csrf_input()}<button type="submit" class="btn btn-secondary"><i class="fas fa-archive"></i> Close</button></form>'
             content += f'<div class="mt-3">{action_buttons}</div>'
 
         wo = WorkOrder.query.filter_by(request_id=req.id).first()
@@ -2309,13 +1879,11 @@ def request_detail(req_id):
         flash(f"Error loading request details: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
-# --------------------------------------------------------------
-# APPROVE, REJECT, VERIFY, CLOSE
-# --------------------------------------------------------------
-@app.route("/requests/<int:req_id>/approve")
+# ---------- APPROVE, REJECT, VERIFY, CLOSE (now POST) ----------
+@app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_approve(req_id):
+    validate_csrf_token()
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.status == "Pending":
@@ -2333,10 +1901,10 @@ def request_approve(req_id):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
-
-@app.route("/requests/<int:req_id>/reject")
+@app.route("/requests/<int:req_id>/reject", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_reject(req_id):
+    validate_csrf_token()
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.status == "Pending":
@@ -2353,10 +1921,10 @@ def request_reject(req_id):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
-
-@app.route("/requests/<int:req_id>/verify")
+@app.route("/requests/<int:req_id>/verify", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_verify(req_id):
+    validate_csrf_token()
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.status == "Completed":
@@ -2377,10 +1945,10 @@ def request_verify(req_id):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
-
-@app.route("/requests/<int:req_id>/close")
+@app.route("/requests/<int:req_id>/close", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_close(req_id):
+    validate_csrf_token()
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.status == "Verified":
@@ -2397,10 +1965,7 @@ def request_close(req_id):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
-
-# --------------------------------------------------------------
-# WORK ORDERS
-# --------------------------------------------------------------
+# ---------- WORK ORDERS ----------
 @app.route("/workorders")
 @login_required
 def workorders_list():
@@ -2421,12 +1986,12 @@ def workorders_list():
             assigned_name = wo.assigned_to.full_name if wo.assigned_to else 'N/A'
             rows.append(f"""
             <tr>
-            <td><a href="/workorders/{wo.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{wo.work_order_no}</a></td>
-            <td>{wo.request.location_name if wo.request else 'N/A'}</td>
-            <td>{wo.request.working_item.name if wo.request and wo.request.working_item else 'N/A'}</td>
-            <td>{wo.request.department.name if wo.request and wo.request.department else 'N/A'}</td>
-            <td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{wo.status}</span></td>
-            <td>{assigned_name}</td>
+            <td><a href="/workorders/{wo.id}" style="color: #f59e0b; text-decoration: none; font-weight: 600;">{escape_html(wo.work_order_no)}</a></td>
+            <td>{escape_html(wo.request.location_name if wo.request else 'N/A')}</td>
+            <td>{escape_html(wo.request.working_item.name if wo.request and wo.request.working_item else 'N/A')}</td>
+            <td>{escape_html(wo.request.department.name if wo.request and wo.request.department else 'N/A')}</td>
+            <td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{escape_html(wo.status)}</span></td>
+            <td>{escape_html(assigned_name)}</td>
             </tr>""")
         content = f"""
         <h3><i class="fas fa-clipboard-list"></i> Work Orders</h3>
@@ -2439,16 +2004,16 @@ def workorders_list():
         flash(f"Error loading work orders: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/workorders/new", methods=["GET", "POST"])
 @role_required("MANAGER", "ADMIN")
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = MaintenanceRequest.query.get(req_id) if req_id else None
     users = User.query.filter(User.role.in_(["TECHNICIAN", "MAINTENANCE STAFF", "SUPERVISOR"])).all()
-    user_options = "".join(f'<option value="{u.id}">{u.full_name}</option>' for u in users)
+    user_options = "".join(f'<option value="{u.id}">{escape_html(u.full_name)}</option>' for u in users)
 
     if request.method == "POST":
+        validate_csrf_token()
         try:
             request_id = request.form.get("request_id", type=int)
             assigned_to_id = request.form.get("assigned_to_id", type=int)
@@ -2503,7 +2068,7 @@ def workorder_create():
 
         except Exception as e:
             db.session.rollback()
-            print("WorkOrder creation error:", traceback.format_exc())
+            logger.error(f"WorkOrder creation error: {traceback.format_exc()}")
             flash("An error occurred while creating the work order.", "danger")
             return redirect(url_for("workorder_create", request_id=request_id))
 
@@ -2512,18 +2077,18 @@ def workorder_create():
     <div class="card">
     <div class="card-body">
     <form method="post">
-    <input type="hidden" name="request_id" value="{req.id if req else ''}">
-    <div class="mb-3"><label class="form-label">Request</label>
-    <input class="form-control" value="{req.request_no if req else ''}" disabled></div>
-    <div class="mb-3"><label class="form-label">Assign To</label>
-    <select class="form-select" name="assigned_to_id" required><option value="">-- Select Staff --</option>{user_options}</select></div>
-    <div class="mb-3"><label class="form-label">Initial Instructions</label>
-    <textarea class="form-control" name="work_performed" rows="3"></textarea></div>
-    <button class="btn btn-primary"><i class="fas fa-save"></i> Create Work Order</button>
+        {csrf_input()}
+        <input type="hidden" name="request_id" value="{req.id if req else ''}">
+        <div class="mb-3"><label class="form-label">Request</label>
+        <input class="form-control" value="{req.request_no if req else ''}" disabled></div>
+        <div class="mb-3"><label class="form-label">Assign To</label>
+        <select class="form-select" name="assigned_to_id" required><option value="">-- Select Staff --</option>{user_options}</select></div>
+        <div class="mb-3"><label class="form-label">Initial Instructions</label>
+        <textarea class="form-control" name="work_performed" rows="3"></textarea></div>
+        <button class="btn btn-primary"><i class="fas fa-save"></i> Create Work Order</button>
     </form>
     </div></div>"""
     return page("New Work Order", content)
-
 
 @app.route("/workorders/<int:wo_id>")
 @login_required
@@ -2532,7 +2097,7 @@ def workorder_detail(wo_id):
         wo = WorkOrder.query.get_or_404(wo_id)
         parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
         photos = Photo.query.filter_by(object_type="workorder", object_id=wo.id).all()
-        parts_html = "".join(f"<li class='list-group-item' style='background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;'>{p.part.part_name if p.part else 'N/A'} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
+        parts_html = "".join(f"<li class='list-group-item' style='background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;'>{escape_html(p.part.part_name if p.part else 'N/A')} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
         photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1 rounded" style="border: 2px solid rgba(245,158,11,0.3);"></a>' for p in photos)
 
         completion_photo_html = ""
@@ -2559,15 +2124,15 @@ def workorder_detail(wo_id):
                     show_completion_form = True
 
         content = f"""
-        <h3><i class="fas fa-file-signature"></i> Work Order {wo.work_order_no}</h3>
+        <h3><i class="fas fa-file-signature"></i> Work Order {escape_html(wo.work_order_no)}</h3>
         <div class="card">
         <div class="card-body">
         <table class="table table-borderless">
-        <tr><th style="width:150px; color:#94a3b8;">Request</th><td>{wo.request.request_no if wo.request else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Location</th><td>{wo.request.location_name if wo.request else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Status</th><td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{wo.status}</span></td></tr>
-        <tr><th style="color:#94a3b8;">Assigned To</th><td>{wo.assigned_to.full_name if wo.assigned_to else 'N/A'}</td></tr>
-        <tr><th style="color:#94a3b8;">Instructions</th><td>{wo.work_performed or ''}</td></tr>
+        <tr><th style="width:150px; color:#94a3b8;">Request</th><td>{escape_html(wo.request.request_no if wo.request else 'N/A')}</td></tr>
+        <tr><th style="color:#94a3b8;">Location</th><td>{escape_html(wo.request.location_name if wo.request else 'N/A')}</td></tr>
+        <tr><th style="color:#94a3b8;">Status</th><td><span class="badge bg-{'success' if wo.status=='Completed' else 'warning' if wo.status=='Assigned' else 'info'}">{escape_html(wo.status)}</span></td></tr>
+        <tr><th style="color:#94a3b8;">Assigned To</th><td>{escape_html(wo.assigned_to.full_name if wo.assigned_to else 'N/A')}</td></tr>
+        <tr><th style="color:#94a3b8;">Instructions</th><td>{escape_html(wo.work_performed or '')}</td></tr>
         <tr><th style="color:#94a3b8;">Parts Used</th><td><ul class="list-group">{parts_html}</ul></td></tr>
         <tr><th style="color:#94a3b8;">Labor Hours</th><td>{wo.labor_hours}</td></tr>
         </table>
@@ -2578,7 +2143,10 @@ def workorder_detail(wo_id):
         if show_start_work:
             content += f'''
             <div class="mt-3">
-                <a class="btn btn-warning btn-lg" href="/workorders/{wo.id}/start"><i class="fas fa-play"></i> Start Work</a>
+                <form method="post" action="/workorders/{wo.id}/start" style="display:inline;">
+                    {csrf_input()}
+                    <button type="submit" class="btn btn-warning btn-lg"><i class="fas fa-play"></i> Start Work</button>
+                </form>
             </div>
             '''
         elif show_completion_form:
@@ -2592,8 +2160,8 @@ def workorder_detail(wo_id):
             content += f'''
             <div class="mt-3 completion-evidence">
                 <h5><i class="fas fa-check-circle" style="color:#22c55e;"></i> Work Completed</h5>
-                <p><strong>Work Performed:</strong> {wo.completion_notes}</p>
-                <p><strong>Completed By:</strong> {wo.completed_by.full_name if wo.completed_by else 'N/A'}</p>
+                <p><strong>Work Performed:</strong> {escape_html(wo.completion_notes)}</p>
+                <p><strong>Completed By:</strong> {escape_html(wo.completed_by.full_name if wo.completed_by else 'N/A')}</p>
                 <p><strong>Completed At:</strong> {wo.updated_at.strftime('%Y-%m-%d %H:%M') if wo.updated_at else ''}</p>
                 {f'<p><strong>Photo:</strong> <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">View Photo</a></p>' if wo.completion_photo else ''}
             </div>
@@ -2604,10 +2172,10 @@ def workorder_detail(wo_id):
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("workorders_list"))
 
-
-@app.route("/workorders/<int:wo_id>/start")
+@app.route("/workorders/<int:wo_id>/start", methods=["POST"])
 @login_required
 def workorder_start(wo_id):
+    validate_csrf_token()
     try:
         wo = WorkOrder.query.get_or_404(wo_id)
         if current_user.id != wo.assigned_to_id:
@@ -2630,7 +2198,6 @@ def workorder_start(wo_id):
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("workorder_detail", wo_id=wo_id))
 
-
 @app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
 @role_required("MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR")
 def workorder_complete(wo_id):
@@ -2645,6 +2212,7 @@ def workorder_complete(wo_id):
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
 
     if request.method == "POST":
+        validate_csrf_token()
         try:
             completion_note = request.form.get("completion_note", "").strip()
             labor_hours = request.form.get("labor_hours", 0)
@@ -2670,6 +2238,46 @@ def workorder_complete(wo_id):
                     flash("Invalid file type. Please upload an image.", "danger")
                     return redirect(url_for("workorder_complete", wo_id=wo_id))
 
+            # Process parts and validate stock before committing
+            part_ids = request.form.getlist("part_id")
+            quantities = request.form.getlist("quantity")
+            parts_to_deduct = []
+            for pid, qty in zip(part_ids, quantities):
+                if pid and pid.isdigit() and qty:
+                    try:
+                        q_val = float(qty)
+                        if q_val > 0:
+                            part = InventoryPart.query.get(int(pid))
+                            if not part:
+                                flash(f"Part ID {pid} does not exist.", "danger")
+                                return redirect(url_for("workorder_complete", wo_id=wo_id))
+                            if part.quantity < q_val:
+                                flash(f"Insufficient stock for {part.part_name}. Available: {part.quantity}, required: {q_val}", "danger")
+                                return redirect(url_for("workorder_complete", wo_id=wo_id))
+                            parts_to_deduct.append((part, q_val))
+                    except:
+                        pass
+
+            # All stock checks passed, now deduct
+            for part, qty in parts_to_deduct:
+                part.quantity -= qty
+                wo_part = WorkOrderPart(
+                    work_order_id=wo.id,
+                    part_id=part.id,
+                    quantity=qty,
+                    unit_cost=part.unit_cost
+                )
+                db.session.add(wo_part)
+                mov = StockMovement(
+                    part_id=part.id,
+                    movement_type="OUT",
+                    quantity=qty,
+                    reason=f"Used in WO {wo.work_order_no}",
+                    work_order_id=wo.id,
+                    user_id=current_user.id
+                )
+                db.session.add(mov)
+
             wo.completion_notes = completion_note
             if filename:
                 wo.completion_photo = filename
@@ -2686,35 +2294,6 @@ def workorder_complete(wo_id):
 
             log_status_change(wo.request_id, "Completed", notes=f"Work completed by {current_user.full_name}")
             log_audit("Complete Work", "WorkOrder", wo.id, "In Progress", "Completed")
-
-            part_ids = request.form.getlist("part_id")
-            quantities = request.form.getlist("quantity")
-            for pid, qty in zip(part_ids, quantities):
-                if pid and pid.isdigit() and qty:
-                    try:
-                        q_val = float(qty)
-                        if q_val > 0:
-                            part = InventoryPart.query.get(int(pid))
-                            if part and part.quantity >= q_val:
-                                part.quantity -= q_val
-                                wo_part = WorkOrderPart(
-                                    work_order_id=wo.id,
-                                    part_id=part.id,
-                                    quantity=q_val,
-                                    unit_cost=part.unit_cost
-                                )
-                                db.session.add(wo_part)
-                                mov = StockMovement(
-                                    part_id=part.id,
-                                    movement_type="OUT",
-                                    quantity=q_val,
-                                    reason=f"Used in WO {wo.work_order_no}",
-                                    work_order_id=wo.id,
-                                    user_id=current_user.id
-                                )
-                                db.session.add(mov)
-                    except:
-                        pass
 
             db.session.commit()
 
@@ -2733,16 +2312,17 @@ def workorder_complete(wo_id):
 
         except Exception as e:
             db.session.rollback()
-            print("Completion error:", traceback.format_exc())
+            logger.error(f"Completion error: {traceback.format_exc()}")
             flash(f"An error occurred: {str(e)}", "danger")
             return redirect(url_for("workorder_complete", wo_id=wo_id))
 
-    parts_options = "".join([f'<option value="{p.id}">{p.part_name} (qty: {p.quantity})</option>' for p in parts])
+    parts_options = "".join([f'<option value="{p.id}">{escape_html(p.part_name)} (qty: {p.quantity})</option>' for p in parts])
     content = f"""
-    <h3><i class="fas fa-check-circle"></i> Complete Work Order {wo.work_order_no}</h3>
+    <h3><i class="fas fa-check-circle"></i> Complete Work Order {escape_html(wo.work_order_no)}</h3>
     <div class="card">
     <div class="card-body">
     <form method="post" enctype="multipart/form-data">
+        {csrf_input()}
         <div class="mb-3">
             <label class="form-label">Work Performed / Completion Note *</label>
             <textarea name="completion_note" class="form-control" required placeholder="Describe the work performed..."></textarea>
@@ -2793,10 +2373,7 @@ def workorder_complete(wo_id):
     """
     return page("Complete Work Order", content)
 
-
-# --------------------------------------------------------------
-# ROOMS
-# --------------------------------------------------------------
+# ---------- ROOMS ----------
 @app.route("/rooms")
 @login_required
 @role_required("ADMIN", "MANAGER")
@@ -2823,7 +2400,6 @@ def rooms_list():
         flash(f"Error loading rooms: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/rooms/<int:room_id>/edit", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
@@ -2831,6 +2407,7 @@ def room_edit(room_id):
     try:
         room = Room.query.get_or_404(room_id)
         if request.method == "POST":
+            validate_csrf_token()
             old_status = room.status
             room.floor = int(request.form.get("floor", room.floor))
             room.status = request.form.get("status", room.status)
@@ -2843,9 +2420,10 @@ def room_edit(room_id):
         <h3><i class="fas fa-edit"></i> Edit Room {room.room_number}</h3>
         <div class="card"><div class="card-body">
         <form method="post">
-        <div class="mb-3"><label class="form-label">Floor</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
-        <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
-        <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button>
+            {csrf_input()}
+            <div class="mb-3"><label class="form-label">Floor</label><input type="number" class="form-control" name="floor" value="{room.floor}" required></div>
+            <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="status">{''.join(f'<option {"selected" if s==room.status else ""}>{s}</option>' for s in ROOM_STATUSES)}</select></div>
+            <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button>
         </form>
         </div></div>"""
         return page("Edit Room", content)
@@ -2853,17 +2431,14 @@ def room_edit(room_id):
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("rooms_list"))
 
-
-# --------------------------------------------------------------
-# AREAS
-# --------------------------------------------------------------
+# ---------- AREAS ----------
 @app.route("/areas")
 @login_required
 @role_required("ADMIN", "MANAGER")
 def areas_list():
     try:
         areas = Area.query.order_by(Area.name).all()
-        rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td><td>{a.status}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit"><i class="fas fa-edit"></i> Edit</a></td></tr>' for a in areas)
+        rows = "".join(f'<tr><td>{escape_html(a.name)}</td><td>{escape_html(a.department)}</td><td>{escape_html(a.status)}</td><td><a class="btn btn-sm btn-primary" href="/areas/{a.id}/edit"><i class="fas fa-edit"></i> Edit</a></td></tr>' for a in areas)
         content = f"""
         <h3><i class="fas fa-map-marked-alt"></i> Areas</h3>
         <a class="btn btn-primary mb-3" href="/areas/new"><i class="fas fa-plus-circle"></i> Add Area</a>
@@ -2873,12 +2448,12 @@ def areas_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/areas/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def area_create():
     if request.method == "POST":
+        validate_csrf_token()
         name = request.form.get("name", "").strip()
         if not name:
             flash("Name is required", "danger")
@@ -2889,12 +2464,12 @@ def area_create():
             db.session.commit()
             flash("Area created", "success")
             return redirect(url_for("areas_list"))
-    return page("Add Area", """<div class="card"><div class="card-body"><form method="post">
+    return page("Add Area", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
     <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department"></div>
     <div class="mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description"></textarea></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
-
 
 @app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -2903,6 +2478,7 @@ def area_edit(area_id):
     try:
         area = Area.query.get_or_404(area_id)
         if request.method == "POST":
+            validate_csrf_token()
             old = area.name
             area.name = request.form.get("name", area.name)
             area.department = request.form.get("department", area.department)
@@ -2915,21 +2491,19 @@ def area_edit(area_id):
         content = f"""
         <div class="card"><div class="card-body">
         <form method="post">
-        <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" value="{area.name}" required></div>
-        <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="{area.department or ''}"></div>
-        <div class="mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description">{area.description or ''}</textarea></div>
-        <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
-        <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form>
+            {csrf_input()}
+            <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" value="{escape_html(area.name)}" required></div>
+            <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="{escape_html(area.department or '')}"></div>
+            <div class="mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description">{escape_html(area.description or '')}</textarea></div>
+            <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option>Active</option><option>Disabled</option></select></div>
+            <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form>
         </div></div>"""
         return page("Edit Area", content)
     except Exception as e:
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("areas_list"))
 
-
-# --------------------------------------------------------------
-# INVENTORY
-# --------------------------------------------------------------
+# ---------- INVENTORY ----------
 @app.route("/inventory")
 @login_required
 @role_required("ADMIN", "MANAGER")
@@ -2939,7 +2513,7 @@ def inventory_list():
         rows = []
         for p in parts:
             cls = "table-danger" if p.quantity <= 0 else "table-warning" if p.quantity <= p.minimum_stock else ""
-            rows.append(f'<tr class="{cls}"><td>{p.part_name}</td><td>{p.quantity}</td><td>{p.unit}</td><td>{p.unit_cost}</td><td>{p.minimum_stock}</td><td>{p.status}</td></tr>')
+            rows.append(f'<tr class="{cls}"><td>{escape_html(p.part_name)}</td><td>{p.quantity}</td><td>{escape_html(p.unit)}</td><td>{p.unit_cost}</td><td>{p.minimum_stock}</td><td>{escape_html(p.status)}</td></tr>')
         content = f"""
         <h3><i class="fas fa-boxes"></i> Inventory</h3>
         <a class="btn btn-primary mb-3" href="/inventory/new"><i class="fas fa-plus-circle"></i> Add Part</a>
@@ -2949,12 +2523,12 @@ def inventory_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/inventory/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def inventory_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             part = InventoryPart(
                 part_name=request.form.get("part_name"),
@@ -2973,7 +2547,8 @@ def inventory_create():
             return redirect(url_for("inventory_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    return page("Add Part", """<div class="card"><div class="card-body"><form method="post">
+    return page("Add Part", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Part Name</label><input class="form-control" name="part_name" required></div>
     <div class="mb-3"><label class="form-label">Category</label><input class="form-control" name="category"></div>
     <div class="mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" required></div>
@@ -2983,17 +2558,14 @@ def inventory_create():
     <div class="mb-3"><label class="form-label">Storage Location</label><input class="form-control" name="storage_location"></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
 
-
-# --------------------------------------------------------------
-# PREVENTIVE MAINTENANCE
-# --------------------------------------------------------------
+# ---------- PREVENTIVE MAINTENANCE ----------
 @app.route("/preventive")
 @login_required
 @role_required("ADMIN", "MANAGER")
 def preventive_list():
     try:
         tasks = PreventiveMaintenance.query.order_by(PreventiveMaintenance.next_due_date).all()
-        rows = "".join(f'<tr><td>{t.title}</td><td>{t.frequency}</td><td>{t.next_due_date.strftime("%Y-%m-%d") if t.next_due_date else ""}</td><td>{t.status}</td></tr>' for t in tasks)
+        rows = "".join(f'<tr><td>{escape_html(t.title)}</td><td>{escape_html(t.frequency)}</td><td>{t.next_due_date.strftime("%Y-%m-%d") if t.next_due_date else ""}</td><td>{escape_html(t.status)}</td></tr>' for t in tasks)
         content = f"""
         <h3><i class="fas fa-calendar-check"></i> Preventive Maintenance</h3>
         <a class="btn btn-primary mb-3" href="/preventive/new"><i class="fas fa-plus-circle"></i> Schedule Task</a>
@@ -3003,12 +2575,12 @@ def preventive_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/preventive/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def preventive_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             task = PreventiveMaintenance(
                 title=request.form.get("title"),
@@ -3025,27 +2597,25 @@ def preventive_create():
             return redirect(url_for("preventive_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    content = """
+    content = f"""
     <div class="card"><div class="card-body"><form method="post">
-    <div class="mb-3"><label class="form-label">Title</label><input class="form-control" name="title" required></div>
-    <div class="mb-3"><label class="form-label">Task</label><textarea class="form-control" name="task"></textarea></div>
-    <div class="mb-3"><label class="form-label">Frequency</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
-    <div class="mb-3"><label class="form-label">Priority</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
-    <div class="mb-3"><label class="form-label">Next Due Date</label><input type="date" class="form-control" name="next_due_date"></div>
-    <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>"""
+        {csrf_input()}
+        <div class="mb-3"><label class="form-label">Title</label><input class="form-control" name="title" required></div>
+        <div class="mb-3"><label class="form-label">Task</label><textarea class="form-control" name="task"></textarea></div>
+        <div class="mb-3"><label class="form-label">Frequency</label><select class="form-select" name="frequency"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option></select></div>
+        <div class="mb-3"><label class="form-label">Priority</label><select class="form-select" name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select></div>
+        <div class="mb-3"><label class="form-label">Next Due Date</label><input type="date" class="form-control" name="next_due_date"></div>
+        <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>"""
     return page("New Preventive Task", content)
 
-
-# --------------------------------------------------------------
-# CHECKLISTS
-# --------------------------------------------------------------
+# ---------- CHECKLISTS ----------
 @app.route("/checklists")
 @login_required
 @role_required("ADMIN", "MANAGER")
 def checklists_list():
     try:
         templates = ChecklistTemplate.query.all()
-        rows = "".join(f'<tr><td><a href="/checklists/{t.id}" style="color:#f59e0b;">{t.name}</a></td><td>{len(t.items)} items</td></tr>' for t in templates)
+        rows = "".join(f'<tr><td><a href="/checklists/{t.id}" style="color:#f59e0b;">{escape_html(t.name)}</a></td><td>{len(t.items)} items</td></tr>' for t in templates)
         content = f"""
         <h3><i class="fas fa-list-check"></i> Checklists</h3>
         <a class="btn btn-primary mb-3" href="/checklists/new"><i class="fas fa-plus-circle"></i> New Checklist</a>
@@ -3055,12 +2625,12 @@ def checklists_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/checklists/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def checklist_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             name = request.form.get("name")
             items = request.form.get("items", "").splitlines()
@@ -3075,7 +2645,8 @@ def checklist_create():
             return redirect(url_for("checklists_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    return page("New Checklist", """<div class="card"><div class="card-body"><form method="post">
+    return page("New Checklist", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
     <div class="mb-3"><label class="form-label">Description</label><input class="form-control" name="description"></div>
     <div class="mb-3"><label class="form-label">Items (one per line)</label><textarea class="form-control" name="items" rows="8">Lights
@@ -3090,17 +2661,14 @@ Plumbing
 Safety Equipment</textarea></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
 
-
-# --------------------------------------------------------------
-# SUPPLIERS
-# --------------------------------------------------------------
+# ---------- SUPPLIERS ----------
 @app.route("/suppliers")
 @login_required
 @role_required("ADMIN", "MANAGER")
 def suppliers_list():
     try:
         suppliers = Supplier.query.all()
-        rows = "".join(f'<tr><td>{s.company_name}</td><td>{s.contact_person}</td><td>{s.phone}</td><td>{s.status}</td></tr>' for s in suppliers)
+        rows = "".join(f'<tr><td>{escape_html(s.company_name)}</td><td>{escape_html(s.contact_person)}</td><td>{escape_html(s.phone)}</td><td>{escape_html(s.status)}</td></tr>' for s in suppliers)
         content = f"""
         <h3><i class="fas fa-truck"></i> Suppliers</h3>
         <a class="btn btn-primary mb-3" href="/suppliers/new"><i class="fas fa-plus-circle"></i> Add Supplier</a>
@@ -3110,12 +2678,12 @@ def suppliers_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/suppliers/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def supplier_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             s = Supplier(
                 company_name=request.form.get("company_name"),
@@ -3133,7 +2701,8 @@ def supplier_create():
             return redirect(url_for("suppliers_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    return page("Add Supplier", """<div class="card"><div class="card-body"><form method="post">
+    return page("Add Supplier", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Company</label><input class="form-control" name="company_name" required></div>
     <div class="mb-3"><label class="form-label">Contact Person</label><input class="form-control" name="contact_person"></div>
     <div class="mb-3"><label class="form-label">Phone</label><input class="form-control" name="phone"></div>
@@ -3142,17 +2711,14 @@ def supplier_create():
     <div class="mb-3"><label class="form-label">Supplied Items</label><input class="form-control" name="supplied_items"></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
 
-
-# --------------------------------------------------------------
-# CONTRACTORS
-# --------------------------------------------------------------
+# ---------- CONTRACTORS ----------
 @app.route("/contractors")
 @login_required
 @role_required("ADMIN", "MANAGER")
 def contractors_list():
     try:
         contractors = Contractor.query.all()
-        rows = "".join(f'<tr><td>{c.name}</td><td>{c.service_type}</td><td>{c.phone}</td><td>{c.status}</td></tr>' for c in contractors)
+        rows = "".join(f'<tr><td>{escape_html(c.name)}</td><td>{escape_html(c.service_type)}</td><td>{escape_html(c.phone)}</td><td>{escape_html(c.status)}</td></tr>' for c in contractors)
         content = f"""
         <h3><i class="fas fa-hard-hat"></i> Contractors</h3>
         <a class="btn btn-primary mb-3" href="/contractors/new"><i class="fas fa-plus-circle"></i> Add Contractor</a>
@@ -3162,12 +2728,12 @@ def contractors_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/contractors/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def contractor_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             c = Contractor(
                 name=request.form.get("name"),
@@ -3184,7 +2750,8 @@ def contractor_create():
             return redirect(url_for("contractors_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    return page("Add Contractor", """<div class="card"><div class="card-body"><form method="post">
+    return page("Add Contractor", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Name/Company</label><input class="form-control" name="name" required></div>
     <div class="mb-3"><label class="form-label">Service Type</label><input class="form-control" name="service_type"></div>
     <div class="mb-3"><label class="form-label">Phone</label><input class="form-control" name="phone"></div>
@@ -3192,10 +2759,7 @@ def contractor_create():
     <div class="mb-3"><label class="form-label">Rate</label><input type="number" step="0.01" class="form-control" name="rate"></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
 
-
-# --------------------------------------------------------------
-# EMPLOYEES
-# --------------------------------------------------------------
+# ---------- EMPLOYEES ----------
 @app.route("/employees")
 @login_required
 @role_required("ADMIN", "MANAGER")
@@ -3203,7 +2767,7 @@ def employees_list():
     try:
         employees = Employee.query.order_by(Employee.id).all()
         rows = "".join(
-            f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td><td>{e.department}</td>'
+            f'<tr><td>{e.id}</td><td>{escape_html(e.name)}</td><td>{escape_html(e.job_title)}</td><td>{escape_html(e.department)}</td>'
             f'<td><a class="btn btn-sm btn-primary" href="/employees/{e.id}/edit"><i class="fas fa-edit"></i> Edit</a></td></tr>'
             for e in employees
         )
@@ -3218,12 +2782,12 @@ def employees_list():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/employees/new", methods=["GET", "POST"])
 @login_required
 @role_required("ADMIN", "MANAGER")
 def employee_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             name = request.form.get("name", "").strip()
             job_title = request.form.get("job_title", "").strip()
@@ -3240,12 +2804,12 @@ def employee_create():
             return redirect(url_for("employees_list"))
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
-    return page("Add Employee", """<div class="card"><div class="card-body"><form method="post">
+    return page("Add Employee", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
     <div class="mb-3"><label class="form-label">Job Title</label><input class="form-control" name="job_title"></div>
     <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="Engineering"></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
-
 
 @app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -3254,6 +2818,7 @@ def employee_edit(emp_id):
     try:
         emp = Employee.query.get_or_404(emp_id)
         if request.method == "POST":
+            validate_csrf_token()
             old_name = emp.name
             emp.name = request.form.get("name", emp.name).strip()
             emp.job_title = request.form.get("job_title", emp.job_title).strip()
@@ -3266,26 +2831,24 @@ def employee_edit(emp_id):
         content = f"""
         <div class="card"><div class="card-body">
         <form method="post">
-        <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" value="{emp.name}" required></div>
-        <div class="mb-3"><label class="form-label">Job Title</label><input class="form-control" name="job_title" value="{emp.job_title or ''}"></div>
-        <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="{emp.department or ''}"></div>
-        <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form>
+            {csrf_input()}
+            <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="name" value="{escape_html(emp.name)}" required></div>
+            <div class="mb-3"><label class="form-label">Job Title</label><input class="form-control" name="job_title" value="{escape_html(emp.job_title or '')}"></div>
+            <div class="mb-3"><label class="form-label">Department</label><input class="form-control" name="department" value="{escape_html(emp.department or '')}"></div>
+            <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form>
         </div></div>"""
         return page("Edit Employee", content)
     except Exception as e:
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("employees_list"))
 
-
-# --------------------------------------------------------------
-# ADMIN USERS
-# --------------------------------------------------------------
+# ---------- ADMIN USERS ----------
 @app.route("/admin/users")
 @role_required("ADMIN")
 def admin_users():
     try:
         users = User.query.all()
-        rows = "".join(f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td><td>{u.active}</td></tr>' for u in users)
+        rows = "".join(f'<tr><td>{escape_html(u.username)}</td><td>{escape_html(u.full_name)}</td><td>{escape_html(u.role)}</td><td>{u.active}</td></tr>' for u in users)
         content = f"""
         <h3><i class="fas fa-user-cog"></i> Users</h3>
         <a class="btn btn-primary mb-3" href="/admin/users/new"><i class="fas fa-plus-circle"></i> Add User</a>
@@ -3295,11 +2858,11 @@ def admin_users():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/admin/users/new", methods=["GET", "POST"])
 @role_required("ADMIN")
 def admin_user_create():
     if request.method == "POST":
+        validate_csrf_token()
         try:
             username = request.form.get("username")
             password = request.form.get("password")
@@ -3317,6 +2880,7 @@ def admin_user_create():
         except Exception as e:
             flash(f"Error: {str(e)}", "danger")
     return page("Add User", f"""<div class="card"><div class="card-body"><form method="post">
+    {csrf_input()}
     <div class="mb-3"><label class="form-label">Username</label><input class="form-control" name="username" required></div>
     <div class="mb-3"><label class="form-label">Full Name</label><input class="form-control" name="full_name"></div>
     <div class="mb-3"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required></div>
@@ -3324,10 +2888,7 @@ def admin_user_create():
     <div class="mb-3"><label class="form-label">Email</label><input class="form-control" name="email"></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div></div>""")
 
-
-# --------------------------------------------------------------
-# MASTER DATA
-# --------------------------------------------------------------
+# ---------- MASTER DATA ----------
 @app.route("/admin/masterdata")
 @role_required("ADMIN")
 def master_data():
@@ -3337,24 +2898,21 @@ def master_data():
     <h3><i class="fas fa-database"></i> Master Data</h3>
     <div class="row">
     <div class="col-md-6">
-    <div class="card"><div class="card-body"><h5 class="card-title">Categories</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{c.name}</li>' for c in cats)}</ul></div></div>
+    <div class="card"><div class="card-body"><h5 class="card-title">Categories</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{escape_html(c.name)}</li>' for c in cats)}</ul></div></div>
     </div>
     <div class="col-md-6">
-    <div class="card"><div class="card-body"><h5 class="card-title">Working Items</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{i.name}</li>' for i in items)}</ul></div></div>
+    <div class="card"><div class="card-body"><h5 class="card-title">Working Items</h5><ul class="list-group">{''.join(f'<li class="list-group-item" style="background:transparent; border-color:rgba(245,158,11,0.1); color:#cbd5e1;">{escape_html(i.name)}</li>' for i in items)}</ul></div></div>
     </div>
     </div>"""
     return page("Master Data", content)
 
-
-# --------------------------------------------------------------
-# AUDIT LOG
-# --------------------------------------------------------------
+# ---------- AUDIT LOG ----------
 @app.route("/admin/audit")
 @role_required("ADMIN")
 def audit_logs():
     try:
         logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
-        rows = "".join(f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td><td>{a.object_type}</td><td>{a.object_id}</td><td>{a.old_value}</td><td>{a.new_value}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""}</td></tr>' for a in logs)
+        rows = "".join(f'<tr><td>{escape_html(a.user.full_name if a.user else "System")}</td><td>{escape_html(a.action)}</td><td>{escape_html(a.object_type)}</td><td>{escape_html(a.object_id)}</td><td>{escape_html(a.old_value)}</td><td>{escape_html(a.new_value)}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""}</td></tr>' for a in logs)
         content = f"""
         <h3><i class="fas fa-history"></i> Audit Log</h3>
         <div class="table-responsive"><table class="table table-bordered table-sm table-hover"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>ID</th><th>Old</th><th>New</th><th>Date</th></tr></thead><tbody>{rows}</tbody></table></div>"""
@@ -3363,26 +2921,22 @@ def audit_logs():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
-# --------------------------------------------------------------
-# BACKUP & RESTORE
-# --------------------------------------------------------------
+# ---------- BACKUP & RESTORE ----------
 def get_db_path():
     uri = app.config["SQLALCHEMY_DATABASE_URI"]
     if uri.startswith("sqlite:///"):
         return uri.replace("sqlite:///", "")
     return os.path.join(BASE_DIR, "hotel_maintenance.db")
 
-
 @app.route("/admin/backup")
 @role_required("ADMIN")
 def backup_page():
     try:
         backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
-        rows = "".join(f'<tr><td>{b}</td><td><a class="btn btn-sm btn-warning" href="/admin/restore/{b}"><i class="fas fa-undo"></i> Restore</a></td></tr>' for b in backups)
+        rows = "".join(f'<tr><td>{escape_html(b)}</td><td><a class="btn btn-sm btn-warning" href="/admin/restore/{b}"><i class="fas fa-undo"></i> Restore</a></td></tr>' for b in backups)
         content = f"""
         <h3><i class="fas fa-archive"></i> Backup & Restore</h3>
-        <form method="post" action="/admin/backup/now"><button class="btn btn-primary"><i class="fas fa-database"></i> Backup Now</button></form>
+        <form method="post" action="/admin/backup/now">{csrf_input()}<button class="btn btn-primary"><i class="fas fa-database"></i> Backup Now</button></form>
         <h5 class="mt-4">Existing Backups</h5>
         <div class="table-responsive"><table class="table table-bordered"><thead><tr><th>File</th><th></th></tr></thead><tbody>{rows or "<tr><td colspan=2>No backups</td></tr>"}</tbody></table></div>"""
         return page("Backup", content)
@@ -3390,10 +2944,10 @@ def backup_page():
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/admin/backup/now", methods=["POST"])
 @role_required("ADMIN")
 def backup_now():
+    validate_csrf_token()
     try:
         filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         filepath = os.path.join(BACKUP_FOLDER, filename)
@@ -3409,7 +2963,6 @@ def backup_now():
     except Exception as e:
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("backup_page"))
-
 
 @app.route("/admin/restore/<filename>")
 @role_required("ADMIN")
@@ -3443,10 +2996,7 @@ def restore_backup(filename):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("backup_page"))
 
-
-# --------------------------------------------------------------
-# QR CODES
-# --------------------------------------------------------------
+# ---------- QR CODES ----------
 @app.route("/qr")
 @login_required
 def qr_index():
@@ -3454,7 +3004,7 @@ def qr_index():
         rooms = Room.query.order_by(Room.room_number).all()
         areas = Area.query.order_by(Area.name).all()
         room_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/room/{r.id}"><img src="/qr/room/{r.id}" class="img-fluid" width="100"></a><br><small>Room {r.room_number}</small></div>' for r in rooms)
-        area_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/area/{a.id}"><img src="/qr/area/{a.id}" class="img-fluid" width="100"></a><br><small>{a.name}</small></div>' for a in areas)
+        area_cards = "".join(f'<div class="col-4 col-md-2 text-center p-2"><a href="/qr/area/{a.id}"><img src="/qr/area/{a.id}" class="img-fluid" width="100"></a><br><small>{escape_html(a.name)}</small></div>' for a in areas)
         content = f"""
         <h3><i class="fas fa-qrcode"></i> QR Codes</h3>
         <h5>Rooms</h5><div class="row">{room_cards}</div>
@@ -3463,7 +3013,6 @@ def qr_index():
     except Exception as e:
         flash(f"Error: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
-
 
 @app.route("/qr/<string:loc_type>/<int:id>")
 @login_required
@@ -3489,10 +3038,7 @@ def qr_code(loc_type, id):
     db.session.commit()
     return send_file(buf, mimetype="image/png", download_name=f"{label.replace(' ', '_')}_qr.png")
 
-
-# --------------------------------------------------------------
-# NOTIFICATIONS
-# --------------------------------------------------------------
+# ---------- NOTIFICATIONS ----------
 @app.route("/notifications")
 @login_required
 def notifications():
@@ -3503,9 +3049,9 @@ def notifications():
             status_class = "table-info" if not n.is_read else ""
             rows += f"""
             <tr class="{status_class}">
-            <td><a href="{n.link if n.link else '#'}" style="color: #f59e0b;">{n.title}</a></td>
-            <td>{n.message}</td>
-            <td>{n.notification_type}</td>
+            <td><a href="{n.link if n.link else '#'}" style="color: #f59e0b;">{escape_html(n.title)}</a></td>
+            <td>{escape_html(n.message)}</td>
+            <td>{escape_html(n.notification_type)}</td>
             <td>{n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else ''}</td>
             <td>
                 {f'<a href="/notifications/mark-read/{n.id}" class="btn btn-sm btn-primary"><i class="fas fa-check"></i> Read</a>' if not n.is_read else ''}
@@ -3526,7 +3072,6 @@ def notifications():
         flash(f"Error loading notifications: {str(e)}", "danger")
         return redirect(url_for("dashboard"))
 
-
 @app.route("/notifications/mark-read/<int:n_id>")
 @login_required
 def notification_mark_read(n_id):
@@ -3542,10 +3087,7 @@ def notification_mark_read(n_id):
         flash(f"Error: {str(e)}", "danger")
     return redirect(url_for("notifications"))
 
-
-# --------------------------------------------------------------
-# REPORTS EXPORT
-# --------------------------------------------------------------
+# ---------- REPORTS EXPORT ----------
 @app.route("/reports/export/<report_type>")
 @login_required
 def reports_export(report_type):
@@ -3582,10 +3124,7 @@ def reports_export(report_type):
         flash(f"Error exporting report: {str(e)}", "danger")
         return redirect(url_for("reports"))
 
-
-# --------------------------------------------------------------
-# PWA
-# --------------------------------------------------------------
+# ---------- PWA ----------
 @app.route("/manifest.json")
 def manifest():
     return jsonify({
@@ -3598,49 +3137,41 @@ def manifest():
         "icons": []
     })
 
-
 @app.route("/sw.js")
 def service_worker():
     return Response("""self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => self.clients.claim());
 self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
 
-
 @app.route('/logo.png')
 def serve_logo():
     logo_path = os.path.join(app.root_path, 'file_00000000d93c821094a2e3f7dced7c77.png')
     return send_file(logo_path, mimetype='image/png')
 
-
-# --------------------------------------------------------------
-# ERROR HANDLERS
-# --------------------------------------------------------------
+# ---------- ERROR HANDLERS ----------
 @app.errorhandler(403)
 def forbidden(e):
     return page("Forbidden", '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> You are not allowed to view this page.</div>'), 403
-
 
 @app.errorhandler(404)
 def not_found(e):
     return page("Not Found", '<div class="alert alert-warning"><i class="fas fa-search"></i> The page you requested was not found.</div>'), 404
 
-
-# --------------------------------------------------------------
-# TEMPORARY DEBUGGING ERROR HANDLER – shows traceback
-# --------------------------------------------------------------
 @app.errorhandler(500)
 def internal_error(e):
-    import traceback
-    tb = traceback.format_exc()
-    return f"""
-    <h1>500 Internal Server Error</h1>
-    <h3>Full traceback:</h3>
-    <pre style="background:#1e1e1e; color:#d4d4d4; padding:20px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-wrap:break-word;">
+    if app.config.get("DEBUG", False):
+        tb = traceback.format_exc()
+        return f"""
+        <h1>500 Internal Server Error</h1>
+        <h3>Full traceback:</h3>
+        <pre style="background:#1e1e1e; color:#d4d4d4; padding:20px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-wrap:break-word;">
 {tb}
-    </pre>
-    <p><strong>Please copy this traceback and send it to the developer.</strong></p>
-    """, 500
-
+        </pre>
+        <p><strong>Please copy this traceback and send it to the developer.</strong></p>
+        """, 500
+    else:
+        logger.error(f"500 error: {e}")
+        return page("500 Error", '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> An internal server error occurred. Please try again later.</div>'), 500
 
 # --------------------------------------------------------------
 # INIT
@@ -3650,35 +3181,8 @@ with app.app_context():
     ensure_database_schema()
     seed_data()
 
-
-users_data = [
-    {"full_name": "አሚር አወል", "username": "amir", "role": "MANAGER"},
-    {"full_name": "አበባየሁ ክፍሌ", "username": "abebayhu", "role": "SUPERVISOR"},
-    {"full_name": "ተስፋሁን ነከረ", "username": "tesfahun", "role": "TECHNICIAN"},
-    {"full_name": "ስምዖን ዮሐንስ", "username": "simon", "role": "TECHNICIAN"},
-    {"full_name": "ቸርነት አሞና", "username": "chernet", "role": "TECHNICIAN"},
-    {"full_name": "ዋሌ", "username": "wale", "role": "TECHNICIAN"},
-    {"full_name": "ፃዲቁ", "username": "tsadiku", "role": "TECHNICIAN"},
-]
-
-with app.app_context():
-    try:
-        db.create_all()
-        for user_info in users_data:
-            user = User.query.filter_by(username=user_info["username"]).first()
-            if not user:
-                user = User(username=user_info["username"], role=user_info["role"])
-                user.set_password("123456")
-                db.session.add(user)
-            if hasattr(user, 'full_name'):
-                user.full_name = user_info["full_name"]
-            user.role = user_info["role"]
-        db.session.commit()
-    except Exception as e:
-        print("Setup error:", e)
-@app.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
-
+# --------------------------------------------------------------
+# RUN
+# --------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=app.config["DEBUG"], host="0.0.0.0", port=5000)
