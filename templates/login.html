@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container my-5" style="max-width: 450px;">
+    <div class="card p-4 shadow bg-dark text-light border-secondary">
+        <h3 class="text-center mb-4 text-warning">መግቢያ (Login)</h3>
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">የተጠቃሚ ስም</label>
+                <input type="text" name="username" class="form-control bg-secondary text-white border-0" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">የይለፍ ቃል</label>
+                <input type="password" name="password" class="form-control bg-secondary text-white border-0" required>
+            </div>
+            <button type="submit" class="btn btn-warning w-100 mt-2 fw-bold">ግባ</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
