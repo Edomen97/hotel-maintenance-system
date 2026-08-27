@@ -57,8 +57,10 @@ os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 
-# ✅ የተስተካከለው SECRET_KEY - Render ላይ የማይቀየር
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rori123456")
+# --- Fixed SECRET_KEY and CSRF settings ---
+app.config['SECRET_KEY'] = 'rori123456'
+app.config['WTF_CSRF_ENABLED'] = False
+app.config['WTF_CSRF_CHECK_DEFAULT'] = False
 
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DATABASE_URL", "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db")
@@ -510,37 +512,29 @@ def ensure_database_schema():
         try:
             db.create_all()
             logger.info("Database tables created/verified")
-            
             conn = db.engine.raw_connection()
             cursor = conn.cursor()
-            
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='departments'")
             if not cursor.fetchone():
                 logger.info("Creating departments table...")
                 db.create_all()
-            
             cursor.execute("PRAGMA table_info(maintenance_requests)")
             existing_columns = [row[1] for row in cursor.fetchall()]
             conn.close()
-            
             required_columns = {
                 'department_id': 'ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER REFERENCES departments(id)',
                 'manager_id': 'ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER REFERENCES users(id)',
                 'completion_note': 'ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT',
                 'completed_date': 'ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME'
             }
-            
             for col, sql in required_columns.items():
                 if col not in existing_columns:
                     db.engine.execute(sql)
                     logger.info(f"Added column {col} to maintenance_requests")
-                    
         except Exception as e:
             logger.error(f"Schema migration error: {e}")
 
-# --------------------------------------------------------------
-# CSRF Helpers (የተሻሻለ)
-# --------------------------------------------------------------
+# CSRF helpers
 def generate_csrf_token():
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_hex(16)
@@ -551,9 +545,7 @@ def validate_csrf_token():
     if not token or token != session.get("_csrf_token"):
         abort(400, "CSRF token validation failed")
 
-# --------------------------------------------------------------
-# Context Processor - CSRF token በሁሉም ቴምፕሌቶች ውስጥ እንዲገኝ
-# --------------------------------------------------------------
+# Context processor to inject csrf_token into all templates
 @app.context_processor
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf_token)
