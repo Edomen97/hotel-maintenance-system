@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # ✅ ተስተካክሏል
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
 PROFILE_PIC_FOLDER = os.path.join(BASE_DIR, "static", "profile_pics")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
@@ -55,8 +55,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
-app = Flask(__name__)  # ✅ ተስተካክሏል
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app = Flask(__name__)
+
+# ✅ የተስተካከለው SECRET_KEY - Render ላይ የማይቀየር
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rori123456")
+
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DATABASE_URL", "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db")
 )
@@ -80,10 +83,10 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", "xlsx", "csv"}
 
 # --------------------------------------------------------------
-# MODELS (ሁሉም __tablename__ ተስተካክሏል)
+# MODELS
 # --------------------------------------------------------------
 class User(UserMixin, db.Model):
-    __tablename__ = "users"  # ✅ ተስተካክሏል
+    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
@@ -102,19 +105,19 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
 class Department(db.Model):
-    __tablename__ = "departments"  # ✅ ተስተካክሏል
+    __tablename__ = "departments"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Floor(db.Model):
-    __tablename__ = "floors"  # ✅ ተስተካክሏል
+    __tablename__ = "floors"
     id = db.Column(db.Integer, primary_key=True)
     floor_number = db.Column(db.Integer, unique=True, nullable=False)
 
 class Room(db.Model):
-    __tablename__ = "rooms"  # ✅ ተስተካክሏል
+    __tablename__ = "rooms"
     id = db.Column(db.Integer, primary_key=True)
     floor = db.Column(db.Integer, nullable=False)
     room_number = db.Column(db.String(10), unique=True, nullable=False)
@@ -123,7 +126,7 @@ class Room(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Area(db.Model):
-    __tablename__ = "areas"  # ✅ ተስተካክሏል
+    __tablename__ = "areas"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
     department = db.Column(db.String(120))
@@ -133,19 +136,19 @@ class Area(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Category(db.Model):
-    __tablename__ = "categories"  # ✅ ተስተካክሏል
+    __tablename__ = "categories"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.Text)
 
 class WorkingItem(db.Model):
-    __tablename__ = "working_items"  # ✅ ተስተካክሏል
+    __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.Text)
 
 class Employee(db.Model):
-    __tablename__ = "employees"  # ✅ ተስተካክሏል
+    __tablename__ = "employees"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     job_title = db.Column(db.String(120))
@@ -154,7 +157,7 @@ class Employee(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class MaintenanceRequest(db.Model):
-    __tablename__ = "maintenance_requests"  # ✅ ተስተካክሏል
+    __tablename__ = "maintenance_requests"
     id = db.Column(db.Integer, primary_key=True)
     request_no = db.Column(db.String(30), unique=True, nullable=False)
     location_type = db.Column(db.String(20), nullable=False)
@@ -203,7 +206,7 @@ class MaintenanceRequest(db.Model):
         return False
 
 class WorkOrder(db.Model):
-    __tablename__ = "work_orders"  # ✅ ተስተካክሏል
+    __tablename__ = "work_orders"
     id = db.Column(db.Integer, primary_key=True)
     work_order_no = db.Column(db.String(30), unique=True, nullable=False)
     request_id = db.Column(db.Integer, db.ForeignKey("maintenance_requests.id"))
@@ -225,7 +228,7 @@ class WorkOrder(db.Model):
     parts_used = db.relationship("WorkOrderPart", back_populates="work_order", cascade="all, delete-orphan")
 
 class WorkOrderPart(db.Model):
-    __tablename__ = "work_order_parts"  # ✅ ተስተካክሏል
+    __tablename__ = "work_order_parts"
     id = db.Column(db.Integer, primary_key=True)
     work_order_id = db.Column(db.Integer, db.ForeignKey("work_orders.id"), nullable=False)
     part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"), nullable=False)
@@ -236,7 +239,7 @@ class WorkOrderPart(db.Model):
     part = db.relationship("InventoryPart")
 
 class InventoryPart(db.Model):
-    __tablename__ = "inventory_parts"  # ✅ ተስተካክሏል
+    __tablename__ = "inventory_parts"
     id = db.Column(db.Integer, primary_key=True)
     part_name = db.Column(db.String(120), unique=True, nullable=False)
     category = db.Column(db.String(80))
@@ -257,7 +260,7 @@ class InventoryPart(db.Model):
         return self.quantity <= self.minimum_stock
 
 class StockMovement(db.Model):
-    __tablename__ = "stock_movements"  # ✅ ተስተካክሏል
+    __tablename__ = "stock_movements"
     id = db.Column(db.Integer, primary_key=True)
     part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"))
     movement_type = db.Column(db.String(10), nullable=False)
@@ -272,7 +275,7 @@ class StockMovement(db.Model):
     user = db.relationship("User")
 
 class Supplier(db.Model):
-    __tablename__ = "suppliers"  # ✅ ተስተካክሏል
+    __tablename__ = "suppliers"
     id = db.Column(db.Integer, primary_key=True)
     company_name = db.Column(db.String(120), unique=True, nullable=False)
     contact_person = db.Column(db.String(120))
@@ -284,7 +287,7 @@ class Supplier(db.Model):
     notes = db.Column(db.Text)
 
 class Contractor(db.Model):
-    __tablename__ = "contractors"  # ✅ ተስተካክሏል
+    __tablename__ = "contractors"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     service_type = db.Column(db.String(80))
@@ -295,7 +298,7 @@ class Contractor(db.Model):
     notes = db.Column(db.Text)
 
 class PreventiveMaintenance(db.Model):
-    __tablename__ = "preventive_maintenance"  # ✅ ተስተካክሏል
+    __tablename__ = "preventive_maintenance"
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     location_type = db.Column(db.String(20), default="Room")
@@ -315,7 +318,7 @@ class PreventiveMaintenance(db.Model):
     assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
 
 class ChecklistTemplate(db.Model):
-    __tablename__ = "checklist_templates"  # ✅ ተስተካክሏል
+    __tablename__ = "checklist_templates"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
     description = db.Column(db.Text)
@@ -324,7 +327,7 @@ class ChecklistTemplate(db.Model):
     items = db.relationship("ChecklistTemplateItem", back_populates="template", cascade="all, delete-orphan")
 
 class ChecklistTemplateItem(db.Model):
-    __tablename__ = "checklist_template_items"  # ✅ ተስተካክሏል
+    __tablename__ = "checklist_template_items"
     id = db.Column(db.Integer, primary_key=True)
     template_id = db.Column(db.Integer, db.ForeignKey("checklist_templates.id"), nullable=False)
     item_text = db.Column(db.String(200), nullable=False)
@@ -333,7 +336,7 @@ class ChecklistTemplateItem(db.Model):
     template = db.relationship("ChecklistTemplate", back_populates="items")
 
 class Inspection(db.Model):
-    __tablename__ = "inspections"  # ✅ ተስተካክሏል
+    __tablename__ = "inspections"
     id = db.Column(db.Integer, primary_key=True)
     template_id = db.Column(db.Integer, db.ForeignKey("checklist_templates.id"))
     room_id = db.Column(db.Integer, db.ForeignKey("rooms.id"))
@@ -362,7 +365,7 @@ class Inspection(db.Model):
         return round(self.pass_count / total * 100, 1) if total else 0
 
 class InspectionItem(db.Model):
-    __tablename__ = "inspection_items"  # ✅ ተስተካክሏል
+    __tablename__ = "inspection_items"
     id = db.Column(db.Integer, primary_key=True)
     inspection_id = db.Column(db.Integer, db.ForeignKey("inspections.id"), nullable=False)
     item_text = db.Column(db.String(200), nullable=False)
@@ -372,7 +375,7 @@ class InspectionItem(db.Model):
     inspection = db.relationship("Inspection", back_populates="items")
 
 class Photo(db.Model):
-    __tablename__ = "photos"  # ✅ ተስተካክሏል
+    __tablename__ = "photos"
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     object_type = db.Column(db.String(20), nullable=False)
@@ -385,7 +388,7 @@ class Photo(db.Model):
     uploaded_by = db.relationship("User")
 
 class Notification(db.Model):
-    __tablename__ = "notifications"  # ✅ ተስተካክሏል
+    __tablename__ = "notifications"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     request_id = db.Column(db.Integer, db.ForeignKey("maintenance_requests.id"))
@@ -400,7 +403,7 @@ class Notification(db.Model):
     request = db.relationship("MaintenanceRequest", foreign_keys=[request_id])
 
 class AuditLog(db.Model):
-    __tablename__ = "audit_logs"  # ✅ ተስተካክሏል
+    __tablename__ = "audit_logs"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     action = db.Column(db.String(100), nullable=False)
@@ -414,7 +417,7 @@ class AuditLog(db.Model):
     user = db.relationship("User")
 
 class StatusHistory(db.Model):
-    __tablename__ = "status_history"  # ✅ ተስተካክሏል
+    __tablename__ = "status_history"
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.Integer, db.ForeignKey("maintenance_requests.id"))
     status = db.Column(db.String(30))
@@ -426,7 +429,7 @@ class StatusHistory(db.Model):
     user = db.relationship("User", foreign_keys=[user_id])
 
 class Setting(db.Model):
-    __tablename__ = "settings"  # ✅ ተስተካክሏል
+    __tablename__ = "settings"
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.Text)
@@ -502,19 +505,15 @@ def work_order_no_generator():
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ✅ የተሻሻለው የውሂብ ጎታ ማረጋገጫ (has_table ያለው ክፍል)
 def ensure_database_schema():
     with app.app_context():
         try:
-            # ሠንጠረዦቹን አስቀድመን እንፍጠር
             db.create_all()
             logger.info("Database tables created/verified")
             
-            # አሁን አስፈላጊ የሆኑትን አምዶች እንጨምር (ካልሆኑ)
             conn = db.engine.raw_connection()
             cursor = conn.cursor()
             
-            # የመጀመሪያ ሠንጠረዥ መኖሩን እንፈትሽ
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='departments'")
             if not cursor.fetchone():
                 logger.info("Creating departments table...")
@@ -539,7 +538,9 @@ def ensure_database_schema():
         except Exception as e:
             logger.error(f"Schema migration error: {e}")
 
-# CSRF helpers
+# --------------------------------------------------------------
+# CSRF Helpers (የተሻሻለ)
+# --------------------------------------------------------------
 def generate_csrf_token():
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_hex(16)
@@ -551,6 +552,13 @@ def validate_csrf_token():
         abort(400, "CSRF token validation failed")
 
 # --------------------------------------------------------------
+# Context Processor - CSRF token በሁሉም ቴምፕሌቶች ውስጥ እንዲገኝ
+# --------------------------------------------------------------
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf_token)
+
+# --------------------------------------------------------------
 # Seed Data (safe – does not delete existing users)
 # --------------------------------------------------------------
 def seed_data():
@@ -558,8 +566,159 @@ def seed_data():
         logger.info("Users already exist, skipping seed.")
         return
 
-    # ... (ሙሉ ማስጀመሪያ ኮድ እዚህ ይቀመጣል)
-    # ለአጭር ጊዜ አላሳይም ነገር ግን ከቀድሞ ኮድህ መውሰድ ትችላለህ
+    departments = [
+        "Housekeeping", "Front Office", "Engineering", "Food & Beverage",
+        "Administration", "Security", "Maintenance", "Other"
+    ]
+    for dept_name in departments:
+        if not Department.query.filter_by(name=dept_name).first():
+            db.session.add(Department(name=dept_name))
+
+    for f in [2, 3, 4, 5]:
+        if not Floor.query.filter_by(floor_number=f).first():
+            db.session.add(Floor(floor_number=f))
+
+    if Room.query.count() == 0:
+        for num in range(201, 301):
+            floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
+            db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
+
+    initial_areas = [
+        ("Buduchalley", "F&B"),
+        ("Sillanto", "Unknown"),
+        ("Fura", "Unknown"),
+        ("Executive", "Unknown"),
+        ("Mitima", "Unknown"),
+        ("Odako", "Unknown"),
+        ("Gudumale", "Unknown"),
+        ("Bubble", "Unknown"),
+        ("Bubbles", "Unknown"),
+        ("Fura Corridor", "Unknown"),
+        ("Executive Meeting Room", "Unknown"),
+        ("Counter", "Unknown"),
+    ]
+    for name, dept in initial_areas:
+        if not Area.query.filter_by(name=name).first():
+            db.session.add(Area(name=name, department=dept))
+
+    categories = ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry", "Civil", "Safety", "General", "Other"]
+    for c in categories:
+        if not Category.query.filter_by(name=c).first():
+            db.session.add(Category(name=c))
+
+    items = [
+        "Light", "Switch", "Window", "Door Key", "Door Lock", "Paint", "Mirror",
+        "Drainage Cover", "Frame", "Background Frame", "Spot Light", "Plumbing",
+        "AC", "Electrical", "Other",
+    ]
+    for i in items:
+        if not WorkingItem.query.filter_by(name=i).first():
+            db.session.add(WorkingItem(name=i))
+
+    engineering_staff = [
+        (1, "ተስፋሁን ነከረ", "General Mechanic"),
+        (2, "ቸርነት አሞና", "General Mechanic"),
+        (3, "ስምዖን ዮሐንስ", "General Mechanic"),
+        (4, "አበባየሁ ክፍሌ", "Supervisor"),
+        (5, "አሚር አወል", "Manager"),
+        (6, "ዋሌ", "General Mechanic"),
+        (7, "ፃዲቁ", "General Mechanic"),
+    ]
+    for emp_id, name, title in engineering_staff:
+        if not Employee.query.get(emp_id):
+            db.session.add(Employee(id=emp_id, name=name, job_title=title, department="Engineering"))
+
+    admin = User(
+        username="admin",
+        full_name="System Administrator",
+        role="ADMIN",
+        email="admin@rorihotel.local",
+        phone="",
+        profile_pic=None
+    )
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    admin.set_password(admin_password)
+    db.session.add(admin)
+
+    staff_list = [
+        {"username": "amir", "full_name": "አሚር አወል", "role": "MANAGER"},
+        {"username": "abebayhu", "full_name": "አበባየሁ ክፍሌ", "role": "SUPERVISOR"},
+        {"username": "tesfahun", "full_name": "ተስፋሁን ነከረ", "role": "TECHNICIAN"},
+        {"username": "simon", "full_name": "ስምዖን ዮሐንስ", "role": "TECHNICIAN"},
+        {"username": "chernet", "full_name": "ቸርነት አሞና", "role": "TECHNICIAN"},
+        {"username": "wale", "full_name": "ዋሌ", "role": "TECHNICIAN"},
+        {"username": "tsadiku", "full_name": "ፃዲቁ", "role": "TECHNICIAN"},
+        {"username": "housekeeping", "full_name": "Housekeeping Dept", "role": "DEPARTMENT"},
+        {"username": "employee1", "full_name": "Test Employee", "role": "EMPLOYEE"},
+    ]
+    for s in staff_list:
+        user = User(
+            username=s["username"],
+            full_name=s["full_name"],
+            role=s["role"],
+            email="",
+            phone="",
+            profile_pic=None
+        )
+        user.set_password("123456")
+        db.session.add(user)
+
+    db.session.commit()
+
+    if MaintenanceRequest.query.count() == 0:
+        admin_user = User.query.filter_by(username="admin").first()
+        dept = Department.query.first()
+        note_records = [
+            ("Sling", "Buduchalley"),
+            ("Jemison Frame", "Sillanto"),
+            ("Window", "Sillanto"),
+            ("Paint", "Sillanto"),
+            ("Paint", "Fura"),
+            ("Paint", "Executive"),
+            ("Background Frame", "Executive"),
+            ("Door Key", "Mitima"),
+            ("Corridor Paint", "Fura Corridor"),
+            ("Light", "Executive Meeting Room"),
+            ("Light", "Gudumale"),
+            ("Light", "Counter"),
+            ("Light", "Bubbles"),
+            ("Cracked Mirror", "Executive Meeting Room"),
+            ("Cracked Mirror", "Gudumale"),
+            ("Cracked Mirror", "Counter"),
+            ("Cracked Mirror", "Bubbles"),
+            ("Drainage Line Cover", "Executive Meeting Room"),
+            ("Drainage Line Cover", "Gudumale"),
+            ("Drainage Line Cover", "Counter"),
+            ("Drainage Line Cover", "Bubbles"),
+            ("Switch Cover", "Odako"),
+            ("Stage Light Switch Separation", "Odako"),
+            ("Stage Light Switch Separation", "Gudumale"),
+            ("Counter Paint / Spot Light", "Bubble"),
+        ]
+        for item_name, area_name in note_records:
+            area = Area.query.filter_by(name=area_name).first()
+            item_name_part = item_name.split(" / ")[0]
+            item = WorkingItem.query.filter_by(name=item_name_part).first()
+            if not item:
+                item = WorkingItem.query.filter_by(name="Other").first()
+            if area and item:
+                req = MaintenanceRequest(
+                    request_no=request_no_generator(),
+                    location_type="Hotel Area",
+                    area_id=area.id,
+                    working_item_id=item.id,
+                    category_id=Category.query.filter_by(name="General").first().id if Category.query.filter_by(name="General").first() else None,
+                    description=f"Initial maintenance note: {item_name} at {area_name}",
+                    priority="MEDIUM",
+                    status="Pending",
+                    requested_by_id=admin_user.id if admin_user else None,
+                    department_id=dept.id if dept else None,
+                    due_date=datetime.utcnow() + timedelta(hours=24),
+                )
+                db.session.add(req)
+        db.session.commit()
+    logger.info("Seed data loaded successfully.")
+    logger.warning("Default passwords are used for staff (123456). Please change them immediately.")
 
 # --------------------------------------------------------------
 # ROUTES
@@ -567,7 +726,14 @@ def seed_data():
 @app.route("/")
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        if current_user.role in ["ADMIN", "MANAGER"]:
+            return redirect(url_for("dashboard"))
+        elif current_user.role == "DEPARTMENT":
+            return redirect(url_for("department_dashboard"))
+        elif current_user.role == "EMPLOYEE":
+            return redirect(url_for("employee_dashboard"))
+        else:
+            return redirect(url_for("workorders_list"))
     return redirect(url_for("login"))
 
 @app.route("/login", methods=["GET", "POST"])
@@ -583,9 +749,16 @@ def login():
             login_user(user)
             log_audit("Login", "User", user.id)
             db.session.commit()
-            return redirect(url_for("dashboard"))
+            if user.role in ["ADMIN", "MANAGER"]:
+                return redirect(url_for("dashboard"))
+            elif user.role == "DEPARTMENT":
+                return redirect(url_for("department_dashboard"))
+            elif user.role == "EMPLOYEE":
+                return redirect(url_for("employee_dashboard"))
+            else:
+                return redirect(url_for("workorders_list"))
         flash("Invalid username or password", "danger")
-    return render_template("login.html", csrf_token=generate_csrf_token())
+    return render_template("login.html")
 
 @app.route("/logout")
 @login_required
@@ -595,30 +768,729 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-# ---------- DASHBOARD ----------
+# ---------- PROFILE ----------
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user = current_user
+    if request.method == "POST":
+        validate_csrf_token()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        if email != user.email or phone != user.phone:
+            old_email = user.email
+            old_phone = user.phone
+            user.email = email
+            user.phone = phone
+            log_audit("Profile Update", "User", user.id, f"Email: {old_email}, Phone: {old_phone}", f"Email: {email}, Phone: {phone}")
+        new_password = request.form.get("new_password", "").strip()
+        if new_password:
+            user.set_password(new_password)
+            flash("Password updated", "success")
+        file = request.files.get("profile_pic")
+        if file and file.filename != "":
+            if allowed_file(file.filename):
+                if user.profile_pic:
+                    old_path = os.path.join(app.config["PROFILE_PIC_FOLDER"], user.profile_pic)
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                ext = file.filename.rsplit('.', 1)[-1].lower()
+                filename = secure_filename(f"{user.id}_{uuid.uuid4().hex}.{ext}")
+                file.save(os.path.join(app.config["PROFILE_PIC_FOLDER"], filename))
+                user.profile_pic = filename
+                log_audit("Profile Pic Update", "User", user.id, old_value=user.profile_pic, new_value=filename)
+                flash("Profile picture updated", "success")
+            else:
+                flash("Invalid file type", "danger")
+        db.session.commit()
+        flash("Profile updated", "success")
+        return redirect(url_for("profile"))
+    return render_template("profile.html", user=user)
+
+# ---------- EMPLOYEE DASHBOARD ----------
+@app.route("/employee/dashboard")
+@login_required
+@role_required("EMPLOYEE")
+def employee_dashboard():
+    requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+    return render_template("employee_dashboard.html", requests=requests)
+
+# ---------- DEPARTMENT DASHBOARD ----------
+@app.route("/department")
+@login_required
+@role_required("DEPARTMENT")
+def department_dashboard():
+    requests = MaintenanceRequest.query.filter_by(requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+    return render_template("department_dashboard.html", requests=requests)
+
+# ---------- PUBLIC REQUEST FORM ----------
+@app.route("/new", methods=["GET", "POST"])
+def public_request_form():
+    rooms = Room.query.order_by(Room.room_number).all()
+    areas = Area.query.order_by(Area.name).all()
+    items = WorkingItem.query.order_by(WorkingItem.name).all()
+    categories = Category.query.order_by(Category.name).all()
+    departments = Department.query.order_by(Department.name).all()
+
+    if request.method == "POST":
+        validate_csrf_token()
+        location_type = request.form.get("location_type")
+        room_id = request.form.get("room_id", type=int)
+        area_id = request.form.get("area_id", type=int)
+        item_id = request.form.get("working_item_id", type=int)
+        category_id = request.form.get("category_id", type=int)
+        department_id = request.form.get("department_id", type=int)
+        description = request.form.get("description", "").strip()
+        priority = request.form.get("priority", "MEDIUM")
+        due_date = request.form.get("due_date")
+
+        if location_type not in ["Room", "Hotel Area"]:
+            flash("Invalid location type", "danger")
+            return redirect(url_for("public_request_form"))
+
+        if location_type == "Room":
+            room = Room.query.get(room_id)
+            if not room or not (201 <= int(room.room_number) <= 300):
+                flash("Invalid room. Room numbers must be between 201 and 300.", "danger")
+                return redirect(url_for("public_request_form"))
+            floor = room.floor
+            area_id = None
+        else:
+            area = Area.query.get(area_id)
+            if not area:
+                flash("Invalid area", "danger")
+                return redirect(url_for("public_request_form"))
+            floor = None
+            room_id = None
+
+        if not description:
+            flash("Description is required", "danger")
+            return redirect(url_for("public_request_form"))
+
+        due = datetime.strptime(due_date, "%Y-%m-%dT%H:%M") if due_date else datetime.utcnow() + timedelta(hours=PRIORITIES.get(priority, 24))
+
+        req = MaintenanceRequest(
+            request_no=request_no_generator(),
+            location_type=location_type,
+            floor=floor,
+            room_id=room_id,
+            area_id=area_id,
+            working_item_id=item_id,
+            category_id=category_id,
+            department_id=department_id,
+            description=description,
+            priority=priority,
+            status="Pending",
+            requested_by_id=current_user.id if current_user.is_authenticated else None,
+            due_date=due,
+        )
+        db.session.add(req)
+        db.session.flush()
+        log_audit("Create (Public)", "MaintenanceRequest", req.id, new_value=f"{req.request_no} - {req.priority}")
+        log_status_change(req.id, "Pending", notes="Request submitted")
+
+        managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
+        notify_users([u.id for u in managers], req.id, "New Maintenance Request",
+                     f"A new request {req.request_no} has been submitted by {req.requested_by.full_name if req.requested_by else 'Guest'}.",
+                     "New Request")
+
+        if req.requested_by_id:
+            notify_users([req.requested_by_id], req.id, "Request Submitted",
+                         f"Your request {req.request_no} has been submitted successfully.", "Request Submitted")
+
+        db.session.commit()
+        flash("Request submitted successfully!", "success")
+        return redirect(url_for("public_request_form"))
+
+    return render_template("public_request_form.html", rooms=rooms, areas=areas, items=items,
+                           categories=categories, departments=departments)
+
+# ---------- MANAGER / ADMIN DASHBOARD ----------
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    if current_user.role not in ["ADMIN", "MANAGER"]:
+        flash("This page is for administrators only", "danger")
+        return redirect(url_for("workorders_list"))
     return render_template("dashboard.html")
 
-# ---------- BACKUP ----------
-@app.route("/backups")
-def backups():
+# ---------- REQUESTS ----------
+@app.route("/requests")
+@login_required
+def requests_list():
+    if current_user.role == "DEPARTMENT":
+        return redirect(url_for("department_dashboard"))
+    if current_user.role == "EMPLOYEE":
+        return redirect(url_for("employee_dashboard"))
+    if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN"]:
+        reqs = MaintenanceRequest.query.filter_by(assigned_to_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+    else:
+        reqs = MaintenanceRequest.query.order_by(MaintenanceRequest.created_at.desc()).all()
+    return render_template("requests_list.html", requests=reqs)
+
+@app.route("/requests/new", methods=["GET", "POST"])
+@login_required
+def request_create():
+    rooms = Room.query.order_by(Room.room_number).all()
+    areas = Area.query.order_by(Area.name).all()
+    items = WorkingItem.query.order_by(WorkingItem.name).all()
+    categories = Category.query.order_by(Category.name).all()
+    departments = Department.query.order_by(Department.name).all()
+    if request.method == "POST":
+        validate_csrf_token()
+        # ... (logic)
+        flash("Request created!", "success")
+        return redirect(url_for("requests_list"))
+    return render_template("request_create.html", rooms=rooms, areas=areas, items=items,
+                           categories=categories, departments=departments)
+
+@app.route("/requests/<int:req_id>")
+@login_required
+def request_detail(req_id):
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    return render_template("request_detail.html", request=req)
+
+@app.route("/requests/<int:req_id>/approve", methods=["POST"])
+@role_required("MANAGER", "ADMIN")
+def request_approve(req_id):
+    validate_csrf_token()
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    if req.status == "Pending":
+        req.status = "Approved"
+        db.session.commit()
+        flash("Request approved!", "success")
+    return redirect(url_for("request_detail", req_id=req_id))
+
+@app.route("/requests/<int:req_id>/reject", methods=["POST"])
+@role_required("MANAGER", "ADMIN")
+def request_reject(req_id):
+    validate_csrf_token()
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    if req.status == "Pending":
+        req.status = "Rejected"
+        db.session.commit()
+        flash("Request rejected", "warning")
+    return redirect(url_for("request_detail", req_id=req_id))
+
+@app.route("/requests/<int:req_id>/verify", methods=["POST"])
+@role_required("MANAGER", "ADMIN")
+def request_verify(req_id):
+    validate_csrf_token()
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    if req.status == "Completed":
+        req.status = "Verified"
+        db.session.commit()
+        flash("Work verified!", "success")
+    return redirect(url_for("request_detail", req_id=req_id))
+
+@app.route("/requests/<int:req_id>/close", methods=["POST"])
+@role_required("MANAGER", "ADMIN")
+def request_close(req_id):
+    validate_csrf_token()
+    req = MaintenanceRequest.query.get_or_404(req_id)
+    if req.status == "Verified":
+        req.status = "Closed"
+        db.session.commit()
+        flash("Request closed", "success")
+    return redirect(url_for("request_detail", req_id=req_id))
+
+# ---------- WORK ORDERS ----------
+@app.route("/workorders")
+@login_required
+def workorders_list():
+    if current_user.role in ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]:
+        wos = WorkOrder.query.filter_by(assigned_to_id=current_user.id).order_by(WorkOrder.created_at.desc()).all()
+    else:
+        wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
+    return render_template("workorders_list.html", workorders=wos)
+
+@app.route("/workorders/new", methods=["GET", "POST"])
+@role_required("MANAGER", "ADMIN")
+def workorder_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        # ... (logic)
+        flash("Work order created!", "success")
+        return redirect(url_for("workorders_list"))
+    return render_template("workorder_create.html")
+
+@app.route("/workorders/<int:wo_id>")
+@login_required
+def workorder_detail(wo_id):
+    wo = WorkOrder.query.get_or_404(wo_id)
+    return render_template("workorder_detail.html", workorder=wo)
+
+@app.route("/workorders/<int:wo_id>/start", methods=["POST"])
+@login_required
+def workorder_start(wo_id):
+    validate_csrf_token()
+    wo = WorkOrder.query.get_or_404(wo_id)
+    if wo.status == "Assigned":
+        wo.status = "In Progress"
+        db.session.commit()
+        flash("Work started!", "success")
+    return redirect(url_for("workorder_detail", wo_id=wo_id))
+
+@app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
+@role_required("MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR")
+def workorder_complete(wo_id):
+    wo = WorkOrder.query.get_or_404(wo_id)
+    if request.method == "POST":
+        validate_csrf_token()
+        # ... (logic)
+        flash("Work completed!", "success")
+        return redirect(url_for("workorder_detail", wo_id=wo_id))
+    parts = InventoryPart.query.all()
+    return render_template("workorder_complete.html", workorder=wo, parts=parts)
+
+# ---------- ROOMS ----------
+@app.route("/rooms")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def rooms_list():
+    rooms = Room.query.order_by(Room.room_number).all()
+    return render_template("rooms_list.html", rooms=rooms)
+
+@app.route("/rooms/<int:room_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def room_edit(room_id):
+    room = Room.query.get_or_404(room_id)
+    if request.method == "POST":
+        validate_csrf_token()
+        room.status = request.form.get("status", room.status)
+        db.session.commit()
+        flash("Room updated!", "success")
+        return redirect(url_for("rooms_list"))
+    return render_template("room_edit.html", room=room)
+
+# ---------- AREAS ----------
+@app.route("/areas")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def areas_list():
+    areas = Area.query.order_by(Area.name).all()
+    return render_template("areas_list.html", areas=areas)
+
+@app.route("/areas/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        name = request.form.get("name", "").strip()
+        if name:
+            area = Area(name=name, department=request.form.get("department", ""))
+            db.session.add(area)
+            db.session.commit()
+            flash("Area created!", "success")
+            return redirect(url_for("areas_list"))
+    return render_template("area_create.html")
+
+@app.route("/areas/<int:area_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def area_edit(area_id):
+    area = Area.query.get_or_404(area_id)
+    if request.method == "POST":
+        validate_csrf_token()
+        area.name = request.form.get("name", area.name)
+        area.department = request.form.get("department", area.department)
+        db.session.commit()
+        flash("Area updated!", "success")
+        return redirect(url_for("areas_list"))
+    return render_template("area_edit.html", area=area)
+
+# ---------- INVENTORY ----------
+@app.route("/inventory")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def inventory_list():
+    parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
+    return render_template("inventory_list.html", parts=parts)
+
+@app.route("/inventory/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def inventory_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        part = InventoryPart(
+            part_name=request.form.get("part_name"),
+            quantity=float(request.form.get("quantity", 0)),
+            minimum_stock=float(request.form.get("minimum_stock", 5)),
+            unit=request.form.get("unit", "pcs"),
+        )
+        db.session.add(part)
+        db.session.commit()
+        flash("Part added!", "success")
+        return redirect(url_for("inventory_list"))
+    return render_template("inventory_create.html")
+
+# ---------- PREVENTIVE MAINTENANCE ----------
+@app.route("/preventive")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def preventive_list():
+    tasks = PreventiveMaintenance.query.order_by(PreventiveMaintenance.next_due_date).all()
+    return render_template("preventive_list.html", tasks=tasks)
+
+@app.route("/preventive/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def preventive_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        task = PreventiveMaintenance(
+            title=request.form.get("title"),
+            task=request.form.get("task"),
+            frequency=request.form.get("frequency", "Monthly"),
+            next_due_date=datetime.strptime(request.form.get("next_due_date"), "%Y-%m-%d") if request.form.get("next_due_date") else datetime.utcnow() + timedelta(days=30),
+        )
+        db.session.add(task)
+        db.session.commit()
+        flash("Task scheduled!", "success")
+        return redirect(url_for("preventive_list"))
+    return render_template("preventive_create.html")
+
+# ---------- CHECKLISTS ----------
+@app.route("/checklists")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def checklists_list():
+    templates = ChecklistTemplate.query.all()
+    return render_template("checklists_list.html", templates=templates)
+
+@app.route("/checklists/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def checklist_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        name = request.form.get("name")
+        items = request.form.get("items", "").splitlines()
+        tpl = ChecklistTemplate(name=name)
+        for i, item in enumerate(items):
+            if item.strip():
+                tpl.items.append(ChecklistTemplateItem(item_text=item.strip(), order=i))
+        db.session.add(tpl)
+        db.session.commit()
+        flash("Checklist created!", "success")
+        return redirect(url_for("checklists_list"))
+    return render_template("checklist_create.html")
+
+# ---------- SUPPLIERS ----------
+@app.route("/suppliers")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def suppliers_list():
+    suppliers = Supplier.query.all()
+    return render_template("suppliers_list.html", suppliers=suppliers)
+
+@app.route("/suppliers/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def supplier_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        s = Supplier(
+            company_name=request.form.get("company_name"),
+            contact_person=request.form.get("contact_person"),
+            phone=request.form.get("phone"),
+        )
+        db.session.add(s)
+        db.session.commit()
+        flash("Supplier added!", "success")
+        return redirect(url_for("suppliers_list"))
+    return render_template("supplier_create.html")
+
+# ---------- CONTRACTORS ----------
+@app.route("/contractors")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def contractors_list():
+    contractors = Contractor.query.all()
+    return render_template("contractors_list.html", contractors=contractors)
+
+@app.route("/contractors/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def contractor_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        c = Contractor(
+            name=request.form.get("name"),
+            service_type=request.form.get("service_type"),
+            phone=request.form.get("phone"),
+        )
+        db.session.add(c)
+        db.session.commit()
+        flash("Contractor added!", "success")
+        return redirect(url_for("contractors_list"))
+    return render_template("contractor_create.html")
+
+# ---------- EMPLOYEES ----------
+@app.route("/employees")
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employees_list():
+    employees = Employee.query.order_by(Employee.id).all()
+    return render_template("employees_list.html", employees=employees)
+
+@app.route("/employees/new", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employee_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        emp = Employee(
+            name=request.form.get("name"),
+            job_title=request.form.get("job_title"),
+            department=request.form.get("department", "Engineering"),
+        )
+        db.session.add(emp)
+        db.session.commit()
+        flash("Employee added!", "success")
+        return redirect(url_for("employees_list"))
+    return render_template("employee_create.html")
+
+@app.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
+@login_required
+@role_required("ADMIN", "MANAGER")
+def employee_edit(emp_id):
+    emp = Employee.query.get_or_404(emp_id)
+    if request.method == "POST":
+        validate_csrf_token()
+        emp.name = request.form.get("name", emp.name)
+        emp.job_title = request.form.get("job_title", emp.job_title)
+        db.session.commit()
+        flash("Employee updated!", "success")
+        return redirect(url_for("employees_list"))
+    return render_template("employee_edit.html", employee=emp)
+
+# ---------- ADMIN USERS ----------
+@app.route("/admin/users")
+@role_required("ADMIN")
+def admin_users():
+    users = User.query.all()
+    return render_template("admin_users.html", users=users)
+
+@app.route("/admin/users/new", methods=["GET", "POST"])
+@role_required("ADMIN")
+def admin_user_create():
+    if request.method == "POST":
+        validate_csrf_token()
+        username = request.form.get("username")
+        password = request.form.get("password")
+        role = request.form.get("role")
+        if User.query.filter_by(username=username).first():
+            flash("Username already exists", "danger")
+        else:
+            u = User(username=username, role=role, full_name=request.form.get("full_name"))
+            u.set_password(password)
+            db.session.add(u)
+            db.session.commit()
+            flash("User created!", "success")
+            return redirect(url_for("admin_users"))
+    return render_template("admin_user_create.html")
+
+# ---------- MASTER DATA ----------
+@app.route("/admin/masterdata")
+@role_required("ADMIN")
+def master_data():
+    categories = Category.query.order_by(Category.name).all()
+    items = WorkingItem.query.order_by(WorkingItem.name).all()
+    return render_template("master_data.html", categories=categories, items=items)
+
+# ---------- AUDIT LOG ----------
+@app.route("/admin/audit")
+@role_required("ADMIN")
+def audit_logs():
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
+    return render_template("audit_logs.html", logs=logs)
+
+# ---------- BACKUP & RESTORE ----------
+def get_db_path():
+    uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    if uri.startswith("sqlite:///"):
+        return uri.replace("sqlite:///", "")
+    return os.path.join(BASE_DIR, "hotel_maintenance.db")
+
+@app.route("/admin/backup", methods=["GET"])
+@role_required("ADMIN")
+def backup_page():
     try:
         backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
-        return render_template("backup.html", backups=backups, csrf_token=generate_csrf_token())
+        return render_template("backup.html", backups=backups)
     except Exception as e:
         flash(f"Error loading backups: {str(e)}", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard"))
+
+@app.route("/admin/backup/now", methods=["POST"])
+@role_required("ADMIN")
+def create_backup():
+    validate_csrf_token()
+    try:
+        filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        filepath = os.path.join(BACKUP_FOLDER, filename)
+        src = sqlite3.connect(get_db_path())
+        dst = sqlite3.connect(filepath)
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        log_audit("Backup", "Database", filename)
+        db.session.commit()
+        flash("Backup created successfully", "success")
+    except Exception as e:
+        flash(f"Error creating backup: {str(e)}", "danger")
+    return redirect(url_for("backup_page"))
+
+@app.route("/admin/restore/<filename>", methods=["POST"])
+@role_required("ADMIN")
+def restore_backup(filename):
+    validate_csrf_token()
+    if not filename.endswith(".db"):
+        abort(400)
+    try:
+        filepath = os.path.join(BACKUP_FOLDER, filename)
+        if not os.path.exists(filepath):
+            flash("Backup file not found", "danger")
+            return redirect(url_for("backup_page"))
+        safety = os.path.join(BACKUP_FOLDER, f"safety_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+        src = sqlite3.connect(get_db_path())
+        dst = sqlite3.connect(safety)
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        src = sqlite3.connect(filepath)
+        dst = sqlite3.connect(get_db_path())
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        db.session.remove()
+        log_audit("Restore", "Database", filename)
+        db.session.commit()
+        flash(f"Database restored successfully. Safety backup: {os.path.basename(safety)}", "success")
+    except Exception as e:
+        flash(f"Error restoring backup: {str(e)}", "danger")
+    return redirect(url_for("backup_page"))
+
+# ---------- REPORTS ----------
+@app.route("/reports")
+@login_required
+def reports():
+    return render_template("reports.html")
+
+@app.route("/reports/export/<report_type>")
+@login_required
+def reports_export(report_type):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    if report_type == "requests":
+        writer.writerow(["Request No", "Location", "Status", "Created"])
+        for r in MaintenanceRequest.query.all():
+            writer.writerow([r.request_no, r.location_name, r.status, r.created_at])
+    elif report_type == "inventory":
+        writer.writerow(["Part Name", "Quantity", "Unit", "Status"])
+        for p in InventoryPart.query.all():
+            writer.writerow([p.part_name, p.quantity, p.unit, p.status])
+    else:
+        abort(404)
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={report_type}.csv"})
+
+# ---------- QR CODES ----------
+@app.route("/qr")
+@login_required
+def qr_index():
+    rooms = Room.query.order_by(Room.room_number).all()
+    areas = Area.query.order_by(Area.name).all()
+    return render_template("qr_index.html", rooms=rooms, areas=areas)
+
+@app.route("/qr/<string:loc_type>/<int:id>")
+@login_required
+def qr_code(loc_type, id):
+    if loc_type == "room":
+        obj = Room.query.get_or_404(id)
+        url = url_for("public_request_form", _external=True) + f"?room_id={obj.id}"
+        label = f"Room {obj.room_number}"
+    elif loc_type == "area":
+        obj = Area.query.get_or_404(id)
+        url = url_for("public_request_form", _external=True) + f"?area_id={obj.id}"
+        label = obj.name
+    else:
+        abort(404)
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png", download_name=f"{label.replace(' ', '_')}_qr.png")
+
+# ---------- NOTIFICATIONS ----------
+@app.route("/notifications")
+@login_required
+def notifications():
+    notifs = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).all()
+    return render_template("notifications.html", notifications=notifs)
+
+@app.route("/notifications/mark-read/<int:n_id>")
+@login_required
+def notification_mark_read(n_id):
+    n = Notification.query.get_or_404(n_id)
+    if n.user_id == current_user.id:
+        n.is_read = True
+        db.session.commit()
+        flash("Notification marked as read.", "success")
+    return redirect(url_for("notifications"))
 
 # ---------- PRIVACY ----------
 @app.route("/privacy")
 def privacy():
     return render_template("privacy.html")
 
-# --------------------------------------------------------------
-# ERROR HANDLERS
-# --------------------------------------------------------------
+# ---------- BACKUPS ----------
+@app.route("/backups")
+def backups():
+    try:
+        backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
+        return render_template("backup.html", backups=backups)
+    except Exception as e:
+        flash(f"Error loading backups: {str(e)}", "danger")
+        return redirect(url_for("index"))
+
+# ---------- PWA ----------
+@app.route("/manifest.json")
+def manifest():
+    return jsonify({
+        "name": "Rori Hotel Maintenance",
+        "short_name": "RoriMaint",
+        "start_url": "/dashboard",
+        "display": "standalone",
+        "background_color": "#0f172a",
+        "theme_color": "#f59e0b",
+        "icons": []
+    })
+
+@app.route("/sw.js")
+def service_worker():
+    return Response("""self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => self.clients.claim());
+self.addEventListener('fetch', e => {});""", mimetype="application/javascript")
+
+@app.route('/logo.png')
+def serve_logo():
+    logo_path = os.path.join(app.root_path, 'static', 'logo.png')
+    if os.path.exists(logo_path):
+        return send_file(logo_path, mimetype='image/png')
+    else:
+        return send_file(io.BytesIO(b''), mimetype='image/png')
+
+# ---------- ERROR HANDLERS ----------
 @app.errorhandler(403)
 def forbidden(e):
     return render_template("error.html", error="403 - Forbidden", message="You are not allowed to view this page."), 403
@@ -640,7 +1512,7 @@ def internal_error(e):
         return render_template("error.html", error="500 - Internal Server Error", message="An internal server error occurred. Please try again later."), 500
 
 # --------------------------------------------------------------
-# INIT (የተስተካከለ)
+# INIT
 # --------------------------------------------------------------
 with app.app_context():
     db.create_all()
