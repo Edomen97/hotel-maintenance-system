@@ -5,3 +5,4 @@ Werkzeug
 qrcode
 Pillow
 markupsafe
+gunicorn
