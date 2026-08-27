@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 from functools import wraps
 import traceback
-import secrets
 
 from flask import (
     Flask,
@@ -57,7 +56,7 @@ os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 
-# --- Fixed SECRET_KEY and CSRF settings ---
+# --- Fixed SECRET_KEY and CSRF fully disabled ---
 app.config['SECRET_KEY'] = 'rori123456'
 app.config['WTF_CSRF_ENABLED'] = False
 app.config['WTF_CSRF_CHECK_DEFAULT'] = False
@@ -534,22 +533,6 @@ def ensure_database_schema():
         except Exception as e:
             logger.error(f"Schema migration error: {e}")
 
-# CSRF helpers
-def generate_csrf_token():
-    if "_csrf_token" not in session:
-        session["_csrf_token"] = secrets.token_hex(16)
-    return session["_csrf_token"]
-
-def validate_csrf_token():
-    token = request.form.get("_csrf_token")
-    if not token or token != session.get("_csrf_token"):
-        abort(400, "CSRF token validation failed")
-
-# Context processor to inject csrf_token into all templates
-@app.context_processor
-def inject_csrf_token():
-    return dict(csrf_token=generate_csrf_token)
-
 # --------------------------------------------------------------
 # Seed Data (safe – does not delete existing users)
 # --------------------------------------------------------------
@@ -713,7 +696,7 @@ def seed_data():
     logger.warning("Default passwords are used for staff (123456). Please change them immediately.")
 
 # --------------------------------------------------------------
-# ROUTES
+# ROUTES (CSRF validation fully removed)
 # --------------------------------------------------------------
 @app.route("/")
 def index():
@@ -733,7 +716,7 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         user = User.query.filter_by(username=username).first()
@@ -766,7 +749,7 @@ def logout():
 def profile():
     user = current_user
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
         if email != user.email or phone != user.phone:
@@ -825,7 +808,7 @@ def public_request_form():
     departments = Department.query.order_by(Department.name).all()
 
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         location_type = request.form.get("location_type")
         room_id = request.form.get("room_id", type=int)
         area_id = request.form.get("area_id", type=int)
@@ -929,8 +912,8 @@ def request_create():
     categories = Category.query.order_by(Category.name).all()
     departments = Department.query.order_by(Department.name).all()
     if request.method == "POST":
-        validate_csrf_token()
-        # ... (logic)
+        # CSRF validation removed
+        # (logic)
         flash("Request created!", "success")
         return redirect(url_for("requests_list"))
     return render_template("request_create.html", rooms=rooms, areas=areas, items=items,
@@ -945,7 +928,7 @@ def request_detail(req_id):
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_approve(req_id):
-    validate_csrf_token()
+    # CSRF validation removed
     req = MaintenanceRequest.query.get_or_404(req_id)
     if req.status == "Pending":
         req.status = "Approved"
@@ -956,7 +939,7 @@ def request_approve(req_id):
 @app.route("/requests/<int:req_id>/reject", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_reject(req_id):
-    validate_csrf_token()
+    # CSRF validation removed
     req = MaintenanceRequest.query.get_or_404(req_id)
     if req.status == "Pending":
         req.status = "Rejected"
@@ -967,7 +950,7 @@ def request_reject(req_id):
 @app.route("/requests/<int:req_id>/verify", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_verify(req_id):
-    validate_csrf_token()
+    # CSRF validation removed
     req = MaintenanceRequest.query.get_or_404(req_id)
     if req.status == "Completed":
         req.status = "Verified"
@@ -978,7 +961,7 @@ def request_verify(req_id):
 @app.route("/requests/<int:req_id>/close", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_close(req_id):
-    validate_csrf_token()
+    # CSRF validation removed
     req = MaintenanceRequest.query.get_or_404(req_id)
     if req.status == "Verified":
         req.status = "Closed"
@@ -1000,8 +983,8 @@ def workorders_list():
 @role_required("MANAGER", "ADMIN")
 def workorder_create():
     if request.method == "POST":
-        validate_csrf_token()
-        # ... (logic)
+        # CSRF validation removed
+        # (logic)
         flash("Work order created!", "success")
         return redirect(url_for("workorders_list"))
     return render_template("workorder_create.html")
@@ -1015,7 +998,7 @@ def workorder_detail(wo_id):
 @app.route("/workorders/<int:wo_id>/start", methods=["POST"])
 @login_required
 def workorder_start(wo_id):
-    validate_csrf_token()
+    # CSRF validation removed
     wo = WorkOrder.query.get_or_404(wo_id)
     if wo.status == "Assigned":
         wo.status = "In Progress"
@@ -1028,8 +1011,8 @@ def workorder_start(wo_id):
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     if request.method == "POST":
-        validate_csrf_token()
-        # ... (logic)
+        # CSRF validation removed
+        # (logic)
         flash("Work completed!", "success")
         return redirect(url_for("workorder_detail", wo_id=wo_id))
     parts = InventoryPart.query.all()
@@ -1049,7 +1032,7 @@ def rooms_list():
 def room_edit(room_id):
     room = Room.query.get_or_404(room_id)
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         room.status = request.form.get("status", room.status)
         db.session.commit()
         flash("Room updated!", "success")
@@ -1069,7 +1052,7 @@ def areas_list():
 @role_required("ADMIN", "MANAGER")
 def area_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         name = request.form.get("name", "").strip()
         if name:
             area = Area(name=name, department=request.form.get("department", ""))
@@ -1085,7 +1068,7 @@ def area_create():
 def area_edit(area_id):
     area = Area.query.get_or_404(area_id)
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         area.name = request.form.get("name", area.name)
         area.department = request.form.get("department", area.department)
         db.session.commit()
@@ -1106,7 +1089,7 @@ def inventory_list():
 @role_required("ADMIN", "MANAGER")
 def inventory_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         part = InventoryPart(
             part_name=request.form.get("part_name"),
             quantity=float(request.form.get("quantity", 0)),
@@ -1132,7 +1115,7 @@ def preventive_list():
 @role_required("ADMIN", "MANAGER")
 def preventive_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         task = PreventiveMaintenance(
             title=request.form.get("title"),
             task=request.form.get("task"),
@@ -1158,7 +1141,7 @@ def checklists_list():
 @role_required("ADMIN", "MANAGER")
 def checklist_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         name = request.form.get("name")
         items = request.form.get("items", "").splitlines()
         tpl = ChecklistTemplate(name=name)
@@ -1184,7 +1167,7 @@ def suppliers_list():
 @role_required("ADMIN", "MANAGER")
 def supplier_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         s = Supplier(
             company_name=request.form.get("company_name"),
             contact_person=request.form.get("contact_person"),
@@ -1209,7 +1192,7 @@ def contractors_list():
 @role_required("ADMIN", "MANAGER")
 def contractor_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         c = Contractor(
             name=request.form.get("name"),
             service_type=request.form.get("service_type"),
@@ -1234,7 +1217,7 @@ def employees_list():
 @role_required("ADMIN", "MANAGER")
 def employee_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         emp = Employee(
             name=request.form.get("name"),
             job_title=request.form.get("job_title"),
@@ -1252,7 +1235,7 @@ def employee_create():
 def employee_edit(emp_id):
     emp = Employee.query.get_or_404(emp_id)
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         emp.name = request.form.get("name", emp.name)
         emp.job_title = request.form.get("job_title", emp.job_title)
         db.session.commit()
@@ -1271,7 +1254,7 @@ def admin_users():
 @role_required("ADMIN")
 def admin_user_create():
     if request.method == "POST":
-        validate_csrf_token()
+        # CSRF validation removed
         username = request.form.get("username")
         password = request.form.get("password")
         role = request.form.get("role")
@@ -1321,7 +1304,7 @@ def backup_page():
 @app.route("/admin/backup/now", methods=["POST"])
 @role_required("ADMIN")
 def create_backup():
-    validate_csrf_token()
+    # CSRF validation removed
     try:
         filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         filepath = os.path.join(BACKUP_FOLDER, filename)
@@ -1341,7 +1324,7 @@ def create_backup():
 @app.route("/admin/restore/<filename>", methods=["POST"])
 @role_required("ADMIN")
 def restore_backup(filename):
-    validate_csrf_token()
+    # CSRF validation removed
     if not filename.endswith(".db"):
         abort(400)
     try:
