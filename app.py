@@ -892,7 +892,7 @@ def dashboard():
     if current_user.role not in ["ADMIN", "MANAGER"]:
         flash("This page is for administrators only", "danger")
         return redirect(url_for("workorders_list"))
-    # ... (full logic can be added here, but we use template)
+    # Add logic here
     return render_template("dashboard.html")
 
 # ---------- REQUESTS ----------
@@ -1292,6 +1292,16 @@ def notification_mark_read(n_id):
 @app.route("/privacy")
 def privacy():
     return render_template("privacy.html")
+
+# ---------- BACKUPS (ተጨምሯል) ----------
+@app.route("/backups")
+def backups():
+    try:
+        backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
+        return render_template("backup.html", backups=backups, csrf_token=generate_csrf_token())
+    except Exception as e:
+        flash(f"Error loading backups: {str(e)}", "danger")
+        return redirect(url_for("index"))
 
 # ---------- PWA ----------
 @app.route("/manifest.json")
