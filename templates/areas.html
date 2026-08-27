@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}የቦታዎች ዝርዝር (Areas){% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-geo-alt me-2"></i>የቦታዎች ዝርዝር (Areas)</h2>
+        <a href="/areas/new" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> አዲስ ቦታ ጨምር
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#ID</th>
+                            <th>የቦታው / ዞኑ ስም</th>
+                            <th>ዓይነት (Category)</th>
+                            <th>ኃላፊ ክፍል</th>
+                            <th>ሁኔታ (Status)</th>
+                            <th>ማስታወሻ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if areas %}
+                            {% for area in areas %}
+                            <tr>
+                                <td><strong>#{{ area.id }}</strong></td>
+                                <td><span class="fw-bold text-primary">{{ area.name or area.area_name }}</span></td>
+                                <td>{{ area.category or area.type or 'General' }}</td>
+                                <td>{{ area.department or 'Maintenance' }}</td>
+                                <td>
+                                    <span class="badge bg-success">Active</span>
+                                </td>
+                                <td>{{ area.description or area.notes or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    ምንም የተቀመጠ የቦታ መረጃ የለም።
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
