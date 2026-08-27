@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}የቁጥጥር ዝርዝሮች (Checklists){% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-card-checklist me-2"></i>የጥገና ቁጥጥር ዝርዝሮች (Checklists)</h2>
+        <a href="/checklists/new" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> አዲስ Checklist ጨምር
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#ID</th>
+                            <th>የመመርመሪያ ርዕስ</th>
+                            <th>ክፍል / መሣሪያ</th>
+                            <th>የፍተሻ ጊዜ (Frequency)</th>
+                            <th>ሁኔታ</th>
+                            <th>የመጨረሻ ፍተሻ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if checklists %}
+                            {% for item in checklists %}
+                            <tr>
+                                <td><strong>#{{ item.id }}</strong></td>
+                                <td>{{ item.title or item.name or 'Checklist' }}</td>
+                                <td>{{ item.room_number or item.equipment or 'General' }}</td>
+                                <td>{{ item.frequency or 'Daily' }}</td>
+                                <td>
+                                    <span class="badge bg-success">Active</span>
+                                </td>
+                                <td>{{ item.last_checked.strftime('%Y-%m-%d') if item.last_checked else 'አልተፈተሸም' }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    ምንም የተቀመጠ የፍተሻ ዝርዝር (Checklist) የለም።
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
