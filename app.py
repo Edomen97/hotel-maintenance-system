@@ -3,7 +3,7 @@ import io
 import os
 import sqlite3
 import uuid
-import base64
+import logging
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -14,11 +14,11 @@ from flask import (
     get_flashed_messages,
     jsonify,
     redirect,
-    render_template_string,
     request,
     send_file,
     url_for,
     Response,
+    render_template,
 )
 from flask_login import (
     LoginManager,
@@ -34,6 +34,11 @@ from werkzeug.utils import secure_filename
 
 import qrcode
 
+# --- Logging setup ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Configuration ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
@@ -71,7 +76,7 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", 
 
 
 # --------------------------------------------------------------
-# MODELS
+# MODELS (በትክክል ተቀምጠዋል)
 # --------------------------------------------------------------
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -91,12 +96,10 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-
 class Floor(db.Model):
     __tablename__ = "floors"
     id = db.Column(db.Integer, primary_key=True)
     floor_number = db.Column(db.Integer, unique=True, nullable=False)
-
 
 class Room(db.Model):
     __tablename__ = "rooms"
@@ -106,7 +109,6 @@ class Room(db.Model):
     status = db.Column(db.String(30), default="Available")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 class Area(db.Model):
     __tablename__ = "areas"
@@ -118,18 +120,15 @@ class Area(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
 class Category(db.Model):
     __tablename__ = "categories"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
 
-
 class WorkingItem(db.Model):
     __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
-
 
 class Employee(db.Model):
     __tablename__ = "employees"
@@ -139,7 +138,6 @@ class Employee(db.Model):
     department = db.Column(db.String(80), default="Engineering")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 class MaintenanceRequest(db.Model):
     __tablename__ = "maintenance_requests"
@@ -185,7 +183,6 @@ class MaintenanceRequest(db.Model):
             return True
         return False
 
-
 class WorkOrder(db.Model):
     __tablename__ = "work_orders"
     id = db.Column(db.Integer, primary_key=True)
@@ -208,7 +205,6 @@ class WorkOrder(db.Model):
     verified_by = db.relationship("User", foreign_keys=[verified_by_id])
     parts_used = db.relationship("WorkOrderPart", back_populates="work_order", cascade="all, delete-orphan")
 
-
 class WorkOrderPart(db.Model):
     __tablename__ = "work_order_parts"
     id = db.Column(db.Integer, primary_key=True)
@@ -219,7 +215,6 @@ class WorkOrderPart(db.Model):
 
     work_order = db.relationship("WorkOrder", back_populates="parts_used")
     part = db.relationship("InventoryPart")
-
 
 class InventoryPart(db.Model):
     __tablename__ = "inventory_parts"
@@ -242,7 +237,6 @@ class InventoryPart(db.Model):
     def is_low(self):
         return self.quantity <= self.minimum_stock
 
-
 class StockMovement(db.Model):
     __tablename__ = "stock_movements"
     id = db.Column(db.Integer, primary_key=True)
@@ -258,7 +252,6 @@ class StockMovement(db.Model):
     part = db.relationship("InventoryPart")
     user = db.relationship("User")
 
-
 class Supplier(db.Model):
     __tablename__ = "suppliers"
     id = db.Column(db.Integer, primary_key=True)
@@ -271,7 +264,6 @@ class Supplier(db.Model):
     status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
 
-
 class Contractor(db.Model):
     __tablename__ = "contractors"
     id = db.Column(db.Integer, primary_key=True)
@@ -282,7 +274,6 @@ class Contractor(db.Model):
     rate = db.Column(db.Float)
     status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
-
 
 class PreventiveMaintenance(db.Model):
     __tablename__ = "preventive_maintenance"
@@ -304,7 +295,6 @@ class PreventiveMaintenance(db.Model):
     area = db.relationship("Area", foreign_keys=[area_id])
     assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
 
-
 class ChecklistTemplate(db.Model):
     __tablename__ = "checklist_templates"
     id = db.Column(db.Integer, primary_key=True)
@@ -314,7 +304,6 @@ class ChecklistTemplate(db.Model):
 
     items = db.relationship("ChecklistTemplateItem", back_populates="template", cascade="all, delete-orphan")
 
-
 class ChecklistTemplateItem(db.Model):
     __tablename__ = "checklist_template_items"
     id = db.Column(db.Integer, primary_key=True)
@@ -323,7 +312,6 @@ class ChecklistTemplateItem(db.Model):
     order = db.Column(db.Integer, default=0)
 
     template = db.relationship("ChecklistTemplate", back_populates="items")
-
 
 class Inspection(db.Model):
     __tablename__ = "inspections"
@@ -354,7 +342,6 @@ class Inspection(db.Model):
         total = len(self.items)
         return round(self.pass_count / total * 100, 1) if total else 0
 
-
 class InspectionItem(db.Model):
     __tablename__ = "inspection_items"
     id = db.Column(db.Integer, primary_key=True)
@@ -364,7 +351,6 @@ class InspectionItem(db.Model):
     notes = db.Column(db.Text)
 
     inspection = db.relationship("Inspection", back_populates="items")
-
 
 class Photo(db.Model):
     __tablename__ = "photos"
@@ -379,7 +365,6 @@ class Photo(db.Model):
 
     uploaded_by = db.relationship("User")
 
-
 class Notification(db.Model):
     __tablename__ = "notifications"
     id = db.Column(db.Integer, primary_key=True)
@@ -392,7 +377,6 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", foreign_keys=[user_id])
-
 
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
@@ -408,7 +392,6 @@ class AuditLog(db.Model):
 
     user = db.relationship("User")
 
-
 class StatusHistory(db.Model):
     __tablename__ = "status_history"
     id = db.Column(db.Integer, primary_key=True)
@@ -421,13 +404,11 @@ class StatusHistory(db.Model):
     request = db.relationship("MaintenanceRequest", foreign_keys=[request_id])
     user = db.relationship("User", foreign_keys=[user_id])
 
-
 class Setting(db.Model):
     __tablename__ = "settings"
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.Text)
-
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -449,7 +430,6 @@ def role_required(*roles):
         return wrapper
     return decorator
 
-
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
     log = AuditLog(
         user_id=current_user.id if current_user.is_authenticated else None,
@@ -461,7 +441,6 @@ def log_audit(action, object_type=None, object_id=None, old_value=None, new_valu
         ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
     )
     db.session.add(log)
-
 
 def notify(user_ids, message, type="General", request_id=None, work_order_id=None):
     user_ids = set(user_ids)
@@ -476,18 +455,14 @@ def notify(user_ids, message, type="General", request_id=None, work_order_id=Non
             )
             db.session.add(n)
 
-
 def request_no_generator():
     return f"R-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
-
 
 def work_order_no_generator():
     return f"WO-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
 
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 def page(title, content):
     nav = []
@@ -642,6 +617,7 @@ def seed_data():
 
     if MaintenanceRequest.query.count() == 0:
         admin = User.query.filter_by(username="admin").first()
+        general_cat = Category.query.filter_by(name="General").first()
         note_records = [
             ("Sling", "Buduchalley"),
             ("Jemison Frame", "Sillanto"),
@@ -680,7 +656,7 @@ def seed_data():
                     location_type="Hotel Area",
                     area_id=area.id,
                     working_item_id=item.id,
-                    category_id=Category.query.filter_by(name="General").first().id if Category.query.filter_by(name="General").first() else None,
+                    category_id=general_cat.id if general_cat else None,
                     description=f"Initial maintenance note: {item_name} at {area_name}",
                     priority="MEDIUM",
                     status="Pending",
@@ -689,6 +665,7 @@ def seed_data():
                 )
                 db.session.add(req)
         db.session.commit()
+    logger.info("Seed data loaded successfully.")
 
 
 # --------------------------------------------------------------
@@ -1149,7 +1126,6 @@ def workorder_detail(wo_id):
     parts_html = "".join(f"<li>{p.part.part_name} x {p.quantity} @ {p.unit_cost} ETB</li>" for p in parts)
     photo_html = "".join(f'<a href="/uploads/{p.filename}" target="_blank"><img src="/uploads/{p.filename}" height="100" class="m-1"></a>' for p in photos)
     
-    # የማጠናቀቂያ ፎቶ ካለ አሳይ
     completion_photo_html = ""
     if wo.completion_photo:
         completion_photo_html = f"""
@@ -1200,166 +1176,117 @@ def workorder_progress(wo_id):
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
 
+# --------------------------------------------------------------
+# ✅ የተሻሻለው WORK ORDER COMPLETE (አዲሱን ቅጽ የሚጠቀም)
+# --------------------------------------------------------------
 @app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
 @role_required("MAINTENANCE STAFF", "MANAGER", "ADMIN")
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
+    
+    # ለቅጹ የሚያስፈልጉ እቃዎችን እናመጣለን
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
+    part_options = "".join(f'<option value="{p.id}">{p.part_name} (qty {p.quantity})</option>' for p in parts)
     
     if request.method == "POST":
-        wo.work_performed = request.form.get("work_performed", "")
-        wo.labor_hours = float(request.form.get("labor_hours", 0) or 0)
-        wo.completion_notes = request.form.get("completion_notes", "")
+        # ከቅጹ መረጃ እንቀበላለን
+        work_done = request.form.get("work_done", "").strip()
+        hours_spent = request.form.get("hours_spent", 0)
+        notes = request.form.get("notes", "").strip()
+        used_item = request.form.get("used_item", type=int)
+        item_qty = request.form.get("item_qty", type=float, default=0)
         
-        # ፎቶ ማስተናገድ
+        # የፎቶ ማስተናገድ
         file = request.files.get("photo")
+        filename = None
         if file and file.filename != "" and allowed_file(file.filename):
             ext = file.filename.rsplit('.', 1)[1].lower()
-            filename = secure_filename(f"wo_{wo.id}_completed.{ext}")
+            filename = secure_filename(f"wo_{wo.id}_completed_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}")
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
-            wo.completion_photo = filename
+        elif not file or file.filename == "":
+            flash("እባክዎ የስራውን ውጤት የሚያሳይ ፎቶ ያንሱ ወይም ያስገቡ!", "danger")
+            return redirect(url_for("workorder_complete", wo_id=wo.id))
         
+        if not work_done:
+            flash("እባክዎ የተሰራውን ስራ ይግለጹ!", "danger")
+            return redirect(url_for("workorder_complete", wo_id=wo.id))
+        
+        # የስራ ትዕዛዝ ማሻሻያ
+        wo.work_performed = work_done
+        wo.labor_hours = float(hours_spent or 0)
+        wo.completion_notes = notes
+        if filename:
+            wo.completion_photo = filename
         wo.status = "Completed"
         wo.completed_by_id = current_user.id
-        wo.request.status = "Completed"
-        wo.request.completed_date = datetime.utcnow()
-        hist = StatusHistory(request_id=wo.request_id, status=wo.request.status, user_id=current_user.id)
+        wo.updated_at = datetime.utcnow()
+        
+        # የጥያቄውን ሁኔታ ማሻሻያ
+        if wo.request:
+            wo.request.status = "Completed"
+            wo.request.completed_date = datetime.utcnow()
+            wo.request.updated_at = datetime.utcnow()
+            wo.request.notes = notes
+        
+        # የሁኔታ ታሪክ መመዝገብ
+        hist = StatusHistory(
+            request_id=wo.request_id,
+            status="Completed",
+            user_id=current_user.id,
+            notes=f"Work completed by {current_user.full_name}. Hours: {hours_spent}"
+        )
         db.session.add(hist)
-
-        part_ids = request.form.getlist("part_id")
-        quantities = request.form.getlist("quantity")
-        for pid, qty in zip(part_ids, quantities):
-            qty = float(qty or 0)
-            if qty > 0:
-                part = InventoryPart.query.get(int(pid))
-                if part and part.quantity >= qty:
-                    part.quantity -= qty
-                    wo_part = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=qty, unit_cost=part.unit_cost)
-                    db.session.add(wo_part)
-                    mov = StockMovement(part_id=part.id, movement_type="OUT", quantity=qty, reason=f"Work Order {wo.work_order_no}", work_order_id=wo.id, user_id=current_user.id)
-                    db.session.add(mov)
-                    if part.quantity <= 0:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ክምችት አልቋል", "Out of Stock", work_order_id=wo.id)
-                    elif part.quantity <= part.minimum_stock:
-                        notify([u.id for u in User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()], f"{part.part_name} ዝቅተኛ ክምችት", "Low Stock", work_order_id=wo.id)
         
+        # የተጠቀመውን እቃ ከክምችት መቀነስ (ካለ)
+        if used_item and item_qty and item_qty > 0:
+            part = InventoryPart.query.get(used_item)
+            if part and part.quantity >= item_qty:
+                part.quantity -= item_qty
+                
+                # የስራ ትዕዛዝ ክፍል መመዝገብ
+                wo_part = WorkOrderPart(
+                    work_order_id=wo.id,
+                    part_id=part.id,
+                    quantity=item_qty,
+                    unit_cost=part.unit_cost
+                )
+                db.session.add(wo_part)
+                
+                # የክምችት እንቅስቃሴ መመዝገብ
+                mov = StockMovement(
+                    part_id=part.id,
+                    movement_type="OUT",
+                    quantity=item_qty,
+                    reason=f"Work Order {wo.work_order_no}",
+                    work_order_id=wo.id,
+                    user_id=current_user.id
+                )
+                db.session.add(mov)
+                
+                # ዝቅተኛ ክምችት ማሳወቂያ
+                if part.quantity <= 0:
+                    managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
+                    notify([u.id for u in managers], f"{part.part_name} ክምችት አልቋል", "Out of Stock", work_order_id=wo.id)
+                elif part.quantity <= part.minimum_stock:
+                    managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
+                    notify([u.id for u in managers], f"{part.part_name} ዝቅተኛ ክምችት", "Low Stock", work_order_id=wo.id)
+            elif part:
+                flash(f"በቂ ክምችት የለም! {part.part_name} የሚፈለገው: {item_qty}, ያለው: {part.quantity}", "danger")
+                db.session.rollback()
+                return redirect(url_for("workorder_complete", wo_id=wo.id))
+        
+        # ማሳወቂያ መላክ
         log_audit("Completion", "WorkOrder", wo.id, old_value="In Progress", new_value="Completed")
-        notify([wo.request.requested_by_id], f"የስራ ትዕዛዝ {wo.work_order_no} ተጠናቋል", "Status Changed", wo.request_id, wo.id)
-        db.session.commit()
-        flash("የጥገና ሪፖርቱ እና ፎቶው በተሳካ ሁኔታ ተልኳል!", "success")
-        return redirect(url_for("workorder_detail", wo_id=wo.id))
-
-    part_options = "".join(f'<option value="{p.id}">{p.part_name} (qty {p.quantity})</option>' for p in parts)
-    content = f"""
-    <h3>ስራውን ይጨርሱ {wo.work_order_no}</h3>
-    <form id="workOrderForm" method="post" enctype="multipart/form-data">
-    <input type="hidden" name="wo_id" value="{wo.id}">
-    <div class="mb-3">
-        <label class="form-label fw-bold">📸 የተሰራበትን የሚያሳይ ፎቶ ያንሱ</label>
-        <input type="file" name="photo" accept="image/*" capture="environment" class="form-control form-control-lg" required>
-        <div class="form-text">በስልክዎ ካሜራ የጥገናውን ውጤት ፎቶ ያንሱ።</div>
-    </div>
-    <div class="mb-3"><label>የተሰራው ስራ</label><textarea class="form-control" name="work_performed" required>{wo.work_performed or ''}</textarea></div>
-    <div class="mb-3"><label>የስራ ሰዓት</label><input type="number" step="0.1" class="form-control" name="labor_hours" value="0"></div>
-    <div class="mb-3">
-        <label class="form-label fw-bold">ማስታወሻ</label>
-        <textarea name="completion_notes" class="form-control" rows="3" placeholder="ስራው እንዴት እንደተጠናቀቀ ይፃፉ..."></textarea>
-    </div>
-    <h5>የተጠቀሙ እቃዎች</h5>
-    <div id="parts">
-      <div class="row mb-2"><div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div>
-      <div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div></div>
-    </div>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPart()">+ እቃ ጨምር</button>
-    <hr>
-    <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">✅ ስራውን ጨርስ / Complete Task</button>
-    </form>
-    <script>
-    function addPart() {{
-      var div = document.createElement('div');
-      div.className = 'row mb-2';
-      div.innerHTML = '<div class="col"><select class="form-select" name="part_id"><option value="">-- እቃ --</option>{part_options}</select></div><div class="col"><input type="number" step="0.1" class="form-control" name="quantity" placeholder="ብዛት"></div>';
-      document.getElementById('parts').appendChild(div);
-    }}
-    </script>
-    <script>
-    // Offline support
-    let db;
-    const dbRequest = indexedDB.open("RoriMaintenanceOffline", 1);
-    dbRequest.onupgradeneeded = (e) => {{
-        db = e.target.result;
-        if (!db.objectStoreNames.contains("pendingReports")) {{
-            db.createObjectStore("pendingReports", {{ keyPath: "id", autoIncrement: true }});
-        }}
-    }};
-    dbRequest.onsuccess = (e) => {{ db = e.target.result; }};
-    
-    document.getElementById("workOrderForm").addEventListener("submit", async function(e) {{
-        e.preventDefault();
-        const form = this;
-        const formData = new FormData(form);
-        const woId = formData.get("wo_id");
+        if wo.request and wo.request.requested_by_id:
+            notify([wo.request.requested_by_id], f"የስራ ትዕዛዝ {wo.work_order_no} ተጠናቋል", "Status Changed", wo.request_id, wo.id)
         
-        if (navigator.onLine) {{
-            form.submit();
-        }} else {{
-            const file = formData.get("photo");
-            const reader = new FileReader();
-            reader.onload = function() {{
-                const tx = db.transaction("pendingReports", "readwrite");
-                const store = tx.objectStore("pendingReports");
-                store.add({{
-                    wo_id: woId,
-                    notes: formData.get("completion_notes"),
-                    work_performed: formData.get("work_performed"),
-                    labor_hours: formData.get("labor_hours"),
-                    photoBase64: reader.result,
-                    timestamp: new Date().toISOString()
-                }});
-                alert("⚠️ የዋይፋይ ኮኔክሽን የለም! ሪፖርቱ እና ፎቶው ስልክዎ ላይ ተቀምጧል። ኢንተርኔት ሲያገኙ በራሱ ይላካል።");
-                form.reset();
-            }};
-            if (file) reader.readAsDataURL(file);
-        }}
-    }});
+        db.session.commit()
+        flash("✅ የጥገና ሪፖርቱ እና ፎቶው በተሳካ ሁኔታ ተልኳል!", "success")
+        return redirect(url_for("workorder_detail", wo_id=wo.id))
     
-    window.addEventListener("online", syncPendingReports);
-    async function syncPendingReports() {{
-        if (!db) return;
-        const tx = db.transaction("pendingReports", "readwrite");
-        const store = tx.objectStore("pendingReports");
-        const getAllReq = store.getAll();
-        getAllReq.onsuccess = async () => {{
-            const reports = getAllReq.result;
-            if (reports.length === 0) return;
-            for (let report of reports) {{
-                const syncData = new FormData();
-                syncData.append("wo_id", report.wo_id);
-                syncData.append("work_performed", report.work_performed);
-                syncData.append("labor_hours", report.labor_hours);
-                syncData.append("completion_notes", report.notes);
-                const response = await fetch(report.photoBase64);
-                const blob = await response.blob();
-                syncData.append("photo", blob, `wo_${{report.wo_id}}_offline.jpg`);
-                try {{
-                    let res = await fetch(`/workorders/${{report.wo_id}}/complete`, {{
-                        method: "POST",
-                        body: syncData
-                    }});
-                    if (res.ok) {{
-                        const deleteTx = db.transaction("pendingReports", "readwrite");
-                        deleteTx.objectStore("pendingReports").delete(report.id);
-                    }}
-                }} catch (err) {{
-                    console.error("Sync failed for WO:", report.wo_id);
-                }}
-            }}
-            alert("✅ ኢንተርኔት ስለተመለሰ ከመስመር ውጭ (Offline) የተሰሩ ሪፖርቶች በሙሉ ተልከዋል!");
-        }};
-    }}
-    </script>"""
-    return page("Complete Work Order", content)
+    # GET ጊዜ - አዲሱን ቅጽ እናሳያለን
+    return render_template("workorder_complete.html", wo_id=wo.id, part_options=part_options)
 
 
 # --------------------------------------------------------------
