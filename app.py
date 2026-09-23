@@ -1,16 +1,19 @@
 import csv
 import io
+import json
 import os
 import re
 import sqlite3
 import uuid
 import traceback
+from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text, inspect
 
 from flask import (
     Flask, abort, flash, get_flashed_messages, jsonify, redirect,
+    render_template,
     request, send_file, url_for, Response,
 )
 from flask_login import (
@@ -813,11 +816,477 @@ def profile():
 
 
 # ══════════════════════════════════════════════════════════════
+# DASHBOARD ANALYTICS HELPERS  (all data comes from DB)
+# ══════════════════════════════════════════════════════════════
+COMPLETED_STATES = ["Completed", "Verified", "Closed"]
+PENDING_STATES = ["Pending", "Approved"]
+INPROGRESS_STATES = ["Assigned", "In Progress"]
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def build_filtered_query(args):
+    """Filtered MaintenanceRequest query honouring GET params."""
+    q = MaintenanceRequest.query.filter_by(is_deleted=False)
+
+    d_from = _parse_date(args.get("date_from"))
+    if d_from:
+        q = q.filter(MaintenanceRequest.created_at >= d_from)
+
+    d_to = _parse_date(args.get("date_to"))
+    if d_to:
+        q = q.filter(MaintenanceRequest.created_at < d_to + timedelta(days=1))
+
+    if args.get("department"):
+        try:
+            q = q.filter(MaintenanceRequest.department_id == int(args["department"]))
+        except (ValueError, TypeError):
+            pass
+
+    if args.get("category"):
+        try:
+            q = q.filter(MaintenanceRequest.category_id == int(args["category"]))
+        except (ValueError, TypeError):
+            pass
+
+    if args.get("status"):
+        q = q.filter(MaintenanceRequest.status == args["status"])
+
+    if args.get("floor"):
+        try:
+            q = q.filter(MaintenanceRequest.floor == int(args["floor"]))
+        except (ValueError, TypeError):
+            pass
+
+    if args.get("room_id"):
+        try:
+            q = q.filter(MaintenanceRequest.room_id == int(args["room_id"]))
+        except (ValueError, TypeError):
+            pass
+
+    if args.get("area_id"):
+        try:
+            q = q.filter(MaintenanceRequest.area_id == int(args["area_id"]))
+        except (ValueError, TypeError):
+            pass
+
+    return q
+
+
+def format_duration(seconds):
+    """Human-friendly duration: 45m, 1.8 hrs, 1d 3h, N/A."""
+    if seconds is None:
+        return "N/A"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds / 60)}m"
+    if seconds < 86400:
+        return f"{seconds / 3600:.1f} hrs"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def humanize_ago(dt):
+    if not dt:
+        return ""
+    delta = datetime.utcnow() - dt
+    s = delta.total_seconds()
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        return f"{int(s / 60)} minutes ago"
+    if s < 86400:
+        return f"{int(s / 3600)} hours ago"
+    if s < 604800:
+        return f"{int(s / 86400)} days ago"
+    return dt.strftime("%Y-%m-%d")
+
+
+def _avg_resolution_seconds(reqs):
+    """Average seconds from created_at to completed_date on completed reqs."""
+    completed = [r for r in reqs if r.completed_date and r.created_at]
+    if not completed:
+        return None
+    total = sum((r.completed_date - r.created_at).total_seconds() for r in completed)
+    return total / len(completed)
+
+
+def _previous_period(date_from_str, date_to_str):
+    if not date_from_str or not date_to_str:
+        return None, None
+    df = _parse_date(date_from_str)
+    dt = _parse_date(date_to_str)
+    if not df or not dt:
+        return None, None
+    span = (dt + timedelta(days=1)) - df
+    return df - span, df
+
+
+def get_dashboard_kpis(args):
+    base = build_filtered_query(args)
+    reqs = base.all()
+
+    total = len(reqs)
+    pending = sum(1 for r in reqs if r.status in PENDING_STATES)
+    completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
+    avg_seconds = _avg_resolution_seconds([r for r in reqs if r.status in COMPLETED_STATES])
+
+    # Previous period (only when both dates present)
+    prev_total = prev_completed = None
+    prev_avg_seconds = None
+    prev_from, prev_to = _previous_period(args.get("date_from"), args.get("date_to"))
+    if prev_from and prev_to:
+        pq = MaintenanceRequest.query.filter(
+            MaintenanceRequest.is_deleted == False,
+            MaintenanceRequest.created_at >= prev_from,
+            MaintenanceRequest.created_at < prev_to,
+        )
+        if args.get("department"):
+            try:
+                pq = pq.filter(MaintenanceRequest.department_id == int(args["department"]))
+            except (ValueError, TypeError):
+                pass
+        if args.get("category"):
+            try:
+                pq = pq.filter(MaintenanceRequest.category_id == int(args["category"]))
+            except (ValueError, TypeError):
+                pass
+        prev_reqs = pq.all()
+        prev_total = len(prev_reqs)
+        prev_completed = sum(1 for r in prev_reqs if r.status in COMPLETED_STATES)
+        prev_avg_seconds = _avg_resolution_seconds(
+            [r for r in prev_reqs if r.status in COMPLETED_STATES]
+        )
+
+    total_delta = None
+    if prev_total and prev_total > 0:
+        total_delta = ((total - prev_total) / prev_total) * 100
+
+    completion_rate = (completed / total * 100) if total else 0.0
+
+    avg_delta = None
+    if prev_avg_seconds is not None and avg_seconds is not None:
+        avg_delta = prev_avg_seconds - avg_seconds  # + = faster than before
+
+    return {
+        "total": total,
+        "pending": pending,
+        "completed": completed,
+        "completion_rate": round(completion_rate, 1),
+        "avg_resolution": format_duration(avg_seconds),
+        "avg_delta_seconds": avg_delta,
+        "total_delta": round(total_delta, 1) if total_delta is not None else None,
+        "has_prev": prev_total is not None and prev_total > 0,
+    }
+
+
+def get_request_trends(args):
+    reqs = build_filtered_query(args).all()
+
+    d_from = _parse_date(args.get("date_from"))
+    d_to = _parse_date(args.get("date_to"))
+
+    if d_from and d_to:
+        start, end = d_from, d_to
+    else:
+        dates = [r.created_at for r in reqs if r.created_at]
+        if not dates:
+            return {"labels": [], "total": [], "completed": [],
+                    "pending": [], "in_progress": [], "granularity": "day"}
+        start = min(dates).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = max(dates).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    span_days = (end - start).days + 1
+    if span_days <= 31:
+        gran = "day"
+    elif span_days <= 180:
+        gran = "week"
+    else:
+        gran = "month"
+
+    ordered_keys, labels = [], []
+
+    if gran == "day":
+        cur = start
+        while cur <= end:
+            ordered_keys.append(cur.strftime("%Y-%m-%d"))
+            labels.append(cur.strftime("%b %d"))
+            cur += timedelta(days=1)
+    elif gran == "week":
+        cur = start - timedelta(days=start.weekday())
+        while cur <= end:
+            ordered_keys.append(cur.strftime("%Y-%m-%d"))
+            labels.append("Wk " + cur.strftime("%b %d"))
+            cur += timedelta(days=7)
+    else:
+        cur = start.replace(day=1)
+        while cur <= end:
+            ordered_keys.append(cur.strftime("%Y-%m"))
+            labels.append(cur.strftime("%b %Y"))
+            cur = cur.replace(year=cur.year + 1, month=1) if cur.month == 12 \
+                  else cur.replace(month=cur.month + 1)
+
+    counts = {k: {"total": 0, "completed": 0, "pending": 0, "in_progress": 0}
+              for k in ordered_keys}
+
+    for r in reqs:
+        if not r.created_at:
+            continue
+        if gran == "day":
+            key = r.created_at.strftime("%Y-%m-%d")
+        elif gran == "week":
+            mon = r.created_at - timedelta(days=r.created_at.weekday())
+            key = mon.strftime("%Y-%m-%d")
+        else:
+            key = r.created_at.strftime("%Y-%m")
+
+        if key in counts:
+            counts[key]["total"] += 1
+            if r.status in COMPLETED_STATES:
+                counts[key]["completed"] += 1
+            elif r.status in PENDING_STATES:
+                counts[key]["pending"] += 1
+            elif r.status in INPROGRESS_STATES:
+                counts[key]["in_progress"] += 1
+
+    return {
+        "labels": labels,
+        "total": [counts[k]["total"] for k in ordered_keys],
+        "completed": [counts[k]["completed"] for k in ordered_keys],
+        "pending": [counts[k]["pending"] for k in ordered_keys],
+        "in_progress": [counts[k]["in_progress"] for k in ordered_keys],
+        "granularity": gran,
+    }
+
+
+def get_category_statistics(args):
+    reqs = build_filtered_query(args).all()
+    counts = defaultdict(int)
+    for r in reqs:
+        counts[r.category.name if r.category else "Uncategorized"] += 1
+    total = sum(counts.values())
+    items = sorted(counts.items(), key=lambda x: -x[1])
+    return {
+        "labels": [k for k, _ in items],
+        "values": [v for _, v in items],
+        "percentages": [round(v / total * 100, 1) if total else 0 for _, v in items],
+        "total": total,
+    }
+
+
+def get_status_statistics(args):
+    reqs = build_filtered_query(args).all()
+    counts = defaultdict(int)
+    for r in reqs:
+        counts[r.status] += 1
+    order = ["Pending", "Approved", "Assigned", "In Progress",
+             "Completed", "Verified", "Closed", "Rejected", "Overdue"]
+    total = sum(counts.values())
+    items = [(s, counts[s]) for s in order if counts.get(s, 0) > 0]
+    for s, c in counts.items():
+        if s not in order and c > 0:
+            items.append((s, c))
+    return {
+        "labels": [k for k, _ in items],
+        "values": [v for _, v in items],
+        "percentages": [round(v / total * 100, 1) if total else 0 for _, v in items],
+        "total": total,
+    }
+
+
+def get_department_statistics(args):
+    reqs = build_filtered_query(args).all()
+    counts = defaultdict(int)
+    for r in reqs:
+        counts[r.department.name if r.department else "Unspecified"] += 1
+    items = sorted(counts.items(), key=lambda x: -x[1])
+    return {"labels": [k for k, _ in items], "values": [v for _, v in items]}
+
+
+def get_top_locations(args, limit=10):
+    reqs = build_filtered_query(args).all()
+    counts = defaultdict(int)
+    for r in reqs:
+        counts[r.location_name] += 1
+    return sorted(counts.items(), key=lambda x: -x[1])[:limit]
+
+
+def get_work_order_statistics(args):
+    q = WorkOrder.query
+    d_from = _parse_date(args.get("date_from"))
+    if d_from:
+        q = q.filter(WorkOrder.created_at >= d_from)
+    d_to = _parse_date(args.get("date_to"))
+    if d_to:
+        q = q.filter(WorkOrder.created_at < d_to + timedelta(days=1))
+
+    wos = q.all()
+    counts = defaultdict(int)
+    for wo in wos:
+        counts[wo.status] += 1
+
+    return {
+        "total": len(wos),
+        "pending": counts.get("Pending", 0),
+        "assigned": counts.get("Assigned", 0),
+        "in_progress": counts.get("In Progress", 0),
+        "completed": counts.get("Completed", 0),
+        "verified": counts.get("Verified", 0),
+        "closed": counts.get("Closed", 0),
+    }
+
+
+def get_staff_statistics(args, limit=10):
+    staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
+    d_from = _parse_date(args.get("date_from"))
+    d_to = _parse_date(args.get("date_to"))
+
+    result = []
+    for s in staff:
+        q = WorkOrder.query.filter_by(assigned_to_id=s.id)
+        if d_from:
+            q = q.filter(WorkOrder.created_at >= d_from)
+        if d_to:
+            q = q.filter(WorkOrder.created_at < d_to + timedelta(days=1))
+
+        wos = q.all()
+        completed_wos = [w for w in wos
+                         if w.status in ["Completed", "Verified"] and w.completed_date and w.created_at]
+        avg_sec = None
+        if completed_wos:
+            avg_sec = sum((w.completed_date - w.created_at).total_seconds()
+                          for w in completed_wos) / len(completed_wos)
+
+        result.append({
+            "name": s.full_name or s.username,
+            "role": s.role,
+            "assigned": len(wos),
+            "in_progress": sum(1 for w in wos if w.status == "In Progress"),
+            "completed": sum(1 for w in wos if w.status in COMPLETED_STATES),
+            "avg_resolution": format_duration(avg_sec),
+        })
+
+    result.sort(key=lambda x: -x["assigned"])
+    return result[:limit]
+
+
+def get_inventory_summary(args):
+    parts = InventoryPart.query.filter_by(status="Active").all()
+    total_parts = len(parts)
+    low = sum(1 for p in parts if 0 < (p.quantity or 0) <= (p.minimum_stock or 0))
+    out = sum(1 for p in parts if (p.quantity or 0) <= 0)
+    value = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
+
+    wq = WorkOrderPart.query
+    d_from = _parse_date(args.get("date_from"))
+    if d_from:
+        wq = wq.filter(WorkOrderPart.created_at >= d_from)
+    d_to = _parse_date(args.get("date_to"))
+    if d_to:
+        wq = wq.filter(WorkOrderPart.created_at < d_to + timedelta(days=1))
+    parts_used = sum(w.quantity or 0 for w in wq.all())
+
+    return {
+        "total_parts": total_parts,
+        "low_stock": low,
+        "out_of_stock": out,
+        "total_value": round(value, 2),
+        "parts_used": parts_used,
+    }
+
+
+def get_recent_activity(limit=10):
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(limit).all()
+    result = []
+    for log in logs:
+        result.append({
+            "user": log.user.full_name if log.user else "System",
+            "action": log.action or "",
+            "object_type": log.object_type or "",
+            "object_id": log.object_id or "",
+            "time": humanize_ago(log.created_at),
+            "raw_time": log.created_at.strftime("%Y-%m-%d %H:%M") if log.created_at else "",
+        })
+    return result
+
+
+def get_recent_requests(args, limit=10):
+    return build_filtered_query(args) \
+        .order_by(MaintenanceRequest.created_at.desc()).limit(limit).all()
+
+
+def build_dashboard_nav():
+    role = current_user.role
+    items = []
+
+    def add(label, icon, endpoint, active=False, **kwargs):
+        items.append({
+            "label": label, "icon": icon,
+            "url": url_for(endpoint, **kwargs) if kwargs else url_for(endpoint),
+            "active": active,
+        })
+
+    if role in ["ADMIN", "MANAGER"]:
+        add("Dashboard", "fa-home", "dashboard", active=True)
+        add("New Request", "fa-plus-circle", "request_create")
+        add("Requests", "fa-tasks", "requests_list")
+        add("Work Orders", "fa-clipboard-list", "workorders_list")
+        add("Rooms", "fa-door-open", "rooms_list")
+        add("Areas", "fa-map-marked-alt", "areas_list")
+        add("Inventory", "fa-boxes", "inventory_list")
+        add("Suppliers", "fa-truck", "suppliers_list")
+        add("Employees", "fa-users", "employees_list")
+        if role == "ADMIN":
+            add("Users", "fa-user-cog", "admin_users")
+            add("Audit Log", "fa-history", "audit_logs")
+            add("Archived", "fa-trash", "deleted_requests")
+            add("Backup", "fa-archive", "backup_page")
+        add("Reports", "fa-chart-bar", "reports")
+        add("Notifications", "fa-bell", "notifications")
+        add("Profile", "fa-user-circle", "profile")
+        add("Logout", "fa-sign-out-alt", "logout")
+    return items
+
+
+def status_badge_class(status):
+    return {
+        "Pending": "b-pending",
+        "Approved": "b-approved",
+        "Assigned": "b-assigned",
+        "In Progress": "b-inprogress",
+        "Completed": "b-completed",
+        "Verified": "b-verified",
+        "Closed": "b-closed",
+        "Rejected": "b-rejected",
+        "Overdue": "b-overdue",
+    }.get(status, "b-default")
+
+
+def priority_badge_class(priority):
+    return {
+        "URGENT": "b-urgent",
+        "HIGH": "b-high",
+        "MEDIUM": "b-medium",
+        "LOW": "b-low",
+    }.get(priority, "b-default")
+
+
+# ══════════════════════════════════════════════════════════════
 # DASHBOARDS
 # ══════════════════════════════════════════════════════════════
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Preserve existing redirect behaviour for staff / departments / employees
     if current_user.role in STAFF_ROLES:
         return redirect(url_for("workorders_list"))
     if current_user.role == "DEPARTMENT":
@@ -825,36 +1294,57 @@ def dashboard():
     if current_user.role == "EMPLOYEE":
         return redirect(url_for("employee_dashboard"))
 
-    base = MaintenanceRequest.query.filter_by(is_deleted=False)
-    total = base.count()
-    pending = base.filter_by(status="Pending").count()
-    approved = base.filter_by(status="Approved").count()
-    in_progress = base.filter_by(status="In Progress").count()
-    completed = base.filter_by(status="Completed").count()
-    verified = base.filter_by(status="Verified").count()
-    closed = base.filter_by(status="Closed").count()
-    overdue = sum(1 for r in base.all() if r.is_overdue)
-    urgent = base.filter_by(priority="URGENT").count()
+    args = request.args
 
-    content = ('<h3 style="color:#f59e0b"><i class="fas fa-crown"></i> Manager Dashboard</h3>'
-        '<p style="color:#94a3b8">እንኳን ደህና መጡ፣ ' + str(current_user.full_name) + '!</p>'
-        '<div class="row g-3 mb-4">'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check"></i></div><div class="metric-value">' + str(approved) + '</div><div class="metric-label">Approved</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-double"></i></div><div class="metric-value">' + str(verified) + '</div><div class="metric-label">Verified</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">' + str(urgent) + '</div><div class="metric-label">Urgent</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-clock"></i></div><div class="metric-value">' + str(overdue) + '</div><div class="metric-label">Overdue</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-archive"></i></div><div class="metric-value">' + str(closed) + '</div><div class="metric-label">Closed</div></div></div>'
-        '</div>'
-        '<div class="row g-3">'
-        '<div class="col-md-4"><a class="btn btn-primary w-100 py-3" href="' + url_for('requests_list') + '"><i class="fas fa-list"></i> All Requests</a></div>'
-        '<div class="col-md-4"><a class="btn btn-success w-100 py-3" href="' + url_for('workorders_list') + '"><i class="fas fa-clipboard-list"></i> Work Orders</a></div>'
-        '<div class="col-md-4"><a class="btn btn-info w-100 py-3" href="' + url_for('reports') + '"><i class="fas fa-chart-bar"></i> Reports</a></div>'
-        '</div>')
-    return page("Dashboard", content)
+    kpis = get_dashboard_kpis(args)
+    trends = get_request_trends(args)
+    categories = get_category_statistics(args)
+    statuses = get_status_statistics(args)
+    departments = get_department_statistics(args)
+    top_locations = get_top_locations(args)
+    work_orders = get_work_order_statistics(args)
+    staff_stats = get_staff_statistics(args)
+    inventory = get_inventory_summary(args)
+    recent_activity = get_recent_activity(10)
+    recent_requests = get_recent_requests(args, 10)
+
+    # Filter dropdown data
+    all_departments = Department.query.order_by(Department.name).all()
+    all_categories = Category.query.order_by(Category.name).all()
+    all_rooms = Room.query.order_by(Room.room_number).all()
+    all_areas = Area.query.order_by(Area.name).all()
+    all_floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
+    if not all_floors:
+        all_floors = sorted({r.floor for r in Room.query.all()})
+
+    chart_data = {
+        "trends": trends,
+        "categories": categories,
+        "statuses": statuses,
+        "departments": departments,
+    }
+
+    return render_template(
+        "dashboard.html",
+        title="Rori Hotel Maintenance Dashboard",
+        kpis=kpis,
+        work_orders=work_orders,
+        top_locations=top_locations,
+        staff_stats=staff_stats,
+        inventory=inventory,
+        recent_activity=recent_activity,
+        recent_requests=recent_requests,
+        all_departments=all_departments,
+        all_categories=all_categories,
+        all_rooms=all_rooms,
+        all_areas=all_areas,
+        all_floors=all_floors,
+        nav_items=build_dashboard_nav(),
+        chart_data=chart_data,
+        filters={k: v for k, v in args.items()},
+        status_badge_class=status_badge_class,
+        priority_badge_class=priority_badge_class,
+    )
 
 
 @app.route("/department")
