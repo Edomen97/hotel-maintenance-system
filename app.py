@@ -6,6 +6,7 @@ import uuid
 import traceback
 from datetime import datetime, timedelta
 from functools import wraps
+from sqlalchemy import text, inspect
 
 from flask import (
     Flask, abort, flash, get_flashed_messages, jsonify, redirect,
@@ -34,9 +35,7 @@ os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db")
-)
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db"))
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
@@ -48,13 +47,9 @@ login_manager.login_view = "login"
 
 ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE", "DEPARTMENT"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
-REQUEST_STATUSES = [
-    "Pending", "Approved", "Assigned", "In Progress",
-    "Completed", "Verified", "Closed", "Rejected", "Overdue",
-]
+REQUEST_STATUSES = ["Pending", "Approved", "Assigned", "In Progress", "Completed", "Verified", "Closed", "Rejected", "Overdue"]
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", "xlsx", "csv"}
-
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
 
@@ -70,11 +65,10 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), default="EMPLOYEE", nullable=False)
     phone = db.Column(db.String(30))
     email = db.Column(db.String(120))
-    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))  # ✅ NEW
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     profile_pic = db.Column(db.String(255), nullable=True)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     department = db.relationship("Department", foreign_keys=[department_id])
 
     def set_password(self, password):
@@ -164,7 +158,6 @@ class MaintenanceRequest(db.Model):
     completed_date = db.Column(db.DateTime)
     completion_note = db.Column(db.Text)
     notes = db.Column(db.Text)
-    # ✅ SOFT DELETE FIELDS
     is_deleted = db.Column(db.Boolean, default=False)
     deleted_at = db.Column(db.DateTime)
     deleted_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -212,8 +205,8 @@ class WorkOrder(db.Model):
     completion_photo = db.Column(db.String(255), nullable=True)
     completed_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     verified_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    completed_date = db.Column(db.DateTime)  # ✅ NEW
-    verified_date = db.Column(db.DateTime)  # ✅ NEW
+    completed_date = db.Column(db.DateTime)
+    verified_date = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -221,6 +214,17 @@ class WorkOrder(db.Model):
     assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
     completed_by = db.relationship("User", foreign_keys=[completed_by_id])
     verified_by = db.relationship("User", foreign_keys=[verified_by_id])
+
+
+class WorkOrderPart(db.Model):
+    """✅ አዲስ ተጨምሯል — የተጠቀሙ እቃዎች"""
+    __tablename__ = "work_order_parts"
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_orders.id"), nullable=False)
+    part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"), nullable=False)
+    quantity = db.Column(db.Float, default=1)
+    unit_cost = db.Column(db.Float, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class InventoryPart(db.Model):
@@ -263,7 +267,6 @@ class Notification(db.Model):
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     link = db.Column(db.String(250))
-
     user = db.relationship("User", foreign_keys=[user_id])
 
 
@@ -276,8 +279,8 @@ class AuditLog(db.Model):
     object_id = db.Column(db.String(50))
     old_value = db.Column(db.Text)
     new_value = db.Column(db.Text)
+    ip_address = db.Column(db.String(50))  # ✅ FIX: ተጨምሯል
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     user = db.relationship("User")
 
 
@@ -289,7 +292,6 @@ class StatusHistory(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     notes = db.Column(db.Text)
-
     user = db.relationship("User")
 
 
@@ -353,64 +355,51 @@ def role_required(*roles):
 
 
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
-    db.session.add(AuditLog(
-        user_id=current_user.id if current_user.is_authenticated else None,
-        action=action,
-        object_type=object_type,
-        object_id=str(object_id) if object_id is not None else None,
-        old_value=str(old_value) if old_value is not None else None,
-        new_value=str(new_value) if new_value is not None else None,
-        ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
-    ))
+    try:
+        db.session.add(AuditLog(
+            user_id=current_user.id if current_user.is_authenticated else None,
+            action=action,
+            object_type=object_type,
+            object_id=str(object_id) if object_id is not None else None,
+            old_value=str(old_value) if old_value is not None else None,
+            new_value=str(new_value) if new_value is not None else None,
+            ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
+        ))
+    except Exception as e:
+        print(f"⚠️ Audit error: {e}")
 
 
-def create_notification(user_id, request_id, title, message, notification_type="General",
-                        link=None, work_order_id=None):
+def create_notification(user_id, request_id, title, message, notification_type="General", link=None, work_order_id=None):
     if not user_id:
         return None
-    # Prevent duplicates (same user+request+type within 5 seconds)
-    recent = Notification.query.filter_by(
-        user_id=user_id, request_id=request_id, notification_type=notification_type,
-    ).order_by(Notification.created_at.desc()).first()
+    recent = Notification.query.filter_by(user_id=user_id, request_id=request_id, notification_type=notification_type).order_by(Notification.created_at.desc()).first()
     if recent and (datetime.utcnow() - recent.created_at).total_seconds() < 5:
         return recent
-    notif = Notification(
-        user_id=user_id, request_id=request_id, work_order_id=work_order_id,
-        title=title, message=message, notification_type=notification_type, link=link,
-    )
+    notif = Notification(user_id=user_id, request_id=request_id, work_order_id=work_order_id, title=title, message=message, notification_type=notification_type, link=link)
     db.session.add(notif)
     return notif
 
 
-def notify_users(user_ids, request_id, title, message, notification_type="General",
-                 link=None, work_order_id=None):
+def notify_users(user_ids, request_id, title, message, notification_type="General", link=None, work_order_id=None):
     for uid in user_ids:
         if uid:
-            create_notification(uid, request_id, title, message, notification_type,
-                                link, work_order_id)
+            create_notification(uid, request_id, title, message, notification_type, link, work_order_id)
 
 
 def notify_maintenance_staff(req, wo):
-    """Notify ALL active Maintenance Staff / Technicians / Supervisors."""
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     if not staff:
-        print(f"⚠️ No active staff to notify for WO {wo.work_order_no}")
         return 0
     title = f"🔧 New Work Order: {wo.work_order_no}"
-    message = (
-        f"Request: {req.request_no} | WO: {wo.work_order_no} | "
-        f"Location: {req.location_name} | "
-        f"Item: {req.working_item.name if req.working_item else 'N/A'} | "
-        f"Priority: {req.priority} | "
-        f"Dept: {req.department.name if req.department else 'N/A'}"
-    )
+    message = (f"Request: {req.request_no} | WO: {wo.work_order_no} | "
+               f"Location: {req.location_name} | "
+               f"Item: {req.working_item.name if req.working_item else 'N/A'} | "
+               f"Priority: {req.priority} | Dept: {req.department.name if req.department else 'N/A'}")
     link = url_for("workorder_detail", wo_id=wo.id)
     count = 0
     for s in staff:
-        if create_notification(s.id, req.id, title, message,
-                               "Work Order Assigned", link, wo.id):
+        if create_notification(s.id, req.id, title, message, "Work Order Assigned", link, wo.id):
             count += 1
-    print(f"✅ Notified {count} staff about WO {wo.work_order_no}")
     return count
 
 
@@ -418,23 +407,16 @@ def notify_assigned_staff(req, wo, staff_user):
     if not staff_user:
         return
     title = f"📋 Assigned to you: {wo.work_order_no}"
-    message = (
-        f"Request: {req.request_no} | WO: {wo.work_order_no} | "
-        f"Location: {req.location_name} | "
-        f"Item: {req.working_item.name if req.working_item else 'N/A'} | "
-        f"Priority: {req.priority}"
-    )
+    message = (f"Request: {req.request_no} | WO: {wo.work_order_no} | "
+               f"Location: {req.location_name} | Item: {req.working_item.name if req.working_item else 'N/A'} | Priority: {req.priority}")
     link = url_for("workorder_detail", wo_id=wo.id)
-    create_notification(staff_user.id, req.id, title, message,
-                        "Work Order Assigned", link, wo.id)
+    create_notification(staff_user.id, req.id, title, message, "Work Order Assigned", link, wo.id)
 
 
 def log_status_change(request_id, status, user_id=None, notes=None):
     if not user_id:
         user_id = current_user.id if current_user.is_authenticated else None
-    db.session.add(StatusHistory(
-        request_id=request_id, status=status, user_id=user_id, notes=notes
-    ))
+    db.session.add(StatusHistory(request_id=request_id, status=status, user_id=user_id, notes=notes))
 
 
 def request_no_generator():
@@ -449,57 +431,50 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def add_column_if_missing(table, column, sql):
+    """✅ Safe migration for both SQLite and PostgreSQL"""
+    try:
+        insp = inspect(db.engine)
+        if table not in insp.get_table_names():
+            return
+        cols = [c["name"] for c in insp.get_columns(table)]
+        if column not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text(sql))
+            print(f"✅ Added {column} to {table}")
+    except Exception as e:
+        print(f"⚠️ Migration warn ({table}.{column}): {e}")
+
+
 def ensure_database_schema():
-    """Safely add missing columns using PRAGMA for SQLite."""
+    """Safe schema updates — preserves existing data"""
     with app.app_context():
         try:
             db.create_all()
-            conn = db.engine.raw_connection()
-            cursor = conn.cursor()
 
-            # maintenance_requests columns
-            cursor.execute("PRAGMA table_info(maintenance_requests)")
-            mr_cols = [row[1] for row in cursor.fetchall()]
-            mr_new = {
-                'department_id': 'ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER',
-                'manager_id': 'ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER',
-                'completion_note': 'ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT',
-                'completed_date': 'ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME',
-                'is_deleted': 'ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN DEFAULT 0',
-                'deleted_at': 'ALTER TABLE maintenance_requests ADD COLUMN deleted_at DATETIME',
-                'deleted_by_id': 'ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER',
-                'deletion_reason': 'ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT',
-            }
-            for col, sql in mr_new.items():
-                if col not in mr_cols:
-                    db.engine.execute(sql)
-                    print(f"✅ Added {col} to maintenance_requests")
+            # maintenance_requests
+            add_column_if_missing("maintenance_requests", "department_id", "ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER")
+            add_column_if_missing("maintenance_requests", "manager_id", "ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER")
+            add_column_if_missing("maintenance_requests", "completion_note", "ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT")
+            add_column_if_missing("maintenance_requests", "completed_date", "ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME")
+            add_column_if_missing("maintenance_requests", "is_deleted", "ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
+            add_column_if_missing("maintenance_requests", "deleted_at", "ALTER TABLE maintenance_requests ADD COLUMN deleted_at DATETIME")
+            add_column_if_missing("maintenance_requests", "deleted_by_id", "ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER")
+            add_column_if_missing("maintenance_requests", "deletion_reason", "ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT")
 
-            # users columns
-            cursor.execute("PRAGMA table_info(users)")
-            u_cols = [row[1] for row in cursor.fetchall()]
-            if 'department_id' not in u_cols:
-                db.engine.execute('ALTER TABLE users ADD COLUMN department_id INTEGER')
-                print("✅ Added department_id to users")
+            # users
+            add_column_if_missing("users", "department_id", "ALTER TABLE users ADD COLUMN department_id INTEGER")
 
-            # notifications columns
-            cursor.execute("PRAGMA table_info(notifications)")
-            n_cols = [row[1] for row in cursor.fetchall()]
-            if 'work_order_id' not in n_cols:
-                db.engine.execute('ALTER TABLE notifications ADD COLUMN work_order_id INTEGER')
-                print("✅ Added work_order_id to notifications")
+            # notifications
+            add_column_if_missing("notifications", "work_order_id", "ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
 
-            # work_orders columns
-            cursor.execute("PRAGMA table_info(work_orders)")
-            wo_cols = [row[1] for row in cursor.fetchall()]
-            if 'completed_date' not in wo_cols:
-                db.engine.execute('ALTER TABLE work_orders ADD COLUMN completed_date DATETIME')
-                print("✅ Added completed_date to work_orders")
-            if 'verified_date' not in wo_cols:
-                db.engine.execute('ALTER TABLE work_orders ADD COLUMN verified_date DATETIME')
-                print("✅ Added verified_date to work_orders")
+            # work_orders
+            add_column_if_missing("work_orders", "completed_date", "ALTER TABLE work_orders ADD COLUMN completed_date DATETIME")
+            add_column_if_missing("work_orders", "verified_date", "ALTER TABLE work_orders ADD COLUMN verified_date DATETIME")
 
-            conn.close()
+            # ✅ FIX: audit_logs.ip_address
+            add_column_if_missing("audit_logs", "ip_address", "ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)")
+
             print("✅ Schema OK")
         except Exception as e:
             print(f"⚠️ Schema error: {e}")
@@ -513,57 +488,65 @@ def page(title, content):
     if current_user.is_authenticated:
         role = current_user.role
         if role == "DEPARTMENT":
-            nav_items.append(('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
+            nav_items = [
+                ('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
+            ]
         elif role == "EMPLOYEE":
-            nav_items.append(('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
+            nav_items = [
+                ('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
+            ]
         elif role in STAFF_ROLES:
-            nav_items.append(('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
-            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
+            nav_items = [
+                ('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
+                ('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
+            ]
         else:
-            nav_items.append(('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')))
-            nav_items.append(('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')))
-            nav_items.append(('<i class="fas fa-tasks"></i> All Requests', url_for('requests_list')))
-            nav_items.append(('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')))
+            nav_items = [
+                ('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                ('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')),
+                ('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')),
+            ]
             if role in ["ADMIN", "MANAGER"]:
-                nav_items.append(('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')))
-                nav_items.append(('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')))
-                nav_items.append(('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')))
-                nav_items.append(('<i class="fas fa-users"></i> Employees', url_for('employees_list')))
+                nav_items += [
+                    ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
+                    ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
+                    ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
+                    ('<i class="fas fa-users"></i> Employees', url_for('employees_list')),
+                ]
             if role == "ADMIN":
-                nav_items.append(('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')))
-                nav_items.append(('<i class="fas fa-history"></i> Audit Log', url_for('audit_logs')))
-                nav_items.append(('<i class="fas fa-trash"></i> Deleted', url_for('deleted_requests')))  # ✅
-                nav_items.append(('<i class="fas fa-archive"></i> Backup', url_for('backup_page')))
-            nav_items.append(('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')))
-            nav_items.append(('<i class="fas fa-bell"></i> Notifications', url_for('notifications')))
-            nav_items.append(('<i class="fas fa-user-circle"></i> Profile', url_for('profile')))
-            nav_items.append(('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')))
+                nav_items += [
+                    ('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
+                    ('<i class="fas fa-history"></i> Audit', url_for('audit_logs')),
+                    ('<i class="fas fa-trash"></i> Deleted', url_for('deleted_requests')),
+                    ('<i class="fas fa-archive"></i> Backup', url_for('backup_page')),
+                ]
+            nav_items += [
+                ('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
+            ]
     else:
-        nav_items.append(('<i class="fas fa-sign-in-alt"></i> Login', url_for('login')))
+        nav_items = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
 
     nav_html = "".join(f'<a class="nav-link" href="{u}">{l}</a>' for l, u in nav_items)
 
     bell_html = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
-        bell_html = f'''
-        <a class="nav-link" href="{url_for('notifications')}" style="position:relative;">
-            <i class="fas fa-bell"></i>
-            {f'<span class="badge bg-danger" style="position:absolute; top:-5px; right:-5px; font-size:0.7rem;">{unread}</span>' if unread > 0 else ''}
-        </a>
-        '''
+        bell_html = f'''<a class="nav-link" href="{url_for('notifications')}" style="position:relative;"><i class="fas fa-bell"></i>{f'<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">{unread}</span>' if unread > 0 else ''}</a>'''
 
     flash_html = "".join(
         f'<div class="alert alert-{c} alert-dismissible fade show">{m}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
@@ -575,79 +558,66 @@ def page(title, content):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} | Rori Hotel Maintenance</title>
+<title>{title} | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:'Inter',sans-serif; background:linear-gradient(135deg,#0f172a,#1e293b); min-height:100vh; color:#e2e8f0; padding-top:70px; }}
-.navbar {{ background:rgba(15,23,42,0.95) !important; backdrop-filter:blur(16px); border-bottom:1px solid rgba(245,158,11,0.25); padding:0.75rem 1.5rem; }}
-.navbar-brand {{ font-weight:800; font-size:1.3rem; color:#f59e0b !important; }}
-.nav-link {{ color:#cbd5e1 !important; padding:0.5rem 1rem !important; border-radius:40px; font-size:0.9rem; }}
-.nav-link i {{ color:#f59e0b; margin-right:4px; }}
-.nav-link:hover {{ background:rgba(245,158,11,0.12); color:#f59e0b !important; }}
-.navbar-toggler {{ border-color:rgba(245,158,11,0.4); }}
-.container {{ max-width:1280px; padding:1.5rem; }}
-.card {{ background:rgba(30,41,59,0.7); border:1px solid rgba(245,158,11,0.15); border-radius:20px; color:#e2e8f0; padding:1.25rem; margin-bottom:1.5rem; }}
-.card-title {{ color:#f59e0b; font-weight:600; }}
-.metric-card {{ background:rgba(30,41,59,0.5); border:1px solid rgba(245,158,11,0.12); border-radius:20px; padding:1.2rem 1rem; text-align:center; height:100%; }}
-.metric-icon {{ font-size:2rem; color:#f59e0b; }}
-.metric-value {{ font-size:2rem; font-weight:700; color:#f8fafc; }}
-.metric-label {{ font-size:0.8rem; color:#94a3b8; text-transform:uppercase; }}
-.table {{ color:#e2e8f0; }}
-.table thead th {{ color:#f59e0b; border-bottom:2px solid rgba(245,158,11,0.2); font-size:0.75rem; text-transform:uppercase; padding:10px; }}
-.table td {{ padding:10px; border-color:rgba(245,158,11,0.08); }}
-.table-striped tbody tr:nth-of-type(odd) {{ background-color:rgba(30,41,59,0.3); }}
-.table-hover tbody tr:hover {{ background-color:rgba(245,158,11,0.06); }}
-.btn {{ border-radius:40px; font-weight:600; padding:0.6rem 1.6rem; border:none; }}
-.btn-primary {{ background:linear-gradient(135deg,#f59e0b,#d97706); color:#0f172a; }}
-.btn-primary:hover {{ background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#0f172a; }}
-.btn-success {{ background:linear-gradient(135deg,#22c55e,#16a34a); color:white; }}
-.btn-success:hover {{ background:linear-gradient(135deg,#4ade80,#22c55e); color:white; }}
-.btn-warning {{ background:linear-gradient(135deg,#eab308,#ca8a04); color:#0f172a; }}
-.btn-warning:hover {{ background:linear-gradient(135deg,#facc15,#eab308); color:#0f172a; }}
-.btn-danger {{ background:linear-gradient(135deg,#ef4444,#dc2626); color:white; }}
-.btn-danger:hover {{ background:linear-gradient(135deg,#f87171,#ef4444); color:white; }}
-.btn-info {{ background:linear-gradient(135deg,#06b6d4,#0891b2); color:white; }}
-.btn-info:hover {{ background:linear-gradient(135deg,#22d3ee,#06b6d4); color:white; }}
-.btn-secondary {{ background:#475569; color:white; }}
-.btn-sm {{ padding:0.4rem 0.9rem; font-size:0.85rem; }}
-.form-control, .form-select {{ background:rgba(15,23,42,0.6); border:1px solid rgba(245,158,11,0.2); border-radius:12px; color:#e2e8f0; padding:0.75rem 1rem; }}
-.form-control:focus, .form-select:focus {{ background:rgba(15,23,42,0.9); color:#f8fafc; border-color:#f59e0b; box-shadow:0 0 0 4px rgba(245,158,11,0.15); }}
-.form-label {{ color:#cbd5e1; font-weight:500; }}
-.alert {{ border-radius:16px; border:none; background:rgba(30,41,59,0.7); color:#e2e8f0; }}
-.alert-success {{ border-left:4px solid #22c55e; }}
-.alert-danger {{ border-left:4px solid #ef4444; }}
-.alert-warning {{ border-left:4px solid #f59e0b; }}
-.alert-info {{ border-left:4px solid #06b6d4; }}
-.login-card {{ background:rgba(30,41,59,0.5); backdrop-filter:blur(20px); border:1px solid rgba(245,158,11,0.2); border-radius:32px; padding:2rem 2.5rem; max-width:440px; margin:0 auto; }}
-.badge {{ padding:0.4rem 0.8rem; border-radius:20px; font-weight:600; font-size:0.75rem; }}
-@media (max-width:768px) {{
-  .nav-link {{ padding:0.5rem 0.8rem !important; font-size:0.85rem; }}
-  .metric-value {{ font-size:1.5rem; }}
-  .login-card {{ padding:1.5rem; margin:1rem; }}
-}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);min-height:100vh;color:#e2e8f0;padding-top:70px}}
+.navbar{{background:rgba(15,23,42,0.95)!important;backdrop-filter:blur(16px);border-bottom:1px solid rgba(245,158,11,0.25);padding:.75rem 1.5rem}}
+.navbar-brand{{font-weight:800;font-size:1.3rem;color:#f59e0b!important}}
+.nav-link{{color:#cbd5e1!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem}}
+.nav-link i{{color:#f59e0b;margin-right:4px}}
+.nav-link:hover{{background:rgba(245,158,11,0.12);color:#f59e0b!important}}
+.navbar-toggler{{border-color:rgba(245,158,11,0.4)}}
+.container{{max-width:1280px;padding:1.5rem}}
+.card{{background:rgba(30,41,59,0.7);border:1px solid rgba(245,158,11,0.15);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}}
+.card-title{{color:#f59e0b;font-weight:600}}
+.metric-card{{background:rgba(30,41,59,0.5);border:1px solid rgba(245,158,11,0.12);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%}}
+.metric-icon{{font-size:2rem;color:#f59e0b}}
+.metric-value{{font-size:2rem;font-weight:700;color:#f8fafc}}
+.metric-label{{font-size:.8rem;color:#94a3b8;text-transform:uppercase}}
+.table{{color:#e2e8f0}}
+.table thead th{{color:#f59e0b;border-bottom:2px solid rgba(245,158,11,0.2);font-size:.75rem;text-transform:uppercase;padding:10px}}
+.table td{{padding:10px;border-color:rgba(245,158,11,0.08)}}
+.table-striped tbody tr:nth-of-type(odd){{background-color:rgba(30,41,59,0.3)}}
+.table-hover tbody tr:hover{{background-color:rgba(245,158,11,0.06)}}
+.btn{{border-radius:40px;font-weight:600;padding:.6rem 1.6rem;border:none}}
+.btn-primary{{background:linear-gradient(135deg,#f59e0b,#d97706);color:#0f172a}}
+.btn-primary:hover{{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0f172a}}
+.btn-success{{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}}
+.btn-success:hover{{background:linear-gradient(135deg,#4ade80,#22c55e);color:#fff}}
+.btn-warning{{background:linear-gradient(135deg,#eab308,#ca8a04);color:#0f172a}}
+.btn-warning:hover{{background:linear-gradient(135deg,#facc15,#eab308);color:#0f172a}}
+.btn-danger{{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}}
+.btn-danger:hover{{background:linear-gradient(135deg,#f87171,#ef4444);color:#fff}}
+.btn-info{{background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff}}
+.btn-info:hover{{background:linear-gradient(135deg,#22d3ee,#06b6d4);color:#fff}}
+.btn-secondary{{background:#475569;color:#fff}}
+.btn-sm{{padding:.4rem .9rem;font-size:.85rem}}
+.form-control,.form-select{{background:rgba(15,23,42,0.6);border:1px solid rgba(245,158,11,0.2);border-radius:12px;color:#e2e8f0;padding:.75rem 1rem}}
+.form-control:focus,.form-select:focus{{background:rgba(15,23,42,0.9);color:#f8fafc;border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,0.15)}}
+.form-label{{color:#cbd5e1;font-weight:500}}
+.alert{{border-radius:16px;border:none;background:rgba(30,41,59,0.7);color:#e2e8f0}}
+.alert-success{{border-left:4px solid #22c55e}}
+.alert-danger{{border-left:4px solid #ef4444}}
+.alert-warning{{border-left:4px solid #f59e0b}}
+.alert-info{{border-left:4px solid #06b6d4}}
+.login-card{{background:rgba(30,41,59,0.5);backdrop-filter:blur(20px);border:1px solid rgba(245,158,11,0.2);border-radius:32px;padding:2rem 2.5rem;max-width:440px;margin:0 auto}}
+.badge{{padding:.4rem .8rem;border-radius:20px;font-weight:600;font-size:.75rem}}
+@media(max-width:768px){{.nav-link{{padding:.5rem .8rem!important;font-size:.85rem}}.metric-value{{font-size:1.5rem}}.login-card{{padding:1.5rem;margin:1rem}}}}
 </style>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container-fluid">
-    <a class="navbar-brand" href="{url_for('dashboard') if current_user.is_authenticated else url_for('login')}">
-      <i class="fas fa-hotel"></i> Rori Hotel
-    </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="nav">
-      <div class="navbar-nav ms-auto">{nav_html}{bell_html}</div>
-    </div>
+    <a class="navbar-brand" href="{url_for('dashboard') if current_user.is_authenticated else url_for('login')}"><i class="fas fa-hotel"></i> Rori Hotel</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+    <div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">{nav_html}{bell_html}</div></div>
   </div>
 </nav>
-<div class="container mt-4">
-{flash_html}
-{content}
-</div>
+<div class="container mt-4">{flash_html}{content}</div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>'''
@@ -657,10 +627,9 @@ body {{ font-family:'Inter',sans-serif; background:linear-gradient(135deg,#0f172
 # SEED DATA
 # ══════════════════════════════════════════════════════════════
 def seed_data():
-    for dept_name in ["Housekeeping", "Front Office", "Engineering", "Food & Beverage",
-                      "Administration", "Security", "Maintenance", "Other"]:
-        if not Department.query.filter_by(name=dept_name).first():
-            db.session.add(Department(name=dept_name))
+    for name in ["Housekeeping", "Front Office", "Engineering", "Food & Beverage", "Administration", "Security", "Maintenance", "Other"]:
+        if not Department.query.filter_by(name=name).first():
+            db.session.add(Department(name=name))
     db.session.commit()
 
     for f in [2, 3, 4, 5]:
@@ -672,47 +641,30 @@ def seed_data():
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
 
-    initial_areas = [
-        ("Buduchalley", "F&B"), ("Sillanto", "Unknown"), ("Fura", "Unknown"),
-        ("Executive", "Unknown"), ("Mitima", "Unknown"), ("Odako", "Unknown"),
-        ("Gudumale", "Unknown"), ("Bubble", "Unknown"), ("Bubbles", "Unknown"),
-        ("Fura Corridor", "Unknown"), ("Executive Meeting Room", "Unknown"),
-        ("Counter", "Unknown"),
-    ]
-    for name, dept in initial_areas:
+    for name, dept in [("Buduchalley", "F&B"), ("Sillanto", "Unknown"), ("Fura", "Unknown"), ("Executive", "Unknown"), ("Mitima", "Unknown"), ("Odako", "Unknown"), ("Gudumale", "Unknown"), ("Bubble", "Unknown"), ("Bubbles", "Unknown"), ("Fura Corridor", "Unknown"), ("Executive Meeting Room", "Unknown"), ("Counter", "Unknown")]:
         if not Area.query.filter_by(name=name).first():
             db.session.add(Area(name=name, department=dept))
 
-    for c in ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry",
-              "Civil", "Safety", "General", "Other"]:
+    for c in ["Electrical", "Plumbing", "HVAC", "Painting", "Carpentry", "Civil", "Safety", "General", "Other"]:
         if not Category.query.filter_by(name=c).first():
             db.session.add(Category(name=c))
 
-    for i in ["Light", "Switch", "Window", "Door Key", "Door Lock", "Paint",
-              "Mirror", "Drainage Cover", "Frame", "Background Frame",
-              "Spot Light", "Plumbing", "AC", "Electrical", "Other"]:
+    for i in ["Light", "Switch", "Window", "Door Key", "Door Lock", "Paint", "Mirror", "Drainage Cover", "Frame", "Background Frame", "Spot Light", "Plumbing", "AC", "Electrical", "Other"]:
         if not WorkingItem.query.filter_by(name=i).first():
             db.session.add(WorkingItem(name=i))
 
-    for eid, name, title in [
-        (1, "ተስፋሁን ነከረ", "General Mechanic"),
-        (2, "ቸርነት አሞና", "General Mechanic"),
-        (3, "ስምዖን ዮሐንስ", "General Mechanic"),
-        (4, "አበባየሁ ክፍሌ", "Supervisor"),
-        (5, "አሚር አወል", "Manager"),
-    ]:
+    for eid, name, title in [(1, "ተስፋሁን ነከረ", "General Mechanic"), (2, "ቸርነት አሞና", "General Mechanic"), (3, "ስምዖን ዮሐንስ", "General Mechanic"), (4, "አበባየሁ ክፍሌ", "Supervisor"), (5, "አሚር አወል", "Manager")]:
         if not Employee.query.get(eid):
             db.session.add(Employee(id=eid, name=name, job_title=title, department="Engineering"))
 
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
 
     if not User.query.filter_by(username="admin").first():
-        u = User(username="admin", full_name="System Administrator", role="ADMIN",
-                 email="admin@rorihotel.local")
+        u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
         u.set_password("admin123")
         db.session.add(u)
 
-    staff_list = [
+    for s in [
         {"u": "amir", "n": "አሚር አወል", "r": "MANAGER", "d": None},
         {"u": "abebayhu", "n": "አበባየሁ ክፍሌ", "r": "SUPERVISOR", "d": None},
         {"u": "tesfahun", "n": "ተስፋሁን ነከረ", "r": "TECHNICIAN", "d": None},
@@ -720,15 +672,12 @@ def seed_data():
         {"u": "chernet", "n": "ቸርነት አሞና", "r": "TECHNICIAN", "d": None},
         {"u": "wale", "n": "ዋሌ", "r": "TECHNICIAN", "d": None},
         {"u": "tsadiku", "n": "ፃዲቁ", "r": "TECHNICIAN", "d": None},
-        {"u": "housekeeping", "n": "Housekeeping Dept", "r": "DEPARTMENT",
-         "d": hk_dept.id if hk_dept else None},  # ✅ Link to department
+        {"u": "housekeeping", "n": "Housekeeping Dept", "r": "DEPARTMENT", "d": hk_dept.id if hk_dept else None},
         {"u": "employee1", "n": "Test Employee", "r": "EMPLOYEE", "d": None},
-    ]
-    for s in staff_list:
+    ]:
         existing = User.query.filter_by(username=s["u"]).first()
         if not existing:
-            user = User(username=s["u"], full_name=s["n"], role=s["r"],
-                        department_id=s["d"])
+            user = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"])
             user.set_password("123456")
             db.session.add(user)
         else:
@@ -744,12 +693,9 @@ def seed_data():
 @app.route("/")
 def index():
     if current_user.is_authenticated:
-        if current_user.role in ["ADMIN", "MANAGER"]:
-            return redirect(url_for("dashboard"))
-        if current_user.role == "DEPARTMENT":
-            return redirect(url_for("department_dashboard"))
-        if current_user.role == "EMPLOYEE":
-            return redirect(url_for("employee_dashboard"))
+        if current_user.role in ["ADMIN", "MANAGER"]: return redirect(url_for("dashboard"))
+        if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
+        if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
         return redirect(url_for("workorders_list"))
     return redirect(url_for("login"))
 
@@ -758,7 +704,6 @@ def index():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
-
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -769,31 +714,19 @@ def login():
             db.session.commit()
             return redirect(url_for("index"))
         flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል", "danger")
-
     login_html = '''
-    <div class="row justify-content-center align-items-center" style="min-height:80vh;">
-        <div class="col-11 col-md-5">
-            <div class="login-card">
-                <div class="text-center mb-4">
-                    <h3 class="fw-bold" style="color:#f59e0b;"><i class="fas fa-hotel"></i> Rori Hotel</h3>
-                    <p style="color:#94a3b8;">የጥገና ክፍል መግቢያ</p>
-                </div>
-                <form method="post">
-                    <div class="mb-3"><label class="form-label">መለያ ስም</label>
-                    <input type="text" class="form-control" name="username" required autofocus></div>
-                    <div class="mb-4"><label class="form-label">የይለፍ ቃል</label>
-                    <input type="password" class="form-control" name="password" required></div>
-                    <button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግባ</button>
-                </form>
-                <hr class="my-4" style="border-color:rgba(245,158,11,0.2);">
-                <div class="text-center small" style="color:#94a3b8;">
-                    <p class="mb-1">Admin: <b>admin / admin123</b></p>
-                    <p class="mb-0">Staff: <b>tesfahun / 123456</b></p>
-                </div>
-            </div>
-        </div>
-    </div>
-    '''
+    <div class="row justify-content-center align-items-center" style="min-height:80vh">
+      <div class="col-11 col-md-5"><div class="login-card">
+        <div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የጥገና ክፍል መግቢያ</p></div>
+        <form method="post">
+          <div class="mb-3"><label class="form-label">መለያ ስም</label><input type="text" class="form-control" name="username" required autofocus></div>
+          <div class="mb-4"><label class="form-label">የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
+          <button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግባ</button>
+        </form>
+        <hr class="my-4" style="border-color:rgba(245,158,11,0.2)">
+        <div class="text-center small" style="color:#94a3b8"><p class="mb-1">Admin: <b>admin / admin123</b></p><p class="mb-0">Staff: <b>tesfahun / 123456</b></p></div>
+      </div></div>
+    </div>'''
     return page("Login", login_html)
 
 
@@ -814,29 +747,19 @@ def profile():
         user.email = request.form.get("email", "").strip()
         user.phone = request.form.get("phone", "").strip()
         new_pass = request.form.get("new_password", "").strip()
-        if new_pass:
-            user.set_password(new_pass)
+        if new_pass: user.set_password(new_pass)
         db.session.commit()
         flash("መረጃዎ ተዘምኗል", "success")
         return redirect(url_for("profile"))
-    content = f'''
-    <h3 style="color:#f59e0b;">👤 መገለጫ</h3>
-    <div class="card">
-        <h4>{user.full_name}</h4>
-        <p>@{user.username} · <span class="badge bg-warning text-dark">{user.role}</span></p>
-        <p>📧 {user.email or "—"} | 📱 {user.phone or "—"}</p>
-        <hr>
-        <form method="post">
-            <div class="mb-3"><label class="form-label">ኢሜል</label>
-            <input type="email" class="form-control" name="email" value="{user.email or ''}"></div>
-            <div class="mb-3"><label class="form-label">ስልክ</label>
-            <input type="text" class="form-control" name="phone" value="{user.phone or ''}"></div>
-            <div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label>
-            <input type="password" class="form-control" name="new_password" placeholder="ባዶ ከሆነ አይለወጥም"></div>
-            <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button>
-        </form>
-    </div>
-    '''
+    content = f'''<h3 style="color:#f59e0b">👤 መገለጫ</h3>
+    <div class="card"><h4>{user.full_name}</h4><p>@{user.username} · <span class="badge bg-warning text-dark">{user.role}</span></p>
+    <p>📧 {user.email or "—"} | 📱 {user.phone or "—"}</p><hr>
+    <form method="post">
+      <div class="mb-3"><label class="form-label">ኢሜል</label><input type="email" class="form-control" name="email" value="{user.email or ''}"></div>
+      <div class="mb-3"><label class="form-label">ስልክ</label><input type="text" class="form-control" name="phone" value="{user.phone or ''}"></div>
+      <div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ባዶ ከሆነ አይለወጥም"></div>
+      <button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button>
+    </form></div>'''
     return page("Profile", content)
 
 
@@ -846,14 +769,10 @@ def profile():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    if current_user.role in STAFF_ROLES:
-        return redirect(url_for("workorders_list"))
-    if current_user.role == "DEPARTMENT":
-        return redirect(url_for("department_dashboard"))
-    if current_user.role == "EMPLOYEE":
-        return redirect(url_for("employee_dashboard"))
+    if current_user.role in STAFF_ROLES: return redirect(url_for("workorders_list"))
+    if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
+    if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
 
-    # Exclude deleted
     base = MaintenanceRequest.query.filter_by(is_deleted=False)
     total = base.count()
     pending = base.filter_by(status="Pending").count()
@@ -865,47 +784,38 @@ def dashboard():
     overdue = sum(1 for r in base.all() if r.is_overdue)
     urgent = base.filter_by(priority="URGENT").count()
 
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-crown"></i> Manager Dashboard</h3>
-    <p style="color:#94a3b8;">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-crown"></i> Manager Dashboard</h3>
+    <p style="color:#94a3b8">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
     <div class="row g-3 mb-4">
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total}</div><div class="metric-label">Total</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check"></i></div><div class="metric-value">{approved}</div><div class="metric-label">Approved</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">In Progress</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-double"></i></div><div class="metric-value">{verified}</div><div class="metric-label">Verified</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">{urgent}</div><div class="metric-label">Urgent</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444;"><i class="fas fa-clock"></i></div><div class="metric-value">{overdue}</div><div class="metric-label">Overdue</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-archive"></i></div><div class="metric-value">{closed}</div><div class="metric-label">Closed</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-tasks"></i></div><div class="metric-value">{total}</div><div class="metric-label">Total</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clock"></i></div><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check"></i></div><div class="metric-value">{approved}</div><div class="metric-label">Approved</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-spinner"></i></div><div class="metric-value">{in_progress}</div><div class="metric-label">In Progress</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-circle"></i></div><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-check-double"></i></div><div class="metric-value">{verified}</div><div class="metric-label">Verified</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-exclamation-triangle"></i></div><div class="metric-value">{urgent}</div><div class="metric-label">Urgent</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-clock"></i></div><div class="metric-value">{overdue}</div><div class="metric-label">Overdue</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-archive"></i></div><div class="metric-value">{closed}</div><div class="metric-label">Closed</div></div></div>
     </div>
     <div class="row g-3">
-        <div class="col-md-4"><a class="btn btn-primary w-100 py-3" href="{url_for('requests_list')}"><i class="fas fa-list"></i> All Requests</a></div>
-        <div class="col-md-4"><a class="btn btn-success w-100 py-3" href="{url_for('workorders_list')}"><i class="fas fa-clipboard-list"></i> Work Orders</a></div>
-        <div class="col-md-4"><a class="btn btn-info w-100 py-3" href="{url_for('reports')}"><i class="fas fa-chart-bar"></i> Reports</a></div>
-    </div>
-    '''
+      <div class="col-md-4"><a class="btn btn-primary w-100 py-3" href="{url_for('requests_list')}"><i class="fas fa-list"></i> All Requests</a></div>
+      <div class="col-md-4"><a class="btn btn-success w-100 py-3" href="{url_for('workorders_list')}"><i class="fas fa-clipboard-list"></i> Work Orders</a></div>
+      <div class="col-md-4"><a class="btn btn-info w-100 py-3" href="{url_for('reports')}"><i class="fas fa-chart-bar"></i> Reports</a></div>
+    </div>'''
     return page("Dashboard", content)
 
 
-# ✅ DEPARTMENT DASHBOARD — Shows department + own requests
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
 def department_dashboard():
-    # ✅ Filter by department_id (all dept requests) OR own requests
     if current_user.department_id:
         requests = MaintenanceRequest.query.filter(
             MaintenanceRequest.is_deleted == False,
-            db.or_(
-                MaintenanceRequest.department_id == current_user.department_id,
-                MaintenanceRequest.requested_by_id == current_user.id,
-            )
+            db.or_(MaintenanceRequest.department_id == current_user.department_id, MaintenanceRequest.requested_by_id == current_user.id)
         ).order_by(MaintenanceRequest.created_at.desc()).all()
     else:
-        requests = MaintenanceRequest.query.filter_by(
-            is_deleted=False, requested_by_id=current_user.id
-        ).order_by(MaintenanceRequest.created_at.desc()).all()
+        requests = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
 
     pending = sum(1 for r in requests if r.status == "Pending")
     approved = sum(1 for r in requests if r.status == "Approved")
@@ -916,54 +826,32 @@ def department_dashboard():
 
     rows = ""
     for r in requests:
-        badge = "success" if r.status in ["Completed", "Verified", "Closed"] else \
-                "warning" if r.status in ["Pending", "Approved"] else \
-                "info" if r.status in ["Assigned", "In Progress"] else "secondary"
+        badge = "success" if r.status in ["Completed", "Verified", "Closed"] else "warning" if r.status in ["Pending", "Approved"] else "info"
         wo = WorkOrder.query.filter_by(request_id=r.id).first()
-        wo_badge = ""
-        if wo:
-            wo_badge = f' <a href="/workorders/{wo.id}" class="badge bg-info text-decoration-none">WO: {wo.work_order_no}</a>'
-        rows += f'''
-        <tr>
-        <td><a href="/requests/{r.id}" style="color:#f59e0b;font-weight:600;">{r.request_no}</a>{wo_badge}</td>
-        <td>{r.location_name}</td>
-        <td>{r.working_item.name if r.working_item else "—"}</td>
-        <td>{r.priority}</td>
-        <td><span class="badge bg-{badge}">{r.status}</span></td>
+        wo_badge = f' <a href="/workorders/{wo.id}" class="badge bg-info text-decoration-none">WO: {wo.work_order_no}</a>' if wo else ""
+        rows += f'''<tr>
+        <td><a href="/requests/{r.id}" style="color:#f59e0b;font-weight:600">{r.request_no}</a>{wo_badge}</td>
+        <td>{r.location_name}</td><td>{r.working_item.name if r.working_item else "—"}</td>
+        <td>{r.priority}</td><td><span class="badge bg-{badge}">{r.status}</span></td>
         <td>{r.created_at.strftime('%Y-%m-%d') if r.created_at else ''}</td>
-        <td>
-          <a href="/requests/{r.id}" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a>
-        </td>
-        </tr>'''
+        <td><a href="/requests/{r.id}" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a></td></tr>'''
 
     dept_name = current_user.department.name if current_user.department else "My Department"
-
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-building"></i> {dept_name} Dashboard</h3>
-    <p style="color:#94a3b8;">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
-
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-building"></i> {dept_name} Dashboard</h3>
+    <p style="color:#94a3b8">እንኳን ደህና መጡ፣ {current_user.full_name}!</p>
     <div class="row g-3 mb-4">
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{len(requests)}</div><div class="metric-label">Total</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{approved}</div><div class="metric-label">Approved</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{in_progress}</div><div class="metric-label">In Progress</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
-        <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{verified}</div><div class="metric-label">Verified</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{len(requests)}</div><div class="metric-label">Total</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{approved}</div><div class="metric-label">Approved</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{in_progress}</div><div class="metric-label">In Progress</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
+      <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">{verified}</div><div class="metric-label">Verified</div></div></div>
     </div>
-
-    <a class="btn btn-primary mb-3" href="{url_for('request_create')}">
-        <i class="fas fa-plus-circle"></i> New Request
-    </a>
-
-    <div class="card">
-    <div class="table-responsive">
-    <table class="table table-hover">
+    <a class="btn btn-primary mb-3" href="{url_for('request_create')}"><i class="fas fa-plus-circle"></i> New Request</a>
+    <div class="card"><div class="table-responsive"><table class="table table-hover">
     <thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
     <tbody>{rows or '<tr><td colspan="7" class="text-center">No requests yet</td></tr>'}</tbody>
-    </table>
-    </div>
-    </div>
-    '''
+    </table></div></div>'''
     return page(f"{dept_name} Dashboard", content)
 
 
@@ -971,31 +859,14 @@ def department_dashboard():
 @login_required
 @role_required("EMPLOYEE")
 def employee_dashboard():
-    requests = MaintenanceRequest.query.filter_by(
-        is_deleted=False, requested_by_id=current_user.id
-    ).order_by(MaintenanceRequest.created_at.desc()).all()
-
-    rows = ""
-    for r in requests:
-        rows += f'''
-        <tr>
-        <td><a href="/requests/{r.id}" style="color:#f59e0b;">{r.request_no}</a></td>
-        <td>{r.location_name}</td>
-        <td>{r.priority}</td>
-        <td>{r.status}</td>
-        <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
-        </tr>'''
-
-    content = f'''
-    <h3 style="color:#f59e0b;">My Dashboard</h3>
+    requests = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+    rows = "".join(f'''<tr><td><a href="/requests/{r.id}" style="color:#f59e0b">{r.request_no}</a></td><td>{r.location_name}</td><td>{r.priority}</td><td>{r.status}</td><td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td></tr>''' for r in requests)
+    content = f'''<h3 style="color:#f59e0b">My Dashboard</h3>
     <a class="btn btn-primary mb-3" href="{url_for('request_create')}"><i class="fas fa-plus-circle"></i> New Request</a>
-    <div class="card">
-    <table class="table table-hover">
+    <div class="card"><table class="table table-hover">
     <thead><tr><th>Request</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>
     <tbody>{rows or '<tr><td colspan="5" class="text-center">No requests</td></tr>'}</tbody>
-    </table>
-    </div>
-    '''
+    </table></div>'''
     return page("My Dashboard", content)
 
 
@@ -1005,41 +876,26 @@ def employee_dashboard():
 @app.route("/requests")
 @login_required
 def requests_list():
-    if current_user.role == "DEPARTMENT":
-        return redirect(url_for("department_dashboard"))
-    if current_user.role == "EMPLOYEE":
-        return redirect(url_for("employee_dashboard"))
-
+    if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
+    if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if current_user.role in STAFF_ROLES:
-        q = q.filter_by(assigned_to_id=current_user.id)
+    if current_user.role in STAFF_ROLES: q = q.filter_by(assigned_to_id=current_user.id)
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
 
     rows = ""
     for r in reqs:
         badge = "danger" if r.priority == "URGENT" else "warning" if r.priority == "HIGH" else "info"
-        rows += f'''
-        <tr>
-        <td><a href="/requests/{r.id}" style="color:#f59e0b;">{r.request_no}</a></td>
-        <td>{r.location_name}</td>
-        <td>{r.working_item.name if r.working_item else "—"}</td>
-        <td><span class="badge bg-{badge}">{r.priority}</span></td>
-        <td>{r.status}</td>
-        <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td>
-        </tr>'''
+        rows += f'''<tr><td><a href="/requests/{r.id}" style="color:#f59e0b">{r.request_no}</a></td>
+        <td>{r.location_name}</td><td>{r.working_item.name if r.working_item else "—"}</td>
+        <td><span class="badge bg-{badge}">{r.priority}</span></td><td>{r.status}</td>
+        <td>{r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}</td></tr>'''
 
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-tasks"></i> Maintenance Requests</h3>
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>
     <a class="btn btn-primary mb-3" href="{url_for('request_create')}"><i class="fas fa-plus-circle"></i> New Request</a>
-    <div class="card">
-    <div class="table-responsive">
-    <table class="table table-hover">
+    <div class="card"><div class="table-responsive"><table class="table table-hover">
     <thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>
     <tbody>{rows or '<tr><td colspan="6" class="text-center">No requests</td></tr>'}</tbody>
-    </table>
-    </div>
-    </div>
-    '''
+    </table></div></div>'''
     return page("Requests", content)
 
 
@@ -1062,420 +918,237 @@ def request_create():
         desc = request.form.get("description", "").strip()
         prio = request.form.get("priority", "MEDIUM")
 
-        # Auto-set dept from user's department if department user
         if current_user.role == "DEPARTMENT" and current_user.department_id:
             dept_id = current_user.department_id
 
         if loc == "Room":
             room = Room.query.get(room_id)
             if not room or not (201 <= int(room.room_number) <= 300):
-                flash("ልክ ያልሆነ ክፍል", "danger")
-                return redirect(url_for("request_create"))
-            floor = room.floor
-            area_id = None
+                flash("ልክ ያልሆነ ክፍል", "danger"); return redirect(url_for("request_create"))
+            floor = room.floor; area_id = None
         else:
             area = Area.query.get(area_id)
             if not area:
-                flash("ልክ ያልሆነ ቦታ", "danger")
-                return redirect(url_for("request_create"))
-            floor = None
-            room_id = None
+                flash("ልክ ያልሆነ ቦታ", "danger"); return redirect(url_for("request_create"))
+            floor = None; room_id = None
 
         if not desc:
-            flash("መግለጫ ያስፈልጋል", "danger")
-            return redirect(url_for("request_create"))
+            flash("መግለጫ ያስፈልጋል", "danger"); return redirect(url_for("request_create"))
 
         due = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio, 24))
-        req = MaintenanceRequest(
-            request_no=request_no_generator(),
-            location_type=loc, floor=floor,
-            room_id=room_id, area_id=area_id,
-            working_item_id=item_id, category_id=cat_id,
-            department_id=dept_id, description=desc,
-            priority=prio, status="Pending",
-            requested_by_id=current_user.id, due_date=due,
-        )
-        db.session.add(req)
-        db.session.flush()
+        req = MaintenanceRequest(request_no=request_no_generator(), location_type=loc, floor=floor, room_id=room_id, area_id=area_id, working_item_id=item_id, category_id=cat_id, department_id=dept_id, description=desc, priority=prio, status="Pending", requested_by_id=current_user.id, due_date=due)
+        db.session.add(req); db.session.flush()
         log_status_change(req.id, "Pending", notes="Submitted")
         log_audit("Create", "MaintenanceRequest", req.id, new_value=req.request_no)
-
         managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-        notify_users([u.id for u in managers], req.id, "📬 New Request",
-                     f"Request {req.request_no} at {req.location_name}",
-                     "New Request", link=url_for("request_detail", req_id=req.id))
-        notify_users([current_user.id], req.id, "✅ Request Submitted",
-                     f"Request {req.request_no} submitted successfully",
-                     "Request Submitted", link=url_for("request_detail", req_id=req.id))
-
+        notify_users([u.id for u in managers], req.id, "📬 New Request", f"Request {req.request_no} at {req.location_name}", "New Request", link=url_for("request_detail", req_id=req.id))
+        notify_users([current_user.id], req.id, "✅ Request Submitted", f"Request {req.request_no} submitted", "Request Submitted", link=url_for("request_detail", req_id=req.id))
         db.session.commit()
         flash("✅ ጥያቄዎ ተልኳል!", "success")
         return redirect(url_for("department_dashboard") if current_user.role == "DEPARTMENT" else url_for("requests_list"))
 
-    room_opts = "".join(f'<option value="{r.id}">Room {r.room_number} (Floor {r.floor})</option>' for r in rooms)
+    room_opts = "".join(f'<option value="{r.id}">Room {r.room_number}</option>' for r in rooms)
     area_opts = "".join(f'<option value="{a.id}">{a.name}</option>' for a in areas)
     item_opts = "".join(f'<option value="{i.id}">{i.name}</option>' for i in items)
     cat_opts = "".join(f'<option value="{c.id}">{c.name}</option>' for c in categories)
     dept_opts = "".join(f'<option value="{d.id}" {"selected" if current_user.department_id == d.id else ""}>{d.name}</option>' for d in departments)
 
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-plus-circle"></i> New Request</h3>
-    <div class="card">
-    <form method="post">
-    <div class="row">
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Request</h3>
+    <div class="card"><form method="post"><div class="row">
     <div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>
-    <select class="form-select" name="location_type" id="loc" onchange="tog()" required>
-      <option value="Room">Room</option><option value="Hotel Area">Hotel Area</option>
-    </select></div>
-    <div class="col-md-6 mb-3" id="roomD"><label class="form-label">Room *</label>
-    <select class="form-select" name="room_id">{room_opts}</select></div>
-    <div class="col-md-6 mb-3" id="areaD" style="display:none"><label class="form-label">Area *</label>
-    <select class="form-select" name="area_id"><option value="">-- Select --</option>{area_opts}</select></div>
-    <div class="col-md-6 mb-3"><label class="form-label">Working Item *</label>
-    <select class="form-select" name="working_item_id" required><option value="">-- Select --</option>{item_opts}</select></div>
-    <div class="col-md-6 mb-3"><label class="form-label">Category *</label>
-    <select class="form-select" name="category_id" required><option value="">-- Select --</option>{cat_opts}</select></div>
-    <div class="col-md-6 mb-3"><label class="form-label">Department *</label>
-    <select class="form-select" name="department_id" required><option value="">-- Select --</option>{dept_opts}</select></div>
-    <div class="col-md-6 mb-3"><label class="form-label">Priority *</label>
-    <select class="form-select" name="priority">
-      <option value="LOW">🟢 Low (72h)</option>
-      <option value="MEDIUM" selected>🟡 Medium (24h)</option>
-      <option value="HIGH">🟠 High (4h)</option>
-      <option value="URGENT">🔴 Urgent (1h)</option>
-    </select></div>
-    <div class="col-12 mb-3"><label class="form-label">Description *</label>
-    <textarea class="form-control" name="description" rows="4" required></textarea></div>
-    <div class="col-12">
-    <button class="btn btn-primary w-100 py-3"><i class="fas fa-paper-plane"></i> Submit Request</button>
-    </div>
-    </div>
-    </form>
-    </div>
-    <script>
-    function tog() {{
-      var t = document.getElementById('loc').value;
-      document.getElementById('roomD').style.display = t === 'Room' ? 'block' : 'none';
-      document.getElementById('areaD').style.display = t === 'Hotel Area' ? 'block' : 'none';
-    }}
-    </script>
-    '''
+    <select class="form-select" name="location_type" id="loc" onchange="tog()" required><option value="Room">Room</option><option value="Hotel Area">Hotel Area</option></select></div>
+    <div class="col-md-6 mb-3" id="roomD"><label class="form-label">Room *</label><select class="form-select" name="room_id">{room_opts}</select></div>
+    <div class="col-md-6 mb-3" id="areaD" style="display:none"><label class="form-label">Area *</label><select class="form-select" name="area_id"><option value="">-- Select --</option>{area_opts}</select></div>
+    <div class="col-md-6 mb-3"><label class="form-label">Item *</label><select class="form-select" name="working_item_id" required><option value="">-- Select --</option>{item_opts}</select></div>
+    <div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category_id" required><option value="">-- Select --</option>{cat_opts}</select></div>
+    <div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required><option value="">-- Select --</option>{dept_opts}</select></div>
+    <div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority"><option value="LOW">🟢 Low (72h)</option><option value="MEDIUM" selected>🟡 Medium (24h)</option><option value="HIGH">🟠 High (4h)</option><option value="URGENT">🔴 Urgent (1h)</option></select></div>
+    <div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required></textarea></div>
+    <div class="col-12"><button class="btn btn-primary w-100 py-3"><i class="fas fa-paper-plane"></i> Submit</button></div>
+    </div></form></div>
+    <script>function tog(){{var t=document.getElementById('loc').value;document.getElementById('roomD').style.display=t==='Room'?'block':'none';document.getElementById('areaD').style.display=t==='Hotel Area'?'block':'none';}}</script>'''
     return page("New Request", content)
 
 
-# ✅ REQUEST DETAIL — Shows Verify button as POST form
 @app.route("/requests/<int:req_id>")
 @login_required
 def request_detail(req_id):
     req = MaintenanceRequest.query.get_or_404(req_id)
-
-    history = StatusHistory.query.filter_by(request_id=req.id)\
-        .order_by(StatusHistory.timestamp.desc()).all()
-    timeline = "".join(
-        f'<div class="mb-2"><b style="color:#f59e0b;">{h.status}</b> — '
-        f'<small style="color:#94a3b8;">{h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""}</small>'
-        f'{f"<br><small style=\"color:#cbd5e1;\">{h.notes}</small>" if h.notes else ""}</div>'
-        for h in history
-    )
-
+    history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
+    timeline = "".join(f'<div class="mb-2"><b style="color:#f59e0b">{h.status}</b> — <small style="color:#94a3b8">{h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""}</small>{f"<br><small style=\"color:#cbd5e1\">{h.notes}</small>" if h.notes else ""}</div>' for h in history)
     wo = WorkOrder.query.filter_by(request_id=req.id).first()
     wo_html = ""
     if wo:
-        wo_html = f'''
-        <div class="card" style="border-color:rgba(34,197,94,0.3);">
-            <h5 style="color:#22c55e;"><i class="fas fa-clipboard-check"></i> Work Order</h5>
-            <p><b>WO:</b> <a href="{url_for('workorder_detail', wo_id=wo.id)}" style="color:#f59e0b;">{wo.work_order_no}</a></p>
-            <p><b>Status:</b> <span class="badge bg-info">{wo.status}</span></p>
-            <p><b>Assigned:</b> {wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"}</p>
-            {f"<p><b>Completed:</b> {wo.completed_date.strftime('%Y-%m-%d %H:%M') if wo.completed_date else '—'}</p>" if wo.completed_date else ""}
-            {f"<p><b>Notes:</b> {wo.completion_notes}</p>" if wo.completion_notes else ""}
-        </div>'''
+        wo_html = f'''<div class="card" style="border-color:rgba(34,197,94,0.3)"><h5 style="color:#22c55e"><i class="fas fa-clipboard-check"></i> Work Order</h5>
+        <p><b>WO:</b> <a href="{url_for('workorder_detail', wo_id=wo.id)}" style="color:#f59e0b">{wo.work_order_no}</a></p>
+        <p><b>Status:</b> <span class="badge bg-info">{wo.status}</span></p>
+        <p><b>Assigned:</b> {wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"}</p>
+        {f"<p><b>Completed:</b> {wo.completed_date.strftime('%Y-%m-%d %H:%M')}</p>" if wo.completed_date else ""}
+        {f"<p><b>Notes:</b> {wo.completion_notes}</p>" if wo.completion_notes else ""}</div>'''
 
-    # ✅ Build action buttons
     actions = ""
     if current_user.role in ["MANAGER", "ADMIN"]:
         if req.status == "Pending":
-            actions += f'''
-            <form method="post" action="{url_for('request_approve', req_id=req.id)}" style="display:inline;">
-                <button type="submit" class="btn btn-success mb-2 w-100">
-                    <i class="fas fa-check"></i> Approve & Create WO
-                </button>
-            </form>'''
+            actions += f'''<form method="post" action="{url_for('request_approve', req_id=req.id)}"><button type="submit" class="btn btn-success mb-2 w-100"><i class="fas fa-check"></i> Approve & Create WO</button></form>'''
         if req.status in ["Approved", "Assigned"] and (not wo or wo.status == "Pending"):
             actions += f'<a href="{url_for("workorder_create")}?request_id={req.id}" class="btn btn-warning mb-2 w-100"><i class="fas fa-user-plus"></i> Assign Staff</a>'
         if req.status == "Completed":
-            # ✅ CRITICAL: POST form for Verify
-            actions += f'''
-            <form method="post" action="{url_for('request_verify', req_id=req.id)}" style="display:inline;">
-                <button type="submit" class="btn btn-info mb-2 w-100" style="background:linear-gradient(135deg,#06b6d4,#0891b2);">
-                    <i class="fas fa-check-double"></i> ✅ Verify Work
-                </button>
-            </form>'''
+            actions += f'''<form method="post" action="{url_for('request_verify', req_id=req.id)}"><button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify Work</button></form>'''
         if req.status == "Verified":
-            actions += f'''
-            <form method="post" action="{url_for('request_close', req_id=req.id)}" style="display:inline;">
-                <button type="submit" class="btn btn-secondary mb-2 w-100">
-                    <i class="fas fa-archive"></i> Close Request
-                </button>
-            </form>'''
-        if req.status not in ["Pending", "Completed", "Verified", "Closed", "Rejected"]:
-            if not wo or wo.status == "Pending":
-                actions += f'<a href="{url_for("workorder_create")}?request_id={req.id}" class="btn btn-warning mb-2 w-100"><i class="fas fa-user-plus"></i> Assign Staff</a>'
+            actions += f'''<form method="post" action="{url_for('request_close', req_id=req.id)}"><button type="submit" class="btn btn-secondary mb-2 w-100"><i class="fas fa-archive"></i> Close Request</button></form>'''
 
-    # Admin-only delete
     if current_user.role == "ADMIN" and not req.is_deleted:
-        actions += f'''
-        <form method="post" action="{url_for('request_delete', req_id=req.id)}" style="display:inline;"
-              onsubmit="return confirm('Delete this request? It will be archived.');">
-            <input type="hidden" name="reason" value="Deleted by admin">
-            <button type="submit" class="btn btn-danger mb-2 w-100">
-                <i class="fas fa-trash"></i> Archive Request
-            </button>
-        </form>'''
+        actions += f'''<form method="post" action="{url_for('request_delete', req_id=req.id)}" onsubmit="return confirm('Archive?');"><input type="hidden" name="reason" value="Deleted by admin"><button type="submit" class="btn btn-danger mb-2 w-100"><i class="fas fa-trash"></i> Archive</button></form>'''
 
-    content = f'''
-    <div class="d-flex justify-content-between mb-3">
-        <h3 style="color:#f59e0b;">📄 Request {req.request_no}</h3>
-        <a href="{url_for('requests_list')}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
-    </div>
-    <div class="row">
-    <div class="col-md-8">
-    <div class="card">
-    <table class="table">
-    <tr><th style="width:150px;color:#94a3b8;">Status</th><td><span class="badge bg-info">{req.status}</span></td></tr>
-    <tr><th style="color:#94a3b8;">Location</th><td>{req.location_name}</td></tr>
-    <tr><th style="color:#94a3b8;">Item</th><td>{req.working_item.name if req.working_item else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Category</th><td>{req.category.name if req.category else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Department</th><td>{req.department.name if req.department else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Priority</th><td>{req.priority}</td></tr>
-    <tr><th style="color:#94a3b8;">Requester</th><td>{req.requested_by.full_name if req.requested_by else "Guest"}</td></tr>
-    <tr><th style="color:#94a3b8;">Assigned To</th><td>{req.assigned_to.full_name if req.assigned_to else "Not assigned"}</td></tr>
-    <tr><th style="color:#94a3b8;">Due Date</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Completed</th><td>{req.completed_date.strftime('%Y-%m-%d %H:%M') if req.completed_date else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Description</th><td>{req.description or ""}</td></tr>
-    </table>
-    </div>
+    content = f'''<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b">📄 Request {req.request_no}</h3>
+    <a href="{url_for('requests_list')}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>
+    <div class="row"><div class="col-md-8"><div class="card"><table class="table">
+    <tr><th style="width:150px;color:#94a3b8">Status</th><td><span class="badge bg-info">{req.status}</span></td></tr>
+    <tr><th style="color:#94a3b8">Location</th><td>{req.location_name}</td></tr>
+    <tr><th style="color:#94a3b8">Item</th><td>{req.working_item.name if req.working_item else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Category</th><td>{req.category.name if req.category else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Department</th><td>{req.department.name if req.department else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Priority</th><td>{req.priority}</td></tr>
+    <tr><th style="color:#94a3b8">Requester</th><td>{req.requested_by.full_name if req.requested_by else "Guest"}</td></tr>
+    <tr><th style="color:#94a3b8">Assigned To</th><td>{req.assigned_to.full_name if req.assigned_to else "Not assigned"}</td></tr>
+    <tr><th style="color:#94a3b8">Due Date</th><td>{req.due_date.strftime('%Y-%m-%d %H:%M') if req.due_date else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Completed</th><td>{req.completed_date.strftime('%Y-%m-%d %H:%M') if req.completed_date else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Description</th><td>{req.description or ""}</td></tr>
+    </table></div>
     {wo_html}
-    <div class="card">
-    <h5 style="color:#f59e0b;">📜 Timeline</h5>
-    {timeline or "<p style='color:#94a3b8;'>No activity</p>"}
+    <div class="card"><h5 style="color:#f59e0b">📜 Timeline</h5>{timeline or "<p style='color:#94a3b8'>No activity</p>"}</div>
     </div>
-    </div>
-    <div class="col-md-4">
-    <div class="card">
-    <h5 style="color:#f59e0b;">Actions</h5>
-    {actions or "<p style='color:#94a3b8;'>No actions available</p>"}
-    </div>
-    </div>
-    </div>
-    '''
+    <div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>{actions or "<p style='color:#94a3b8'>No actions</p>"}</div></div>
+    </div>'''
     return page("Request Detail", content)
 
 
-# ══════════════════════════════════════════════════════════════
-# ✅ APPROVE — POST
-# ══════════════════════════════════════════════════════════════
-@app.route("/requests/<int:req_id>/approve", methods=["POST"])
+@app.route("/requests/<int:req_id>/approve", methods=["GET", "POST"])
 @role_required("MANAGER", "ADMIN")
 def request_approve(req_id):
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
-
         if req.status != "Pending":
-            flash("This request is not pending", "warning")
-            return redirect(url_for("request_detail", req_id=req_id))
-
+            flash("Not pending", "warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.status = "Approved"
         req.manager_id = current_user.id
         log_status_change(req.id, "Approved", notes=f"Approved by {current_user.full_name}")
         log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
-
-        # Create WO if none exists
         existing = WorkOrder.query.filter_by(request_id=req.id).first()
         if not existing:
-            wo = WorkOrder(
-                work_order_no=work_order_no_generator(),
-                request_id=req.id, assigned_to_id=None, status="Pending",
-            )
-            db.session.add(wo)
-            db.session.flush()
+            wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=None, status="Pending")
+            db.session.add(wo); db.session.flush()
             log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
             log_status_change(req.id, "WO Created", notes=f"WO {wo.work_order_no}")
             notify_maintenance_staff(req, wo)
-        else:
-            wo = existing
-
-        notify_users([req.requested_by_id], req.id, "Request Approved",
-                     f"Request {req.request_no} approved",
-                     "Approved", link=url_for("request_detail", req_id=req.id))
-
+        notify_users([req.requested_by_id], req.id, "Request Approved", f"Request {req.request_no} approved", "Approved", link=url_for("request_detail", req_id=req.id))
         db.session.commit()
-        flash("✅ Request approved! Staff notified.", "success")
+        flash("✅ Request approved!", "success")
     except Exception as e:
         db.session.rollback()
         print("Approve error:", traceback.format_exc())
-        flash(f"Error: {str(e)}", "danger")
+        flash(f"Error: {e}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-# ══════════════════════════════════════════════════════════════
-# ✅ VERIFY — CRITICAL FIX: methods=["GET", "POST"]
-# ══════════════════════════════════════════════════════════════
 @app.route("/requests/<int:req_id>/verify", methods=["GET", "POST"])
-@login_required
 @role_required("MANAGER", "ADMIN")
 def request_verify(req_id):
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
-
         if req.status != "Completed":
-            flash(f"Only completed requests can be verified (current: {req.status})", "warning")
+            flash(f"Only completed can be verified (current: {req.status})", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
-
-        # Update request
         req.status = "Verified"
         req.manager_id = current_user.id
-        if not req.completed_date:
-            req.completed_date = datetime.utcnow()
-
-        # Update work order
+        if not req.completed_date: req.completed_date = datetime.utcnow()
         wo = WorkOrder.query.filter_by(request_id=req.id).first()
         if wo:
             wo.status = "Verified"
             wo.verified_by_id = current_user.id
             wo.verified_date = datetime.utcnow()
-
-        # Status history + Audit log
         log_status_change(req.id, "Verified", notes=f"Verified by {current_user.full_name}")
         log_audit("Verify", "MaintenanceRequest", req.id, "Completed", "Verified")
-
-        # Notify requester
-        notify_users([req.requested_by_id], req.id, "✅ Work Verified",
-                     f"Request {req.request_no} verified",
-                     "Verified", link=url_for("request_detail", req_id=req.id))
-
-        # Notify department users
+        notify_users([req.requested_by_id], req.id, "✅ Work Verified", f"Request {req.request_no} verified", "Verified", link=url_for("request_detail", req_id=req.id))
         if req.department_id:
             dept_users = User.query.filter_by(department_id=req.department_id).all()
-            notify_users(
-                [u.id for u in dept_users if u.id != req.requested_by_id],
-                req.id, "Department Request Verified",
-                f"Request {req.request_no} verified",
-                "Verified", link=url_for("request_detail", req_id=req.id),
-            )
-
+            notify_users([u.id for u in dept_users if u.id != req.requested_by_id], req.id, "Department Request Verified", f"Request {req.request_no} verified", "Verified", link=url_for("request_detail", req_id=req_id))
         db.session.commit()
         flash("✅ Work verified successfully!", "success")
     except Exception as e:
         db.session.rollback()
         print("Verify error:", traceback.format_exc())
-        flash(f"Error: {str(e)}", "danger")
+        flash(f"Error: {e}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/close", methods=["POST"])
+@app.route("/requests/<int:req_id>/close", methods=["GET", "POST"])
 @role_required("MANAGER", "ADMIN")
 def request_close(req_id):
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.status != "Verified":
-            flash("Only verified requests can be closed", "warning")
-            return redirect(url_for("request_detail", req_id=req_id))
+            flash("Only verified can be closed", "warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.status = "Closed"
         log_status_change(req.id, "Closed", notes=f"Closed by {current_user.full_name}")
         log_audit("Close", "MaintenanceRequest", req.id, "Verified", "Closed")
-        notify_users([req.requested_by_id], req.id, "Request Closed",
-                     f"Request {req.request_no} closed", "Closed")
+        notify_users([req.requested_by_id], req.id, "Request Closed", f"Request {req.request_no} closed", "Closed")
         db.session.commit()
         flash("Request closed", "success")
     except Exception as e:
-        db.session.rollback()
-        flash(f"Error: {str(e)}", "danger")
+        db.session.rollback(); flash(f"Error: {e}", "danger")
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-# ══════════════════════════════════════════════════════════════
-# ✅ SOFT DELETE — ADMIN ONLY
-# ══════════════════════════════════════════════════════════════
-@app.route("/requests/<int:req_id>/delete", methods=["POST"])
+@app.route("/requests/<int:req_id>/delete", methods=["GET", "POST"])
 @role_required("ADMIN")
 def request_delete(req_id):
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
         if req.is_deleted:
-            flash("Already deleted", "warning")
-            return redirect(url_for("request_detail", req_id=req_id))
-
+            flash("Already deleted", "warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.is_deleted = True
         req.deleted_at = datetime.utcnow()
         req.deleted_by_id = current_user.id
         req.deletion_reason = request.form.get("reason", "Deleted by admin")
-
-        log_audit("SoftDelete", "MaintenanceRequest", req.id,
-                  old_value="active", new_value="deleted")
+        log_audit("SoftDelete", "MaintenanceRequest", req.id, "active", "deleted")
         db.session.commit()
-        flash("Request archived (soft-deleted)", "success")
+        flash("Request archived", "success")
     except Exception as e:
-        db.session.rollback()
-        flash(f"Error: {str(e)}", "danger")
+        db.session.rollback(); flash(f"Error: {e}", "danger")
     return redirect(url_for("requests_list"))
 
 
 @app.route("/admin/deleted")
 @role_required("ADMIN")
 def deleted_requests():
-    deleted = MaintenanceRequest.query.filter_by(is_deleted=True)\
-        .order_by(MaintenanceRequest.deleted_at.desc()).all()
+    deleted = MaintenanceRequest.query.filter_by(is_deleted=True).order_by(MaintenanceRequest.deleted_at.desc()).all()
+    rows = "".join(f'''<tr><td>{r.request_no}</td><td>{r.location_name}</td><td>{r.status}</td>
+    <td>{r.deleted_at.strftime('%Y-%m-%d %H:%M') if r.deleted_at else ''}</td>
+    <td>{r.deleted_by.full_name if r.deleted_by else '—'}</td>
+    <td>{r.deletion_reason or '—'}</td>
+    <td><form method="post" action="{url_for('request_restore', req_id=r.id)}"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-undo"></i> Restore</button></form></td></tr>''' for r in deleted)
 
-    rows = ""
-    for r in deleted:
-        rows += f'''
-        <tr>
-        <td>{r.request_no}</td>
-        <td>{r.location_name}</td>
-        <td>{r.status}</td>
-        <td>{r.deleted_at.strftime('%Y-%m-%d %H:%M') if r.deleted_at else ''}</td>
-        <td>{r.deleted_by.full_name if r.deleted_by else '—'}</td>
-        <td>{r.deletion_reason or '—'}</td>
-        <td>
-            <form method="post" action="{url_for('request_restore', req_id=r.id)}" style="display:inline;">
-                <button type="submit" class="btn btn-sm btn-success">
-                    <i class="fas fa-undo"></i> Restore
-                </button>
-            </form>
-        </td>
-        </tr>'''
-
-    content = f'''
-    <h3 style="color:#f59e0b;">🗑️ Archived Requests</h3>
-    <p style="color:#94a3b8;">Soft-deleted requests (Admin only)</p>
-    <div class="card">
-    <div class="table-responsive">
-    <table class="table table-hover">
+    content = f'''<h3 style="color:#f59e0b">🗑️ Archived Requests</h3>
+    <p style="color:#94a3b8">Soft-deleted (Admin only)</p>
+    <div class="card"><div class="table-responsive"><table class="table table-hover">
     <thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Deleted At</th><th>Deleted By</th><th>Reason</th><th></th></tr></thead>
     <tbody>{rows or '<tr><td colspan="7" class="text-center">No archived requests</td></tr>'}</tbody>
-    </table>
-    </div>
-    </div>
-    '''
+    </table></div></div>'''
     return page("Archived Requests", content)
 
 
-@app.route("/admin/restore/<int:req_id>", methods=["POST"])
+@app.route("/admin/restore/<int:req_id>", methods=["GET", "POST"])
 @role_required("ADMIN")
 def request_restore(req_id):
     try:
         req = MaintenanceRequest.query.get_or_404(req_id)
-        req.is_deleted = False
-        req.deleted_at = None
-        req.deleted_by_id = None
-        req.deletion_reason = None
+        req.is_deleted = False; req.deleted_at = None; req.deleted_by_id = None; req.deletion_reason = None
         log_audit("Restore", "MaintenanceRequest", req.id, "deleted", "active")
         db.session.commit()
         flash("Request restored", "success")
     except Exception as e:
-        db.session.rollback()
-        flash(f"Error: {str(e)}", "danger")
+        db.session.rollback(); flash(f"Error: {e}", "danger")
     return redirect(url_for("deleted_requests"))
 
 
@@ -1485,47 +1158,29 @@ def request_restore(req_id):
 @app.route("/workorders")
 @login_required
 def workorders_list():
-    if current_user.role == "DEPARTMENT":
-        return redirect(url_for("department_dashboard"))
-    if current_user.role == "EMPLOYEE":
-        return redirect(url_for("employee_dashboard"))
+    if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
+    if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
 
     if current_user.role in STAFF_ROLES:
-        wos = WorkOrder.query.filter(
-            db.or_(
-                WorkOrder.assigned_to_id == current_user.id,
-                WorkOrder.assigned_to_id.is_(None),
-            )
-        ).order_by(WorkOrder.created_at.desc()).all()
+        wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id, WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
     else:
         wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
 
     rows = ""
     for wo in wos:
         assigned = wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"
-        badge = "success" if wo.status in ["Completed", "Verified"] else \
-                "warning" if wo.status in ["Pending", "Assigned"] else "info"
-        rows += f'''
-        <tr>
-        <td><a href="/workorders/{wo.id}" style="color:#f59e0b;">{wo.work_order_no}</a></td>
+        badge = "success" if wo.status in ["Completed", "Verified"] else "warning" if wo.status in ["Pending", "Assigned"] else "info"
+        rows += f'''<tr><td><a href="/workorders/{wo.id}" style="color:#f59e0b">{wo.work_order_no}</a></td>
         <td>{wo.request.location_name if wo.request else "—"}</td>
         <td>{wo.request.working_item.name if wo.request and wo.request.working_item else "—"}</td>
         <td>{wo.request.priority if wo.request else "—"}</td>
-        <td><span class="badge bg-{badge}">{wo.status}</span></td>
-        <td>{assigned}</td>
-        </tr>'''
+        <td><span class="badge bg-{badge}">{wo.status}</span></td><td>{assigned}</td></tr>'''
 
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-clipboard-list"></i> Work Orders</h3>
-    <div class="card">
-    <div class="table-responsive">
-    <table class="table table-hover">
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h3>
+    <div class="card"><div class="table-responsive"><table class="table table-hover">
     <thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
     <tbody>{rows or '<tr><td colspan="6" class="text-center">No work orders</td></tr>'}</tbody>
-    </table>
-    </div>
-    </div>
-    '''
+    </table></div></div>'''
     return page("Work Orders", content)
 
 
@@ -1542,78 +1197,42 @@ def workorder_create():
             request_id = request.form.get("request_id", type=int)
             assigned_to_id = request.form.get("assigned_to_id", type=int)
             work_performed = request.form.get("work_performed", "")
-
             if not assigned_to_id:
-                flash("Select a staff member", "danger")
-                return redirect(url_for("workorder_create", request_id=request_id))
-
+                flash("Select staff", "danger"); return redirect(url_for("workorder_create", request_id=request_id))
             req = MaintenanceRequest.query.get_or_404(request_id)
             if req.status not in ["Approved", "Assigned"]:
-                flash("Request must be approved first", "danger")
-                return redirect(url_for("request_detail", req_id=request_id))
-
+                flash("Request must be approved", "danger"); return redirect(url_for("request_detail", req_id=request_id))
             assigned_user = User.query.get(assigned_to_id)
-
-            existing = WorkOrder.query.filter_by(request_id=req.id)\
-                .filter(WorkOrder.status != "Completed").first()
-
+            existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
             if existing:
-                wo = existing
-                wo.assigned_to_id = assigned_to_id
-                wo.status = "Assigned"
-                if work_performed:
-                    wo.work_performed = work_performed
+                wo = existing; wo.assigned_to_id = assigned_to_id; wo.status = "Assigned"
+                if work_performed: wo.work_performed = work_performed
             else:
-                wo = WorkOrder(
-                    work_order_no=work_order_no_generator(),
-                    request_id=req.id, assigned_to_id=assigned_to_id,
-                    status="Assigned", work_performed=work_performed,
-                )
-                db.session.add(wo)
-                db.session.flush()
+                wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=assigned_to_id, status="Assigned", work_performed=work_performed)
+                db.session.add(wo); db.session.flush()
                 log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
-
-            req.status = "Assigned"
-            req.assigned_to_id = assigned_to_id
-            log_status_change(req.id, "Assigned",
-                              notes=f"Assigned to {assigned_user.full_name if assigned_user else '?'}")
-
-            if assigned_user:
-                notify_assigned_staff(req, wo, assigned_user)
-            if req.requested_by_id:
-                notify_users([req.requested_by_id], req.id, "Work Assigned",
-                             f"Staff assigned to {req.request_no}",
-                             "Assigned", link=url_for("workorder_detail", wo_id=wo.id))
-
+            req.status = "Assigned"; req.assigned_to_id = assigned_to_id
+            log_status_change(req.id, "Assigned", notes=f"Assigned to {assigned_user.full_name if assigned_user else '?'}")
+            if assigned_user: notify_assigned_staff(req, wo, assigned_user)
+            if req.requested_by_id: notify_users([req.requested_by_id], req.id, "Work Assigned", f"Staff assigned to {req.request_no}", "Assigned", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit()
-            flash(f"✅ Assigned to {assigned_user.full_name if assigned_user else 'staff'}", "success")
+            flash(f"✅ Assigned!", "success")
             return redirect(url_for("workorder_detail", wo_id=wo.id))
-
         except Exception as e:
             db.session.rollback()
-            print("WO assign error:", traceback.format_exc())
-            flash(f"Error: {str(e)}", "danger")
+            print("WO assign:", traceback.format_exc())
+            flash(f"Error: {e}", "danger")
             return redirect(url_for("workorder_create", request_id=request_id))
 
-    content = f'''
-    <h3 style="color:#f59e0b;">Assign Staff to Work Order</h3>
-    <div class="card">
-    <form method="post">
+    content = f'''<h3 style="color:#f59e0b">Assign Staff to Work Order</h3>
+    <div class="card"><form method="post">
     <input type="hidden" name="request_id" value="{req.id if req else ''}">
-    <div class="mb-3"><label class="form-label">Request</label>
-    <input class="form-control" value="{req.request_no if req else ''}" disabled></div>
-    <div class="mb-3"><label class="form-label">Location</label>
-    <input class="form-control" value="{req.location_name if req else ''}" disabled></div>
-    <div class="mb-3"><label class="form-label">Assign To *</label>
-    <select class="form-select" name="assigned_to_id" required>
-      <option value="">-- Select Staff --</option>{user_opts}
-    </select></div>
-    <div class="mb-3"><label class="form-label">Instructions</label>
-    <textarea class="form-control" name="work_performed" rows="3"></textarea></div>
+    <div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="{req.request_no if req else ''}" disabled></div>
+    <div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="{req.location_name if req else ''}" disabled></div>
+    <div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select --</option>{user_opts}</select></div>
+    <div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>
     <button class="btn btn-primary"><i class="fas fa-save"></i> Assign</button>
-    </form>
-    </div>
-    '''
+    </form></div>'''
     return page("Assign Work Order", content)
 
 
@@ -1621,94 +1240,60 @@ def workorder_create():
 @login_required
 def workorder_detail(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
-    parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all() if 'WorkOrderPart' in globals() else []
-    parts_html = "".join(f"<li>{p.part.part_name if p.part else '?'} x {p.quantity}</li>" for p in parts)
+    parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
+    parts_html = "".join(f"<li>Part #{p.part_id} x {p.quantity}</li>" for p in parts)
 
     completion_html = ""
     if wo.completion_photo:
-        completion_html = f'''
-        <div class="mt-3">
-            <h6>📸 Completion Photo:</h6>
-            <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
-                <img src="/static/uploads/maintenance/{wo.completion_photo}" class="img-fluid rounded" style="max-height:250px;">
-            </a>
-        </div>'''
+        completion_html = f'''<div class="mt-3"><h6>📸 Completion Photo:</h6>
+        <a href="/static/uploads/maintenance/{wo.completion_photo}" target="_blank">
+        <img src="/static/uploads/maintenance/{wo.completion_photo}" class="img-fluid rounded" style="max-height:250px"></a></div>'''
 
     actions = ""
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
         if wo.status == "Assigned":
-            actions += f'''
-            <form method="post" action="{url_for('workorder_start', wo_id=wo.id)}" style="display:inline;">
-                <button type="submit" class="btn btn-warning mb-2 w-100">
-                    <i class="fas fa-play"></i> Start Work
-                </button>
-            </form>'''
+            actions += f'''<form method="post" action="{url_for('workorder_start', wo_id=wo.id)}"><button type="submit" class="btn btn-warning mb-2 w-100"><i class="fas fa-play"></i> Start Work</button></form>'''
         if wo.status == "In Progress":
             actions += f'<a href="{url_for("workorder_complete", wo_id=wo.id)}" class="btn btn-success mb-2 w-100"><i class="fas fa-check"></i> Complete Work</a>'
-
     if current_user.role in ["MANAGER", "ADMIN"] and wo.status == "Completed":
-        actions += f'''
-        <form method="post" action="{url_for('workorder_verify', wo_id=wo.id)}" style="display:inline;">
-            <button type="submit" class="btn btn-info mb-2 w-100">
-                <i class="fas fa-check-double"></i> ✅ Verify Work
-            </button>
-        </form>'''
+        actions += f'''<form method="post" action="{url_for('workorder_verify', wo_id=wo.id)}"><button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify</button></form>'''
 
-    content = f'''
-    <div class="d-flex justify-content-between mb-3">
-        <h3 style="color:#f59e0b;">🔧 Work Order {wo.work_order_no}</h3>
-        <a href="{url_for('workorders_list')}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
-    </div>
-    <div class="row">
-    <div class="col-md-8">
-    <div class="card">
-    <table class="table">
-    <tr><th style="width:150px;color:#94a3b8;">Request</th><td>{wo.request.request_no if wo.request else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Location</th><td>{wo.request.location_name if wo.request else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Item</th><td>{wo.request.working_item.name if wo.request and wo.request.working_item else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Priority</th><td>{wo.request.priority if wo.request else "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Status</th><td><span class="badge bg-info">{wo.status}</span></td></tr>
-    <tr><th style="color:#94a3b8;">Assigned To</th><td>{wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"}</td></tr>
-    <tr><th style="color:#94a3b8;">Instructions</th><td>{wo.work_performed or "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Completion Notes</th><td>{wo.completion_notes or "—"}</td></tr>
-    <tr><th style="color:#94a3b8;">Labor Hours</th><td>{wo.labor_hours}</td></tr>
-    </table>
-    {completion_html}
-    </div>
-    </div>
-    <div class="col-md-4">
-    <div class="card">
-    <h5 style="color:#f59e0b;">Actions</h5>
-    {actions or "<p style='color:#94a3b8;'>No actions available</p>"}
-    </div>
-    </div>
-    </div>
-    '''
+    content = f'''<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b">🔧 Work Order {wo.work_order_no}</h3>
+    <a href="{url_for('workorders_list')}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>
+    <div class="row"><div class="col-md-8"><div class="card"><table class="table">
+    <tr><th style="width:150px;color:#94a3b8">Request</th><td>{wo.request.request_no if wo.request else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Location</th><td>{wo.request.location_name if wo.request else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Item</th><td>{wo.request.working_item.name if wo.request and wo.request.working_item else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Priority</th><td>{wo.request.priority if wo.request else "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-info">{wo.status}</span></td></tr>
+    <tr><th style="color:#94a3b8">Assigned To</th><td>{wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"}</td></tr>
+    <tr><th style="color:#94a3b8">Instructions</th><td>{wo.work_performed or "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Completion Notes</th><td>{wo.completion_notes or "—"}</td></tr>
+    <tr><th style="color:#94a3b8">Labor Hours</th><td>{wo.labor_hours}</td></tr>
+    <tr><th style="color:#94a3b8">Parts Used</th><td><ul>{parts_html or "<li>None</li>"}</ul></td></tr>
+    </table>{completion_html}</div></div>
+    <div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>{actions or "<p style='color:#94a3b8'>No actions</p>"}</div></div>
+    </div>'''
     return page("Work Order Detail", content)
 
 
-@app.route("/workorders/<int:wo_id>/start", methods=["POST"])
+@app.route("/workorders/<int:wo_id>/start", methods=["GET", "POST"])
 @login_required
 def workorder_start(wo_id):
     try:
         wo = WorkOrder.query.get_or_404(wo_id)
         if current_user.id != wo.assigned_to_id:
-            flash("Not authorized", "danger")
-            return redirect(url_for("workorder_detail", wo_id=wo_id))
+            flash("Not authorized", "danger"); return redirect(url_for("workorder_detail", wo_id=wo_id))
         if wo.status != "Assigned":
-            flash("Cannot start", "warning")
-            return redirect(url_for("workorder_detail", wo_id=wo_id))
-
+            flash("Cannot start", "warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
         wo.status = "In Progress"
-        if wo.request:
-            wo.request.status = "In Progress"
+        if wo.request: wo.request.status = "In Progress"
         log_status_change(wo.request_id, "In Progress", notes=f"Started by {current_user.full_name}")
         log_audit("Start", "WorkOrder", wo.id, "Assigned", "In Progress")
         db.session.commit()
         flash("Work started", "success")
     except Exception as e:
-        db.session.rollback()
-        flash(f"Error: {str(e)}", "danger")
+        db.session.rollback(); flash(f"Error: {e}", "danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
 
 
@@ -1717,124 +1302,78 @@ def workorder_start(wo_id):
 def workorder_complete(wo_id):
     wo = WorkOrder.query.get_or_404(wo_id)
     if current_user.id != wo.assigned_to_id:
-        flash("Not authorized", "danger")
-        return redirect(url_for("workorder_detail", wo_id=wo_id))
+        flash("Not authorized", "danger"); return redirect(url_for("workorder_detail", wo_id=wo_id))
     if wo.status != "In Progress":
-        flash("Not in progress", "warning")
-        return redirect(url_for("workorder_detail", wo_id=wo_id))
+        flash("Not in progress", "warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
 
     if request.method == "POST":
         try:
             note = request.form.get("completion_note", "").strip()
             hours = float(request.form.get("labor_hours", 0) or 0)
             if not note:
-                flash("Completion note required", "danger")
-                return redirect(url_for("workorder_complete", wo_id=wo_id))
-
+                flash("Completion note required", "danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
             filename = None
             file = request.files.get("photo")
             if file and file.filename and allowed_file(file.filename):
                 ext = file.filename.rsplit('.', 1)[-1].lower()
                 filename = secure_filename(f"wo_{wo.id}_done_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}")
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-
-            wo.completion_notes = note
-            wo.labor_hours = hours
-            wo.status = "Completed"
-            wo.completed_by_id = current_user.id
-            wo.completed_date = datetime.utcnow()
-            if filename:
-                wo.completion_photo = filename
-
+            wo.completion_notes = note; wo.labor_hours = hours; wo.status = "Completed"
+            wo.completed_by_id = current_user.id; wo.completed_date = datetime.utcnow()
+            if filename: wo.completion_photo = filename
             if wo.request:
                 wo.request.status = "Completed"
                 wo.request.completed_date = datetime.utcnow()
                 wo.request.completion_note = note
-
             log_status_change(wo.request_id, "Completed", notes=f"Completed by {current_user.full_name}")
             log_audit("Complete", "WorkOrder", wo.id, "In Progress", "Completed")
-
             managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-            notify_users([u.id for u in managers], wo.request_id, "🔔 Work Completed",
-                         f"WO {wo.work_order_no} completed. Ready for verification.",
-                         "Completed", link=url_for("workorder_detail", wo_id=wo.id))
-
+            notify_users([u.id for u in managers], wo.request_id, "🔔 Work Completed", f"WO {wo.work_order_no} ready for verification", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
             if wo.request and wo.request.requested_by_id:
-                notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed",
-                             f"Your request {wo.request.request_no} completed.",
-                             "Completed", link=url_for("workorder_detail", wo_id=wo.id))
-
+                notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed", f"Your request {wo.request.request_no} completed", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit()
-            flash("✅ Work completed! Waiting for manager verification.", "success")
+            flash("✅ Work completed! Waiting for verification.", "success")
             return redirect(url_for("workorder_detail", wo_id=wo_id))
-
         except Exception as e:
             db.session.rollback()
-            print("Complete error:", traceback.format_exc())
-            flash(f"Error: {str(e)}", "danger")
+            print("Complete:", traceback.format_exc())
+            flash(f"Error: {e}", "danger")
             return redirect(url_for("workorder_complete", wo_id=wo_id))
 
-    content = f'''
-    <h3 style="color:#f59e0b;">Complete Work Order {wo.work_order_no}</h3>
-    <div class="card">
-    <form method="post" enctype="multipart/form-data">
-        <div class="mb-3"><label class="form-label">Completion Note *</label>
-        <textarea name="completion_note" class="form-control" rows="4" required></textarea></div>
-        <div class="mb-3"><label class="form-label">Photo</label>
-        <input type="file" name="photo" accept="image/*" capture="environment" class="form-control"></div>
-        <div class="mb-3"><label class="form-label">Labor Hours</label>
-        <input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>
-        <button class="btn btn-success btn-lg w-100"><i class="fas fa-check-circle"></i> Complete</button>
-    </form>
-    </div>
-    '''
+    content = f'''<h3 style="color:#f59e0b">Complete Work Order {wo.work_order_no}</h3>
+    <div class="card"><form method="post" enctype="multipart/form-data">
+    <div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>
+    <div class="mb-3"><label class="form-label">Photo</label><input type="file" name="photo" accept="image/*" capture="environment" class="form-control"></div>
+    <div class="mb-3"><label class="form-label">Labor Hours</label><input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>
+    <button class="btn btn-success btn-lg w-100"><i class="fas fa-check-circle"></i> Complete</button>
+    </form></div>'''
     return page("Complete Work Order", content)
 
 
-# ✅ WorkOrder-level Verify (alternative path)
 @app.route("/workorders/<int:wo_id>/verify", methods=["GET", "POST"])
-@login_required
 @role_required("MANAGER", "ADMIN")
 def workorder_verify(wo_id):
     try:
         wo = WorkOrder.query.get_or_404(wo_id)
         if wo.status != "Completed":
-            flash("Only completed work orders can be verified", "warning")
-            return redirect(url_for("workorder_detail", wo_id=wo_id))
-
-        wo.status = "Verified"
-        wo.verified_by_id = current_user.id
-        wo.verified_date = datetime.utcnow()
-
+            flash("Only completed can be verified", "warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
+        wo.status = "Verified"; wo.verified_by_id = current_user.id; wo.verified_date = datetime.utcnow()
         if wo.request:
-            wo.request.status = "Verified"
-            wo.request.manager_id = current_user.id
-            if not wo.request.completed_date:
-                wo.request.completed_date = datetime.utcnow()
-
+            wo.request.status = "Verified"; wo.request.manager_id = current_user.id
+            if not wo.request.completed_date: wo.request.completed_date = datetime.utcnow()
         log_status_change(wo.request_id, "Verified", notes=f"Verified by {current_user.full_name}")
         log_audit("Verify", "WorkOrder", wo.id, "Completed", "Verified")
-
         if wo.request:
-            notify_users([wo.request.requested_by_id], wo.request_id, "✅ Work Verified",
-                         f"Work on {wo.request.request_no} verified.",
-                         "Verified", link=url_for("request_detail", req_id=wo.request_id))
-
+            notify_users([wo.request.requested_by_id], wo.request_id, "✅ Verified", f"{wo.request.request_no} verified", "Verified", link=url_for("request_detail", req_id=wo.request_id))
             if wo.request.department_id:
                 dept_users = User.query.filter_by(department_id=wo.request.department_id).all()
-                notify_users(
-                    [u.id for u in dept_users if u.id != wo.request.requested_by_id],
-                    wo.request_id, "Department Request Verified",
-                    f"Request {wo.request.request_no} verified",
-                    "Verified", link=url_for("request_detail", req_id=wo.request_id),
-                )
-
+                notify_users([u.id for u in dept_users if u.id != wo.request.requested_by_id], wo.request_id, "Dept Verified", f"{wo.request.request_no} verified", "Verified", link=url_for("request_detail", req_id=wo.request_id))
         db.session.commit()
-        flash("✅ Work order verified!", "success")
+        flash("✅ Verified!", "success")
     except Exception as e:
         db.session.rollback()
-        print("WO verify error:", traceback.format_exc())
-        flash(f"Error: {str(e)}", "danger")
+        print("WO verify:", traceback.format_exc())
+        flash(f"Error: {e}", "danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
 
 
@@ -1844,52 +1383,34 @@ def workorder_verify(wo_id):
 @app.route("/notifications")
 @login_required
 def notifications():
-    notifs = Notification.query.filter_by(user_id=current_user.id)\
-        .order_by(Notification.created_at.desc()).limit(100).all()
-
+    notifs = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(100).all()
     rows = ""
     for n in notifs:
         cls = "" if n.is_read else "table-warning"
         link = n.link or "#"
-        rows += f'''
-        <tr class="{cls}">
-        <td><a href="{link}" style="color:#f59e0b;font-weight:600;">{n.title}</a></td>
-        <td>{n.message}</td>
-        <td>{n.notification_type}</td>
+        rows += f'''<tr class="{cls}"><td><a href="{link}" style="color:#f59e0b;font-weight:600">{n.title}</a></td>
+        <td>{n.message}</td><td>{n.notification_type}</td>
         <td>{n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else ''}</td>
-        <td>{'<a class="btn btn-sm btn-primary" href="/notifications/mark-read/' + str(n.id) + '">Read</a>' if not n.is_read else "✓"}</td>
-        </tr>'''
-
-    content = f'''
-    <h3 style="color:#f59e0b;"><i class="fas fa-bell"></i> Notifications</h3>
-    <div class="card">
-    <div class="table-responsive">
-    <table class="table table-hover">
+        <td>{'<a class="btn btn-sm btn-primary" href="/notifications/mark-read/' + str(n.id) + '">Read</a>' if not n.is_read else "✓"}</td></tr>'''
+    content = f'''<h3 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h3>
+    <div class="card"><div class="table-responsive"><table class="table table-hover">
     <thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead>
     <tbody>{rows or '<tr><td colspan="5" class="text-center">No notifications</td></tr>'}</tbody>
-    </table>
-    </div>
-    </div>
-    '''
+    </table></div></div>'''
     return page("Notifications", content)
 
 
-@app.route("/notifications/mark-read/<int:n_id>")
+@app.route("/notifications/mark-read/<int:n_id>", methods=["GET", "POST"])
 @login_required
 def notification_mark_read(n_id):
     try:
         n = Notification.query.get_or_404(n_id)
         if n.user_id == current_user.id:
-            n.is_read = True
-            db.session.commit()
-            if n.link:
-                return redirect(n.link)
-            if n.work_order_id:
-                return redirect(url_for("workorder_detail", wo_id=n.work_order_id))
-            if n.request_id:
-                return redirect(url_for("request_detail", req_id=n.request_id))
-    except Exception as e:
-        flash(f"Error: {str(e)}", "danger")
+            n.is_read = True; db.session.commit()
+            if n.link: return redirect(n.link)
+            if n.work_order_id: return redirect(url_for("workorder_detail", wo_id=n.work_order_id))
+            if n.request_id: return redirect(url_for("request_detail", req_id=n.request_id))
+    except Exception as e: flash(f"Error: {e}", "danger")
     return redirect(url_for("notifications"))
 
 
@@ -1901,7 +1422,7 @@ def notification_mark_read(n_id):
 def rooms_list():
     rooms = Room.query.order_by(Room.room_number).all()
     rows = "".join(f'<tr><td>{r.room_number}</td><td>{r.floor}</td><td>{r.status}</td></tr>' for r in rooms)
-    return page("Rooms", f'<h3 style="color:#f59e0b;">Rooms</h3><div class="card"><table class="table"><thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    return page("Rooms", f'<h3 style="color:#f59e0b">Rooms</h3><div class="card"><table class="table"><thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
 @app.route("/areas")
@@ -1909,7 +1430,7 @@ def rooms_list():
 def areas_list():
     areas = Area.query.order_by(Area.name).all()
     rows = "".join(f'<tr><td>{a.name}</td><td>{a.department}</td></tr>' for a in areas)
-    return page("Areas", f'<h3 style="color:#f59e0b;">Areas</h3><div class="card"><table class="table"><thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    return page("Areas", f'<h3 style="color:#f59e0b">Areas</h3><div class="card"><table class="table"><thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
 @app.route("/inventory")
@@ -1917,7 +1438,7 @@ def areas_list():
 def inventory_list():
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
     rows = "".join(f'<tr><td>{p.part_name}</td><td>{p.quantity}</td><td>{p.unit}</td></tr>' for p in parts)
-    return page("Inventory", f'<h3 style="color:#f59e0b;">Inventory</h3><div class="card"><table class="table"><thead><tr><th>Part</th><th>Qty</th><th>Unit</th></tr></thead><tbody>{rows or "<tr><td colspan=3>No parts</td></tr>"}</tbody></table></div>')
+    return page("Inventory", f'<h3 style="color:#f59e0b">Inventory</h3><div class="card"><table class="table"><thead><tr><th>Part</th><th>Qty</th><th>Unit</th></tr></thead><tbody>{rows or "<tr><td colspan=3>No parts</td></tr>"}</tbody></table></div>')
 
 
 @app.route("/employees")
@@ -1925,31 +1446,23 @@ def inventory_list():
 def employees_list():
     emps = Employee.query.all()
     rows = "".join(f'<tr><td>{e.id}</td><td>{e.name}</td><td>{e.job_title}</td></tr>' for e in emps)
-    return page("Employees", f'<h3 style="color:#f59e0b;">Employees</h3><div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    return page("Employees", f'<h3 style="color:#f59e0b">Employees</h3><div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
 @app.route("/admin/users")
 @role_required("ADMIN")
 def admin_users():
     users = User.query.all()
-    rows = "".join(
-        f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td>'
-        f'<td>{u.department.name if u.department else "—"}</td></tr>'
-        for u in users
-    )
-    return page("Users", f'<h3 style="color:#f59e0b;">Users</h3><div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Department</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    rows = "".join(f'<tr><td>{u.username}</td><td>{u.full_name}</td><td>{u.role}</td><td>{u.department.name if u.department else "—"}</td></tr>' for u in users)
+    return page("Users", f'<h3 style="color:#f59e0b">Users</h3><div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
 @app.route("/admin/audit")
 @role_required("ADMIN")
 def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
-    rows = "".join(
-        f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td>'
-        f'<td>{a.object_type or ""}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M")}</td></tr>'
-        for a in logs
-    )
-    return page("Audit Log", f'<h3 style="color:#f59e0b;">Audit Log</h3><div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>{rows or "<tr><td colspan=4>No logs</td></tr>"}</tbody></table></div>')
+    rows = "".join(f'<tr><td>{a.user.full_name if a.user else "System"}</td><td>{a.action}</td><td>{a.object_type or ""}</td><td>{a.created_at.strftime("%Y-%m-%d %H:%M")}</td></tr>' for a in logs)
+    return page("Audit Log", f'<h3 style="color:#f59e0b">Audit Log</h3><div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>{rows or "<tr><td colspan=4>No logs</td></tr>"}</tbody></table></div>')
 
 
 @app.route("/admin/backup")
@@ -1957,23 +1470,20 @@ def audit_logs():
 def backup_page():
     backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
     rows = "".join(f'<tr><td>{b}</td></tr>' for b in backups)
-    return page("Backups", f'<h3 style="color:#f59e0b;">Backups</h3><form method="post" action="/admin/backup/now" class="mb-3"><button class="btn btn-primary">Backup Now</button></form><div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>{rows or "<tr><td>No backups</td></tr>"}</tbody></table></div>')
+    return page("Backups", f'<h3 style="color:#f59e0b">Backups</h3><form method="post" action="/admin/backup/now" class="mb-3"><button class="btn btn-primary">Backup Now</button></form><div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>{rows or "<tr><td>No backups</td></tr>"}</tbody></table></div>')
 
 
-@app.route("/admin/backup/now", methods=["POST"])
+@app.route("/admin/backup/now", methods=["GET", "POST"])
 @role_required("ADMIN")
 def backup_now():
     try:
         filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         src = sqlite3.connect(os.path.join(BASE_DIR, "hotel_maintenance.db"))
         dst = sqlite3.connect(os.path.join(BACKUP_FOLDER, filename))
-        with dst:
-            src.backup(dst)
-        src.close()
-        dst.close()
+        with dst: src.backup(dst)
+        src.close(); dst.close()
         flash(f"Backup created: {filename}", "success")
-    except Exception as e:
-        flash(f"Error: {str(e)}", "danger")
+    except Exception as e: flash(f"Error: {e}", "danger")
     return redirect(url_for("backup_page"))
 
 
@@ -1985,15 +1495,13 @@ def reports():
     pending = base.filter_by(status="Pending").count()
     completed = base.filter_by(status="Completed").count()
     verified = base.filter_by(status="Verified").count()
-    content = f'''
-    <h3 style="color:#f59e0b;">Reports</h3>
+    content = f'''<h3 style="color:#f59e0b">Reports</h3>
     <div class="row g-3 mb-4">
       <div class="col-3"><div class="metric-card"><div class="metric-value">{total}</div><div class="metric-label">Total</div></div></div>
       <div class="col-3"><div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending</div></div></div>
       <div class="col-3"><div class="metric-card"><div class="metric-value">{completed}</div><div class="metric-label">Completed</div></div></div>
       <div class="col-3"><div class="metric-card"><div class="metric-value">{verified}</div><div class="metric-label">Verified</div></div></div>
-    </div>
-    '''
+    </div>'''
     return page("Reports", content)
 
 
@@ -2013,31 +1521,32 @@ def debug():
     })
 
 
+@app.route("/debug/routes")
+def debug_routes():
+    routes = []
+    for r in app.url_map.iter_rules():
+        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read"]):
+            routes.append({"rule": r.rule, "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]), "endpoint": r.endpoint})
+    return jsonify(routes)
+
+
 # ══════════════════════════════════════════════════════════════
 # PWA / LOGO
 # ══════════════════════════════════════════════════════════════
 @app.route("/manifest.json")
 def manifest():
-    return jsonify({
-        "name": "Rori Hotel Maintenance", "short_name": "RoriMaint",
-        "start_url": "/dashboard", "display": "standalone",
-        "background_color": "#0f172a", "theme_color": "#f59e0b", "icons": [],
-    })
+    return jsonify({"name": "Rori Hotel Maintenance", "short_name": "RoriMaint", "start_url": "/dashboard", "display": "standalone", "background_color": "#0f172a", "theme_color": "#f59e0b", "icons": []})
 
 
 @app.route("/sw.js")
 def service_worker():
-    return Response(
-        "self.addEventListener('install',e=>self.skipWaiting());",
-        mimetype="application/javascript",
-    )
+    return Response("self.addEventListener('install',e=>self.skipWaiting());", mimetype="application/javascript")
 
 
 @app.route("/logo.png")
 def serve_logo():
     logo_path = os.path.join(app.root_path, "file_00000000d93c821094a2e3f7dced7c77.png")
-    if os.path.exists(logo_path):
-        return send_file(logo_path, mimetype="image/png")
+    if os.path.exists(logo_path): return send_file(logo_path, mimetype="image/png")
     return Response("", mimetype="image/png")
 
 
@@ -2045,22 +1554,13 @@ def serve_logo():
 # ERROR HANDLERS
 # ══════════════════════════════════════════════════════════════
 @app.errorhandler(403)
-def forbidden(e):
-    return page("Forbidden", '<div class="alert alert-danger">Access denied.</div>'), 403
-
+def forbidden(e): return page("Forbidden", '<div class="alert alert-danger">Access denied.</div>'), 403
 
 @app.errorhandler(404)
-def not_found(e):
-    return page("Not Found", '<div class="alert alert-warning">Page not found.</div>'), 404
-
+def not_found(e): return page("Not Found", '<div class="alert alert-warning">Page not found.</div>'), 404
 
 @app.errorhandler(405)
-def method_not_allowed(e):
-    return page("Method Not Allowed",
-                '<div class="alert alert-danger"><h4>405 Method Not Allowed</h4>'
-                '<p>The HTTP method used is not allowed for this URL.</p>'
-                '<a class="btn btn-primary" href="/">Go Home</a></div>'), 405
-
+def method_not_allowed(e): return page("Method Not Allowed", '<div class="alert alert-danger"><h4>405</h4><p>Method not allowed.</p><a class="btn btn-primary" href="/">Home</a></div>'), 405
 
 @app.errorhandler(500)
 def internal_error(e):
