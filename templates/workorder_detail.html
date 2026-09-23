@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ workorder.work_order_no }}{% endblock %}
+{% block content %}
+<h2 style="color:#f59e0b;">🔧 {{ workorder.work_order_no }}</h2>
+<div class="card">
+  <table class="table">
+    <tr><th>ጥያቄ</th><td>{{ workorder.request.request_no if workorder.request else "—" }}</td></tr>
+    <tr><th>ቦታ</th><td>{{ workorder.request.location_name if workorder.request else "—" }}</td></tr>
+    <tr><th>ሁኔታ</th><td>{{ workorder.status }}</td></tr>
+    <tr><th>የተመደበ</th><td>{{ workorder.assigned_to.full_name if workorder.assigned_to else "—" }}</td></tr>
+  </table>
+</div>
+{% endblock %}
