@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import re
 import sqlite3
 import uuid
 import traceback
@@ -225,6 +226,8 @@ class WorkOrderPart(db.Model):
     unit_cost = db.Column(db.Float, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    part = db.relationship("InventoryPart", foreign_keys=[part_id])
+
 
 class InventoryPart(db.Model):
     __tablename__ = "inventory_parts"
@@ -237,6 +240,9 @@ class InventoryPart(db.Model):
     unit_cost = db.Column(db.Float, default=0)
     storage_location = db.Column(db.String(120))
     status = db.Column(db.String(20), default="Active")
+    supplier_id = db.Column(db.Integer, db.ForeignKey("suppliers.id"))
+
+    supplier = db.relationship("Supplier", foreign_keys=[supplier_id])
 
     @property
     def is_low(self):
@@ -300,7 +306,14 @@ class Supplier(db.Model):
     company_name = db.Column(db.String(120), unique=True, nullable=False)
     contact_person = db.Column(db.String(120))
     phone = db.Column(db.String(30))
+    email = db.Column(db.String(120))
+    address = db.Column(db.Text)
+    tax_number = db.Column(db.String(60))
+    notes = db.Column(db.Text)
     status = db.Column(db.String(20), default="Active")
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Contractor(db.Model):
@@ -447,18 +460,25 @@ def get_or_404(model, ident):
     return obj
 
 
+def valid_email(value):
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value or ""))
+
+
 def add_column_if_missing(table, column, sql):
     try:
         insp = inspect(db.engine)
         if table not in insp.get_table_names():
-            return
+            return False
         cols = [c["name"] for c in insp.get_columns(table)]
         if column not in cols:
             with db.engine.begin() as conn:
                 conn.execute(text(sql))
             print("✅ Added " + column + " to " + table)
+            return True
+        return False
     except Exception as e:
         print("⚠️ Migration warn (" + table + "." + column + "): " + str(e))
+        return False
 
 
 def ensure_database_schema():
@@ -481,6 +501,16 @@ def ensure_database_schema():
             add_column_if_missing("work_orders", "completed_date", "ALTER TABLE work_orders ADD COLUMN completed_date " + dt_type)
             add_column_if_missing("work_orders", "verified_date", "ALTER TABLE work_orders ADD COLUMN verified_date " + dt_type)
             add_column_if_missing("audit_logs", "ip_address", "ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)")
+            add_column_if_missing("suppliers", "email", "ALTER TABLE suppliers ADD COLUMN email VARCHAR(120)")
+            add_column_if_missing("suppliers", "address", "ALTER TABLE suppliers ADD COLUMN address TEXT")
+            add_column_if_missing("suppliers", "tax_number", "ALTER TABLE suppliers ADD COLUMN tax_number VARCHAR(60)")
+            add_column_if_missing("suppliers", "notes", "ALTER TABLE suppliers ADD COLUMN notes TEXT")
+            if add_column_if_missing("suppliers", "is_active", "ALTER TABLE suppliers ADD COLUMN is_active BOOLEAN " + bool_default):
+                with db.engine.begin() as conn:
+                    conn.execute(text("UPDATE suppliers SET is_active = CASE WHEN status = 'Active' THEN TRUE ELSE FALSE END"))
+            add_column_if_missing("suppliers", "created_at", "ALTER TABLE suppliers ADD COLUMN created_at " + dt_type)
+            add_column_if_missing("suppliers", "updated_at", "ALTER TABLE suppliers ADD COLUMN updated_at " + dt_type)
+            add_column_if_missing("inventory_parts", "supplier_id", "ALTER TABLE inventory_parts ADD COLUMN supplier_id INTEGER")
             print("✅ Schema OK")
         except Exception as e:
             print("⚠️ Schema error: " + str(e))
@@ -529,6 +559,7 @@ def page(title, content):
                     ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
                     ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
                     ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
+                    ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
                     ('<i class="fas fa-users"></i> Employees', url_for('employees_list')),
                 ]
             if role == "ADMIN":
@@ -665,6 +696,10 @@ def seed_data():
     for eid, name, title in [(1, "ተስፋሁን ነከረ", "General Mechanic"), (2, "ቸርነት አሞና", "General Mechanic"), (3, "ስምዖን ዮሐንስ", "General Mechanic"), (4, "አበባየሁ ክፍሌ", "Supervisor"), (5, "አሚር አወል", "Manager")]:
         if not db.session.get(Employee, eid):
             db.session.add(Employee(id=eid, name=name, job_title=title, department="Engineering"))
+
+    if Supplier.query.count() == 0:
+        for sname in ["ABC Maintenance Supply", "Hawassa Engineering Supply", "Rori Hotel Approved Supplier"]:
+            db.session.add(Supplier(company_name=sname, contact_person="", phone="", status="Active", is_active=True))
 
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
 
@@ -1405,10 +1440,41 @@ def workorder_create():
 def workorder_detail(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
-    parts_parts = []
+    can_manage_parts = (current_user.role in ["MANAGER", "ADMIN"] or
+                        (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+    parts_rows_parts = []
+    parts_total = 0
     for p in parts:
-        parts_parts.append('<li>Part #' + str(p.part_id) + ' x ' + str(p.quantity) + '</li>')
-    parts_html = "".join(parts_parts)
+        pname = p.part.part_name if p.part else ("Part #" + str(p.part_id))
+        psupplier = p.part.supplier.company_name if p.part and p.part.supplier else "\u2014"
+        punit = p.part.unit if p.part else "pcs"
+        line_total = (p.quantity or 0) * (p.unit_cost or 0)
+        parts_total += line_total
+        remove_btn = ""
+        if can_manage_parts and wo.status in ["Assigned", "In Progress"]:
+            remove_btn = ('<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(&#39;Remove this part? Stock will be restored.&#39;)">'
+                '<button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i> Remove</button></form>')
+        parts_rows_parts.append(
+            '<tr><td>' + str(pname) + '</td>'
+            '<td>' + str(psupplier) + '</td>'
+            '<td>' + str(p.quantity) + '</td>'
+            '<td>' + str(punit) + '</td>'
+            '<td>' + str(p.unit_cost or 0) + '</td>'
+            '<td>' + str(line_total) + '</td>'
+            '<td>' + remove_btn + '</td></tr>'
+        )
+    parts_rows = "".join(parts_rows_parts)
+    add_part_btn = ""
+    if can_manage_parts and wo.status in ["Assigned", "In Progress"]:
+        add_part_btn = '<a class="btn btn-sm btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '"><i class="fas fa-plus"></i> Add Part</a>'
+    parts_card = ('<div class="card"><div class="d-flex justify-content-between align-items-center mb-2">'
+        '<h5 style="color:#f59e0b" class="mb-0"><i class="fas fa-boxes"></i> Inventory / Parts</h5>'
+        + add_part_btn +
+        '</div><div class="table-responsive"><table class="table">'
+        '<thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Unit Cost</th><th>Total</th><th></th></tr></thead>'
+        '<tbody>' + (parts_rows if parts_rows else '<tr><td colspan="7" class="text-center" style="color:#94a3b8">No parts</td></tr>') + '</tbody>'
+        '</table></div>'
+        '<p class="text-end mb-0"><b>Total: ' + str(parts_total) + '</b></p></div>')
 
     completion_html = ""
     if wo.completion_photo:
@@ -1450,8 +1516,7 @@ def workorder_detail(wo_id):
         '<tr><th style="color:#94a3b8">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Parts Used</th><td><ul>' + (parts_html if parts_html else "<li>None</li>") + '</ul></td></tr>'
-        '</table>' + completion_html + '</div></div>'
+        '</table>' + completion_html + '</div>' + parts_card + '</div>'
         '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>'
         + (actions if actions else "<p style='color:#94a3b8'>No actions</p>") +
         '</div></div></div>')
@@ -1579,6 +1644,354 @@ def workorder_verify(wo_id):
 
 
 # ══════════════════════════════════════════════════════════════
+# SUPPLIERS
+# ══════════════════════════════════════════════════════════════
+def supplier_is_active(s):
+    if s is None:
+        return True
+    if s.is_active is not None:
+        return s.is_active
+    return s.status == "Active"
+
+
+def supplier_form_html(supplier, action_url, is_edit):
+    def v(field):
+        return str(getattr(supplier, field) or "") if supplier else ""
+    active = supplier_is_active(supplier)
+    active_sel = " selected" if active else ""
+    inactive_sel = "" if active else " selected"
+    title = "Edit Supplier" if is_edit else "Add Supplier"
+    return ('<h3 style="color:#f59e0b"><i class="fas fa-truck"></i> ' + title + '</h3>'
+        '<div class="card"><form method="post" action="' + str(action_url) + '"><div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Supplier Name *</label><input type="text" class="form-control" name="company_name" value="' + v("company_name") + '" required></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Contact Person</label><input type="text" class="form-control" name="contact_person" value="' + v("contact_person") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + v("phone") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + v("email") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Address</label><input type="text" class="form-control" name="address" value="' + v("address") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + active_sel + '>Active</option><option value="Inactive"' + inactive_sel + '>Inactive</option></select></div>'
+        '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
+        '<div class="col-12 d-flex gap-2">'
+        '<a href="' + url_for("suppliers_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+        '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Supplier</button>'
+        '</div></div></form></div>')
+
+
+@app.route("/suppliers")
+@role_required("ADMIN", "MANAGER")
+def suppliers_list():
+    suppliers = Supplier.query.order_by(Supplier.company_name).all()
+    rows_parts = []
+    for s in suppliers:
+        active = supplier_is_active(s)
+        badge = '<span class="badge bg-success">Active</span>' if active else '<span class="badge bg-secondary">Inactive</span>'
+        actions = '<a class="btn btn-sm btn-info" href="' + url_for("supplier_edit", supplier_id=s.id) + '"><i class="fas fa-edit"></i> Edit</a> '
+        if active:
+            actions += ('<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(&#39;Deactivate this supplier?&#39;)">'
+                '<button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-ban"></i> Deactivate</button></form>')
+        rows_parts.append(
+            '<tr><td>' + str(s.id) + '</td>'
+            '<td>' + str(s.company_name) + '</td>'
+            '<td>' + str(s.contact_person or "\u2014") + '</td>'
+            '<td>' + str(s.phone or "\u2014") + '</td>'
+            '<td>' + str(s.email or "\u2014") + '</td>'
+            '<td>' + str(s.address or "\u2014") + '</td>'
+            '<td>' + badge + '</td>'
+            '<td>' + actions + '</td></tr>'
+        )
+    rows = "".join(rows_parts)
+    content = ('<h3 style="color:#f59e0b"><i class="fas fa-truck"></i> Suppliers</h3>'
+        '<a class="btn btn-primary mb-3" href="' + url_for("supplier_add") + '"><i class="fas fa-plus-circle"></i> Add Supplier</a>'
+        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>ID</th><th>Supplier Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead>'
+        '<tbody>' + (rows if rows else '<tr><td colspan="8" class="text-center">No suppliers yet</td></tr>') + '</tbody>'
+        '</table></div></div>')
+    return page("Suppliers", content)
+
+
+@app.route("/suppliers/add", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def supplier_add():
+    if request.method == "POST":
+        name = request.form.get("company_name", "").strip()
+        email = request.form.get("email", "").strip()
+        if not name:
+            flash("Supplier name is required", "danger")
+            return page("Add Supplier", supplier_form_html(None, url_for("supplier_add"), False))
+        if email and not valid_email(email):
+            flash("Invalid email address", "danger")
+            return page("Add Supplier", supplier_form_html(None, url_for("supplier_add"), False))
+        if Supplier.query.filter_by(company_name=name).first():
+            flash("A supplier with this name already exists", "warning")
+            return page("Add Supplier", supplier_form_html(None, url_for("supplier_add"), False))
+        try:
+            status = request.form.get("status", "Active")
+            s = Supplier(
+                company_name=name,
+                contact_person=request.form.get("contact_person", "").strip(),
+                phone=request.form.get("phone", "").strip(),
+                email=email,
+                address=request.form.get("address", "").strip(),
+                tax_number=request.form.get("tax_number", "").strip(),
+                notes=request.form.get("notes", "").strip(),
+                status=status,
+                is_active=(status == "Active"),
+            )
+            db.session.add(s)
+            db.session.flush()
+            log_audit("Supplier Created", "Supplier", s.id, new_value=name)
+            db.session.commit()
+            flash("\u2705 Supplier saved", "success")
+            return redirect(url_for("suppliers_list"))
+        except Exception as e:
+            db.session.rollback()
+            flash("Error: " + str(e), "danger")
+    return page("Add Supplier", supplier_form_html(None, url_for("supplier_add"), False))
+
+
+@app.route("/suppliers/<int:supplier_id>/edit", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def supplier_edit(supplier_id):
+    s = get_or_404(Supplier, supplier_id)
+    if request.method == "POST":
+        name = request.form.get("company_name", "").strip()
+        email = request.form.get("email", "").strip()
+        if not name:
+            flash("Supplier name is required", "danger")
+            return page("Edit Supplier", supplier_form_html(s, url_for("supplier_edit", supplier_id=s.id), True))
+        if email and not valid_email(email):
+            flash("Invalid email address", "danger")
+            return page("Edit Supplier", supplier_form_html(s, url_for("supplier_edit", supplier_id=s.id), True))
+        dup = Supplier.query.filter(Supplier.company_name == name, Supplier.id != s.id).first()
+        if dup:
+            flash("Another supplier with this name exists", "warning")
+            return page("Edit Supplier", supplier_form_html(s, url_for("supplier_edit", supplier_id=s.id), True))
+        try:
+            status = request.form.get("status", "Active")
+            s.company_name = name
+            s.contact_person = request.form.get("contact_person", "").strip()
+            s.phone = request.form.get("phone", "").strip()
+            s.email = email
+            s.address = request.form.get("address", "").strip()
+            s.tax_number = request.form.get("tax_number", "").strip()
+            s.notes = request.form.get("notes", "").strip()
+            s.status = status
+            s.is_active = (status == "Active")
+            log_audit("Supplier Updated", "Supplier", s.id, new_value=name)
+            db.session.commit()
+            flash("\u2705 Supplier updated", "success")
+            return redirect(url_for("suppliers_list"))
+        except Exception as e:
+            db.session.rollback()
+            flash("Error: " + str(e), "danger")
+    return page("Edit Supplier", supplier_form_html(s, url_for("supplier_edit", supplier_id=s.id), True))
+
+
+@app.route("/suppliers/<int:supplier_id>/deactivate", methods=["POST"])
+@role_required("ADMIN", "MANAGER")
+def supplier_deactivate(supplier_id):
+    s = get_or_404(Supplier, supplier_id)
+    try:
+        s.is_active = False
+        s.status = "Inactive"
+        log_audit("Supplier Deactivated", "Supplier", s.id, old_value="active", new_value="inactive")
+        db.session.commit()
+        flash("Supplier deactivated (existing records preserved)", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("Error: " + str(e), "danger")
+    return redirect(url_for("suppliers_list"))
+
+
+# ══════════════════════════════════════════════════════════════
+# INVENTORY PARTS (Add / Edit)
+# ══════════════════════════════════════════════════════════════
+def part_form_html(part, action_url):
+    def v(field, d=""):
+        if part:
+            val = getattr(part, field)
+            return str(val if val is not None else d)
+        return d
+    suppliers = Supplier.query.filter_by(is_active=True).order_by(Supplier.company_name).all()
+    sup_opts = '<option value="">-- Select Supplier --</option>'
+    for s in suppliers:
+        sel = ' selected' if part and part.supplier_id == s.id else ''
+        sup_opts += '<option value="' + str(s.id) + '"' + sel + '>' + str(s.company_name) + '</option>'
+    title = "Edit Part" if part else "Add Part"
+    return ('<h3 style="color:#f59e0b"><i class="fas fa-box"></i> ' + title + '</h3>'
+        '<div class="card"><form method="post" action="' + str(action_url) + '"><div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Part Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Category</label><input type="text" class="form-control" name="category" value="' + v("category") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" value="' + v("quantity", "0") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Minimum Stock</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="' + v("minimum_stock", "5") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Unit</label><input type="text" class="form-control" name="unit" value="' + v("unit", "pcs") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost" value="' + v("unit_cost", "0") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Storage Location</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + sup_opts + '</select></div>'
+        '<div class="col-12 d-flex gap-2">'
+        '<a href="' + url_for("inventory_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+        '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Part</button>'
+        '</div></div></form></div>')
+
+
+@app.route("/inventory/add", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def inventory_add():
+    if request.method == "POST":
+        name = request.form.get("part_name", "").strip()
+        if not name:
+            flash("Part name is required", "danger")
+            return redirect(url_for("inventory_add"))
+        if InventoryPart.query.filter_by(part_name=name).first():
+            flash("A part with this name already exists", "warning")
+            return redirect(url_for("inventory_add"))
+        try:
+            p = InventoryPart(
+                part_name=name,
+                category=request.form.get("category", "").strip(),
+                quantity=request.form.get("quantity", type=float) or 0,
+                minimum_stock=request.form.get("minimum_stock", type=float) or 5,
+                unit=request.form.get("unit", "pcs").strip() or "pcs",
+                unit_cost=request.form.get("unit_cost", type=float) or 0,
+                storage_location=request.form.get("storage_location", "").strip(),
+                status="Active",
+                supplier_id=request.form.get("supplier_id", type=int),
+            )
+            db.session.add(p)
+            db.session.flush()
+            log_audit("Inventory Part Created", "InventoryPart", p.id, new_value=name)
+            db.session.commit()
+            flash("\u2705 Part saved", "success")
+            return redirect(url_for("inventory_list"))
+        except Exception as e:
+            db.session.rollback()
+            flash("Error: " + str(e), "danger")
+            return redirect(url_for("inventory_add"))
+    return page("Add Part", part_form_html(None, url_for("inventory_add")))
+
+
+@app.route("/inventory/<int:part_id>/edit", methods=["GET", "POST"])
+@role_required("ADMIN", "MANAGER")
+def inventory_edit(part_id):
+    part = get_or_404(InventoryPart, part_id)
+    if request.method == "POST":
+        name = request.form.get("part_name", "").strip()
+        if not name:
+            flash("Part name is required", "danger")
+            return redirect(url_for("inventory_edit", part_id=part.id))
+        dup = InventoryPart.query.filter(InventoryPart.part_name == name, InventoryPart.id != part.id).first()
+        if dup:
+            flash("Another part with this name exists", "warning")
+            return redirect(url_for("inventory_edit", part_id=part.id))
+        try:
+            part.part_name = name
+            part.category = request.form.get("category", "").strip()
+            part.quantity = request.form.get("quantity", type=float) or 0
+            part.minimum_stock = request.form.get("minimum_stock", type=float) or 5
+            part.unit = request.form.get("unit", "pcs").strip() or "pcs"
+            part.unit_cost = request.form.get("unit_cost", type=float) or 0
+            part.storage_location = request.form.get("storage_location", "").strip()
+            part.supplier_id = request.form.get("supplier_id", type=int)
+            log_audit("Inventory Part Updated", "InventoryPart", part.id, new_value=name)
+            db.session.commit()
+            flash("\u2705 Part updated", "success")
+            return redirect(url_for("inventory_list"))
+        except Exception as e:
+            db.session.rollback()
+            flash("Error: " + str(e), "danger")
+    return page("Edit Part", part_form_html(part, url_for("inventory_edit", part_id=part.id)))
+
+
+# ══════════════════════════════════════════════════════════════
+# WORK ORDER PARTS (stock deduction / restore)
+# ══════════════════════════════════════════════════════════════
+def can_manage_wo_parts(wo):
+    return (current_user.role in ["MANAGER", "ADMIN"] or
+            (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+
+
+@app.route("/workorders/<int:wo_id>/parts/add", methods=["GET", "POST"])
+@login_required
+def workorder_part_add(wo_id):
+    wo = get_or_404(WorkOrder, wo_id)
+    if not can_manage_wo_parts(wo):
+        abort(403)
+    if wo.status not in ["Assigned", "In Progress"]:
+        flash("Parts can only be added while the work order is Assigned or In Progress", "warning")
+        return redirect(url_for("workorder_detail", wo_id=wo.id))
+    if request.method == "POST":
+        try:
+            part_id = request.form.get("part_id", type=int)
+            quantity = request.form.get("quantity", type=float)
+            unit_cost = request.form.get("unit_cost", type=float)
+            part = get_one(InventoryPart, part_id)
+            if not part:
+                flash("Please select a valid part", "danger")
+                return redirect(url_for("workorder_part_add", wo_id=wo.id))
+            if not quantity or quantity <= 0:
+                flash("Quantity must be greater than 0", "danger")
+                return redirect(url_for("workorder_part_add", wo_id=wo.id))
+            if quantity > part.quantity:
+                flash("Only " + str(part.quantity) + " " + str(part.unit or "pcs") + " of '" + str(part.part_name) + "' available in stock", "danger")
+                return redirect(url_for("workorder_part_add", wo_id=wo.id))
+            if unit_cost is None or unit_cost < 0:
+                unit_cost = part.unit_cost or 0
+            wop = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=quantity, unit_cost=unit_cost)
+            part.quantity = (part.quantity or 0) - quantity
+            db.session.add(wop)
+            log_audit("Part Added to Work Order", "WorkOrder", wo.id, new_value=str(part.part_name) + " x " + str(quantity))
+            db.session.commit()
+            flash("\u2705 Part added & stock updated", "success")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
+        except Exception as e:
+            db.session.rollback()
+            print("Part add: " + traceback.format_exc())
+            flash("Error: " + str(e), "danger")
+            return redirect(url_for("workorder_part_add", wo_id=wo.id))
+    parts = InventoryPart.query.filter(InventoryPart.status == "Active", InventoryPart.quantity > 0).order_by(InventoryPart.part_name).all()
+    part_opts = "".join('<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ' ' + str(p.unit or "pcs") + ')</option>' for p in parts)
+    content = ('<h3 style="color:#f59e0b"><i class="fas fa-box"></i> Add Part \u2014 WO ' + str(wo.work_order_no) + '</h3>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Part *</label>'
+        '<select class="form-select" name="part_id" required><option value="">-- Select Inventory Part --</option>' + part_opts + '</select></div>'
+        '<div class="col-md-3 mb-3"><label class="form-label">Quantity *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
+        '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost" placeholder="auto from inventory"></div>'
+        '<div class="col-12 d-flex gap-2">'
+        '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+        '<button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Part</button>'
+        '</div></div></form></div>')
+    return page("Add Part", content)
+
+
+@app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
+@login_required
+def workorder_part_remove(wo_id, part_id):
+    wo = get_or_404(WorkOrder, wo_id)
+    if not can_manage_wo_parts(wo):
+        abort(403)
+    if wo.status not in ["Assigned", "In Progress"]:
+        flash("Parts cannot be removed at this stage", "warning")
+        return redirect(url_for("workorder_detail", wo_id=wo.id))
+    try:
+        wop = WorkOrderPart.query.filter_by(work_order_id=wo.id, id=part_id).first()
+        if not wop:
+            flash("Part not found on this work order", "warning")
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
+        part = get_one(InventoryPart, wop.part_id)
+        detail = (part.part_name if part else str(wop.part_id)) + " x " + str(wop.quantity)
+        if part:
+            part.quantity = (part.quantity or 0) + (wop.quantity or 0)
+        db.session.delete(wop)
+        log_audit("Part Removed from Work Order", "WorkOrder", wo.id, old_value=detail)
+        db.session.commit()
+        flash("Part removed & stock restored", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("Error: " + str(e), "danger")
+    return redirect(url_for("workorder_detail", wo_id=wo.id))
+
+
+# ══════════════════════════════════════════════════════════════
 # NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════
 @app.route("/notifications")
@@ -1657,10 +2070,33 @@ def areas_list():
 @role_required("ADMIN", "MANAGER")
 def inventory_list():
     parts = InventoryPart.query.order_by(InventoryPart.part_name).all()
-    rows = "".join('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit) + '</td></tr>' for p in parts)
-    content = ('<h3 style="color:#f59e0b">Inventory</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Part</th><th>Qty</th><th>Unit</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="3">No parts</td></tr>') + '</tbody></table></div>')
+    rows_parts = []
+    for p in parts:
+        if p.quantity <= 0:
+            stock_badge = '<span class="badge bg-danger">Out of Stock</span>'
+        elif p.is_low:
+            stock_badge = '<span class="badge bg-warning text-dark">Low Stock</span>'
+        else:
+            stock_badge = '<span class="badge bg-success">In Stock</span>'
+        sup_name = p.supplier.company_name if p.supplier else "\u2014"
+        edit_url = url_for("inventory_edit", part_id=p.id)
+        rows_parts.append(
+            '<tr><td>' + str(p.part_name) + '</td>'
+            '<td>' + str(p.category or "\u2014") + '</td>'
+            '<td>' + str(sup_name) + '</td>'
+            '<td>' + str(p.quantity) + '</td>'
+            '<td>' + str(p.unit or "pcs") + '</td>'
+            '<td>' + str(p.unit_cost or 0) + '</td>'
+            '<td>' + stock_badge + '</td>'
+            '<td><a class="btn btn-sm btn-info" href="' + edit_url + '"><i class="fas fa-edit"></i> Edit</a></td></tr>'
+        )
+    rows = "".join(rows_parts)
+    content = ('<h3 style="color:#f59e0b"><i class="fas fa-boxes"></i> Inventory</h3>'
+        '<a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a>'
+        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Quantity</th><th>Unit</th><th>Unit Cost</th><th>Stock Status</th><th>Actions</th></tr></thead>'
+        '<tbody>' + (rows if rows else '<tr><td colspan="8" class="text-center">No parts</td></tr>') + '</tbody>'
+        '</table></div></div>')
     return page("Inventory", content)
 
 
