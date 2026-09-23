@@ -334,7 +334,7 @@ class ChecklistTemplate(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -436,6 +436,17 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def get_one(model, ident):
+    return db.session.get(model, ident)
+
+
+def get_or_404(model, ident):
+    obj = db.session.get(model, ident)
+    if obj is None:
+        abort(404)
+    return obj
+
+
 def add_column_if_missing(table, column, sql):
     try:
         insp = inspect(db.engine)
@@ -454,18 +465,21 @@ def ensure_database_schema():
     with app.app_context():
         try:
             db.create_all()
+            pg = db.engine.dialect.name == "postgresql"
+            dt_type = "TIMESTAMP" if pg else "DATETIME"
+            bool_default = "DEFAULT FALSE" if pg else "DEFAULT 0"
             add_column_if_missing("maintenance_requests", "department_id", "ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER")
             add_column_if_missing("maintenance_requests", "manager_id", "ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER")
             add_column_if_missing("maintenance_requests", "completion_note", "ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT")
-            add_column_if_missing("maintenance_requests", "completed_date", "ALTER TABLE maintenance_requests ADD COLUMN completed_date DATETIME")
-            add_column_if_missing("maintenance_requests", "is_deleted", "ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
-            add_column_if_missing("maintenance_requests", "deleted_at", "ALTER TABLE maintenance_requests ADD COLUMN deleted_at DATETIME")
+            add_column_if_missing("maintenance_requests", "completed_date", "ALTER TABLE maintenance_requests ADD COLUMN completed_date " + dt_type)
+            add_column_if_missing("maintenance_requests", "is_deleted", "ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN " + bool_default)
+            add_column_if_missing("maintenance_requests", "deleted_at", "ALTER TABLE maintenance_requests ADD COLUMN deleted_at " + dt_type)
             add_column_if_missing("maintenance_requests", "deleted_by_id", "ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER")
             add_column_if_missing("maintenance_requests", "deletion_reason", "ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT")
             add_column_if_missing("users", "department_id", "ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications", "work_order_id", "ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
-            add_column_if_missing("work_orders", "completed_date", "ALTER TABLE work_orders ADD COLUMN completed_date DATETIME")
-            add_column_if_missing("work_orders", "verified_date", "ALTER TABLE work_orders ADD COLUMN verified_date DATETIME")
+            add_column_if_missing("work_orders", "completed_date", "ALTER TABLE work_orders ADD COLUMN completed_date " + dt_type)
+            add_column_if_missing("work_orders", "verified_date", "ALTER TABLE work_orders ADD COLUMN verified_date " + dt_type)
             add_column_if_missing("audit_logs", "ip_address", "ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)")
             print("✅ Schema OK")
         except Exception as e:
@@ -649,7 +663,7 @@ def seed_data():
             db.session.add(WorkingItem(name=i))
 
     for eid, name, title in [(1, "ተስፋሁን ነከረ", "General Mechanic"), (2, "ቸርነት አሞና", "General Mechanic"), (3, "ስምዖን ዮሐንስ", "General Mechanic"), (4, "አበባየሁ ክፍሌ", "Supervisor"), (5, "አሚር አወል", "Manager")]:
-        if not Employee.query.get(eid):
+        if not db.session.get(Employee, eid):
             db.session.add(Employee(id=eid, name=name, job_title=title, department="Engineering"))
 
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
@@ -959,14 +973,18 @@ def request_create():
             dept_id = current_user.department_id
 
         if loc == "Room":
-            room = Room.query.get(room_id)
-            if not room or not (201 <= int(room.room_number) <= 300):
+            room = get_one(Room, room_id)
+            try:
+                room_num = int(room.room_number) if room else 0
+            except (TypeError, ValueError):
+                room_num = 0
+            if not room or not (201 <= room_num <= 300):
                 flash("ልክ ያልሆነ ክፍል", "danger")
                 return redirect(url_for("request_create"))
             floor = room.floor
             area_id = None
         else:
-            area = Area.query.get(area_id)
+            area = get_one(Area, area_id)
             if not area:
                 flash("ልክ ያልሆነ ቦታ", "danger")
                 return redirect(url_for("request_create"))
@@ -1018,19 +1036,22 @@ def request_create():
 @app.route("/requests/<int:req_id>")
 @login_required
 def request_detail(req_id):
-    req = MaintenanceRequest.query.get_or_404(req_id)
+    req = get_or_404(MaintenanceRequest, req_id)
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
 
     timeline_parts = []
     for h in history:
         ts = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
+        user_html = ""
+        if h.user:
+            user_html = ' — <small style="color:#64748b">by ' + str(h.user.full_name) + '</small>'
         notes_part = ""
         if h.notes:
             notes_part = "<br><small style='color:#cbd5e1'>" + str(h.notes) + "</small>"
         timeline_parts.append(
             '<div class="mb-2"><b style="color:#f59e0b">' + str(h.status) + '</b> — '
             '<small style="color:#94a3b8">' + ts + '</small>'
-            + notes_part +
+            + user_html + notes_part +
             '</div>'
         )
     timeline = "".join(timeline_parts)
@@ -1130,11 +1151,11 @@ def request_detail(req_id):
     return page("Request Detail", content)
 
 
-@app.route("/requests/<int:req_id>/approve", methods=["GET", "POST"])
+@app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_approve(req_id):
     try:
-        req = MaintenanceRequest.query.get_or_404(req_id)
+        req = get_or_404(MaintenanceRequest, req_id)
         if req.status != "Pending":
             flash("Not pending", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -1160,11 +1181,11 @@ def request_approve(req_id):
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/verify", methods=["GET", "POST"])
+@app.route("/requests/<int:req_id>/verify", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_verify(req_id):
     try:
-        req = MaintenanceRequest.query.get_or_404(req_id)
+        req = get_or_404(MaintenanceRequest, req_id)
         if req.status != "Completed":
             flash("Only completed can be verified (current: " + str(req.status) + ")", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -1192,11 +1213,11 @@ def request_verify(req_id):
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/close", methods=["GET", "POST"])
+@app.route("/requests/<int:req_id>/close", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_close(req_id):
     try:
-        req = MaintenanceRequest.query.get_or_404(req_id)
+        req = get_or_404(MaintenanceRequest, req_id)
         if req.status != "Verified":
             flash("Only verified can be closed", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -1212,11 +1233,11 @@ def request_close(req_id):
     return redirect(url_for("request_detail", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/delete", methods=["GET", "POST"])
+@app.route("/requests/<int:req_id>/delete", methods=["POST"])
 @role_required("ADMIN")
 def request_delete(req_id):
     try:
-        req = MaintenanceRequest.query.get_or_404(req_id)
+        req = get_or_404(MaintenanceRequest, req_id)
         if req.is_deleted:
             flash("Already deleted", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -1258,11 +1279,11 @@ def deleted_requests():
     return page("Archived Requests", content)
 
 
-@app.route("/admin/restore/<int:req_id>", methods=["GET", "POST"])
+@app.route("/admin/restore/<int:req_id>", methods=["POST"])
 @role_required("ADMIN")
 def request_restore(req_id):
     try:
-        req = MaintenanceRequest.query.get_or_404(req_id)
+        req = get_or_404(MaintenanceRequest, req_id)
         req.is_deleted = False
         req.deleted_at = None
         req.deleted_by_id = None
@@ -1322,7 +1343,7 @@ def workorders_list():
 @role_required("MANAGER", "ADMIN")
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
-    req = MaintenanceRequest.query.get(req_id) if req_id else None
+    req = get_one(MaintenanceRequest, req_id) if req_id else None
     users = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     user_opts = "".join('<option value="' + str(u.id) + '">' + str(u.full_name) + ' (' + str(u.role) + ')</option>' for u in users)
 
@@ -1334,11 +1355,11 @@ def workorder_create():
             if not assigned_to_id:
                 flash("Select staff", "danger")
                 return redirect(url_for("workorder_create", request_id=request_id))
-            req = MaintenanceRequest.query.get_or_404(request_id)
+            req = get_or_404(MaintenanceRequest, request_id)
             if req.status not in ["Approved", "Assigned"]:
                 flash("Request must be approved", "danger")
                 return redirect(url_for("request_detail", req_id=request_id))
-            assigned_user = User.query.get(assigned_to_id)
+            assigned_user = get_one(User, assigned_to_id)
             existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
             if existing:
                 wo = existing
@@ -1382,7 +1403,7 @@ def workorder_create():
 @app.route("/workorders/<int:wo_id>")
 @login_required
 def workorder_detail(wo_id):
-    wo = WorkOrder.query.get_or_404(wo_id)
+    wo = get_or_404(WorkOrder, wo_id)
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
     parts_parts = []
     for p in parts:
@@ -1437,11 +1458,11 @@ def workorder_detail(wo_id):
     return page("Work Order Detail", content)
 
 
-@app.route("/workorders/<int:wo_id>/start", methods=["GET", "POST"])
+@app.route("/workorders/<int:wo_id>/start", methods=["POST"])
 @login_required
 def workorder_start(wo_id):
     try:
-        wo = WorkOrder.query.get_or_404(wo_id)
+        wo = get_or_404(WorkOrder, wo_id)
         if current_user.id != wo.assigned_to_id:
             flash("Not authorized", "danger")
             return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -1464,7 +1485,7 @@ def workorder_start(wo_id):
 @app.route("/workorders/<int:wo_id>/complete", methods=["GET", "POST"])
 @role_required(*STAFF_ROLES)
 def workorder_complete(wo_id):
-    wo = WorkOrder.query.get_or_404(wo_id)
+    wo = get_or_404(WorkOrder, wo_id)
     if current_user.id != wo.assigned_to_id:
         flash("Not authorized", "danger")
         return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -1525,11 +1546,11 @@ def workorder_complete(wo_id):
     return page("Complete Work Order", content)
 
 
-@app.route("/workorders/<int:wo_id>/verify", methods=["GET", "POST"])
+@app.route("/workorders/<int:wo_id>/verify", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def workorder_verify(wo_id):
     try:
-        wo = WorkOrder.query.get_or_404(wo_id)
+        wo = get_or_404(WorkOrder, wo_id)
         if wo.status != "Completed":
             flash("Only completed can be verified", "warning")
             return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -1592,7 +1613,7 @@ def notifications():
 @login_required
 def notification_mark_read(n_id):
     try:
-        n = Notification.query.get_or_404(n_id)
+        n = get_or_404(Notification, n_id)
         if n.user_id == current_user.id:
             n.is_read = True
             db.session.commit()
@@ -1808,7 +1829,6 @@ def internal_error(e):
 # INIT
 # ══════════════════════════════════════════════════════════════
 with app.app_context():
-    db.create_all()
     ensure_database_schema()
     seed_data()
     print("🚀 App initialized")
