@@ -6,6 +6,7 @@ import uuid
 import base64
 from datetime import datetime, timedelta
 from functools import wraps
+import traceback
 
 from flask import (
     Flask,
@@ -33,11 +34,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 import qrcode
+import qrcode.image.svg
 
 BASE_DIR = os.path.abspath(os.path.dirname(file))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
+PROFILE_PIC_FOLDER = os.path.join(BASE_DIR, "static", "profile_pics")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(name)
@@ -47,13 +51,14 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-ROLES = ["ADMIN", "MANAGER", "MAINTENANCE STAFF", "EMPLOYEE"]
+ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE", "DEPARTMENT"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
 REQUEST_STATUSES = [
     "Pending",
@@ -63,7 +68,7 @@ REQUEST_STATUSES = [
     "Completed",
     "Verified",
     "Closed",
-    "Cancelled",
+    "Rejected",
     "Overdue",
 ]
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
@@ -82,6 +87,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), default="EMPLOYEE", nullable=False)
     phone = db.Column(db.String(30))
     email = db.Column(db.String(120))
+    profile_pic = db.Column(db.String(255), nullable=True)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -90,6 +96,14 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class Department(db.Model):
+    tablename = "departments"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Floor(db.Model):
@@ -106,20 +120,3 @@ class Room(db.Model):
     status = db.Column(db.String(30), default="Available")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class Area(db.Model):
-    tablename = "areas"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), unique=True, nullable=False)
-    department = db.Column(db.String(120))
-    description = db.Column(db.Text)
-    status = db.Column(db.String(20), default="Active")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class Category(db.Model):
-    tablename = "categories"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(80), unique=True, nullable=False)
