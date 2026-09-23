@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Request {{ request.request_no }}{% endblock %}
+{% block content %}
+<h2 style="color:#f59e0b;">📄 {{ request.request_no }}</h2>
+
+<div class="card">
+  <table class="table">
+    <tr><th style="color:#94a3b8;width:150px;">ሁኔታ</th><td>{{ request.status }}</td></tr>
+    <tr><th style="color:#94a3b8;">ቦታ</th><td>{{ request.location_name }}</td></tr>
+    <tr><th style="color:#94a3b8;">እቃ</th><td>{{ request.working_item.name if request.working_item else "—" }}</td></tr>
+    <tr><th style="color:#94a3b8;">ምድብ</th><td>{{ request.category.name if request.category else "—" }}</td></tr>
+    <tr><th style="color:#94a3b8;">ዲፓርትመንት</th><td>{{ request.department.name if request.department else "—" }}</td></tr>
+    <tr><th style="color:#94a3b8;">ቅድሚያ</th><td>{{ request.priority }}</td></tr>
+    <tr><th style="color:#94a3b8;">መግለጫ</th><td>{{ request.description }}</td></tr>
+    <tr><th style="color:#94a3b8;">የጠየቀው</th><td>{{ request.requested_by.full_name if request.requested_by else "—" }}</td></tr>
+  </table>
+</div>
+
+{% if current_user.role in ["ADMIN", "MANAGER"] and request.status == "Pending" %}
+<div class="card">
+  <a class="btn btn-success w-100" href="{{ url_for('request_approve', req_id=request.id) }}">
+    ✅ አጽድቅ
+  </a>
+</div>
+{% endif %}
+
+<div class="card">
+  <h5 style="color:#f59e0b;">📜 ታሪክ</h5>
+  <ul>
+    {% for h in history %}
+      <li>{{ h.status }} — {{ h.timestamp.strftime('%Y-%m-%d %H:%M') if h.timestamp else '' }} {% if h.notes %}({{ h.notes }}){% endif %}</li>
+    {% else %}
+      <li>ታሪክ የለም</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
