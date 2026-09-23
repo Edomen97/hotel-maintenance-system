@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} | Rori Hotel</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="rori-dashboard">
+
+<div class="rori-backdrop" id="sidebar-backdrop"></div>
+
+<div class="rori-layout">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <aside class="rori-sidebar" id="rori-sidebar">
+    <div class="rori-sidebar-brand">
+      <div class="logo"><i class="fas fa-hotel"></i></div>
+      <div>
+        <h2>Rori Hotel</h2>
+        <p>Maintenance System</p>
+      </div>
+    </div>
+    <nav class="rori-nav">
+      {% for item in nav_items %}
+        <a href="{{ item.url }}" class="{{ 'active' if item.active else '' }}">
+          <i class="fas {{ item.icon }}"></i>
+          <span>{{ item.label }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main class="rori-main">
+
+    <!-- Header -->
+    <div class="rori-header">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <button class="rori-mobile-toggle" id="sidebar-toggle"><i class="fas fa-bars"></i></button>
+        <div>
+          <h1>{{ title }}</h1>
+          <div class="subtitle">
+            Welcome back, {{ current_user.full_name or current_user.username }} —
+            {{ current_user.role }}
+          </div>
+        </div>
+      </div>
+      <div class="rori-user">
+        <div class="avatar">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
+        <div class="info">
+          <strong>{{ current_user.full_name or current_user.username }}</strong>
+          <small>{{ current_user.role }}</small>
+        </div>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert" style="background:#16122e;border:1px solid rgba(168,85,247,0.3);color:#fff">
+            {{ msg }}
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- ────── FILTER BAR ────── -->
+    <section class="rori-filters">
+      <form method="get" action="{{ url_for('dashboard') }}" class="rori-filters-form">
+        <div>
+          <label>Date From</label>
+          <input type="date" name="date_from" value="{{ filters.get('date_from','') }}">
+        </div>
+        <div>
+          <label>Date To</label>
+          <input type="date" name="date_to" value="{{ filters.get('date_to','') }}">
+        </div>
+        <div>
+          <label>Department</label>
+          <select name="department">
+            <option value="">All</option>
+            {% for d in all_departments %}
+              <option value="{{ d.id }}" {{ 'selected' if filters.get('department')|string == d.id|string else '' }}>{{ d.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Category</label>
+          <select name="category">
+            <option value="">All</option>
+            {% for c in all_categories %}
+              <option value="{{ c.id }}" {{ 'selected' if filters.get('category')|string == c.id|string else '' }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select name="status">
+            <option value="">All</option>
+            {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected','Overdue'] %}
+              <option value="{{ s }}" {{ 'selected' if filters.get('status') == s else '' }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Floor</label>
+          <select name="floor">
+            <option value="">All</option>
+            {% for f in all_floors %}
+              <option value="{{ f }}" {{ 'selected' if filters.get('floor')|string == f|string else '' }}>Floor {{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Room</label>
+          <select name="room_id">
+            <option value="">All</option>
+            {% for r in all_rooms %}
+              <option value="{{ r.id }}" {{ 'selected' if filters.get('room_id')|string == r.id|string else '' }}>Room {{ r.room_number }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Area</label>
+          <select name="area_id">
+            <option value="">All</option>
+            {% for a in all_areas %}
+              <option value="{{ a.id }}" {{ 'selected' if filters.get('area_id')|string == a.id|string else '' }}>{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="rori-filters-buttons">
+          <button type="submit" class="rori-btn rori-btn-primary">
+            <i class="fas fa-filter"></i> Apply
+          </button>
+          <a href="{{ url_for('dashboard') }}" class="rori-btn rori-btn-ghost">
+            <i class="fas fa-rotate-left"></i> Reset
+          </a>
+        </div>
+      </form>
+    </section>
+
+    <!-- ────── KPI CARDS ────── -->
+    <section class="rori-kpis">
+      <div class="rori-kpi purple">
+        <div class="rori-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
+        <div class="rori-kpi-label">Total Requests</div>
+        <div class="rori-kpi-value">{{ kpis.total }}</div>
+        <div class="rori-kpi-sub {{ 'up' if kpis.total_delta and kpis.total_delta > 0 else 'down' if kpis.total_delta and kpis.total_delta < 0 else 'neutral' }}">
+          {% if kpis.has_prev and kpis.total_delta is not none %}
+            <i class="fas {{ 'fa-arrow-trend-up' if kpis.total_delta > 0 else 'fa-arrow-trend-down' if kpis.total_delta < 0 else 'fa-minus' }}"></i>
+            {{ kpis.total_delta }}% vs previous period
+          {% else %}
+            <i class="fas fa-minus"></i> No comparison data
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="rori-kpi blue">
+        <div class="rori-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
+        <div class="rori-kpi-label">Pending Requests</div>
+        <div class="rori-kpi-value">{{ kpis.pending }}</div>
+        <div class="rori-kpi-sub neutral">
+          {% if kpis.pending > 0 %}
+            <i class="fas fa-circle-exclamation"></i> Requires action
+          {% else %}
+            <i class="fas fa-check"></i> All clear
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="rori-kpi green">
+        <div class="rori-kpi-icon"><i class="fas fa-circle-check"></i></div>
+        <div class="rori-kpi-label">Completed Requests</div>
+        <div class="rori-kpi-value">{{ kpis.completed }}</div>
+        <div class="rori-kpi-sub up">
+          <i class="fas fa-percent"></i> {{ kpis.completion_rate }}% completion rate
+        </div>
+      </div>
+
+      <div class="rori-kpi pink">
+        <div class="rori-kpi-icon"><i class="fas fa-stopwatch"></i></div>
+        <div class="rori-kpi-label">Avg Resolution Time</div>
+        <div class="rori-kpi-value">{{ kpis.avg_resolution }}</div>
+        <div class="rori-kpi-sub neutral">
+          {% if kpis.avg_delta_seconds is not none %}
+            {% if kpis.avg_delta_seconds > 0 %}
+              <i class="fas fa-arrow-down"></i> {{ (kpis.avg_delta_seconds/60)|round|int }} min faster
+            {% elif kpis.avg_delta_seconds < 0 %}
+              <i class="fas fa-arrow-up"></i> {{ ((-kpis.avg_delta_seconds)/60)|round|int }} min slower
+            {% else %}
+              <i class="fas fa-minus"></i> No change
+            {% endif %}
+          {% else %}
+            <i class="fas fa-stopwatch"></i> Across completed work
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <!-- ────── MAIN TRENDS CHART ────── -->
+    <section class="rori-section">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-chart-line"></i> Maintenance Request Trends</h3>
+          <span class="hint" id="trends-granularity">
+            {% if chart_data.trends.granularity == 'day' %}Daily{% elif chart_data.trends.granularity == 'week' %}Weekly{% else %}Monthly{% endif %}
+          </span>
+        </div>
+        <div class="rori-chart-wrap tall"><canvas id="chart-trends"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ────── DONUTS (Category + Status) ────── -->
+    <div class="rori-grid-2">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-chart-pie"></i> Requests by Category</h3>
+        </div>
+        <div class="rori-chart-wrap donut"><canvas id="chart-categories"></canvas></div>
+      </div>
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-circle-notch"></i> Requests by Status</h3>
+        </div>
+        <div class="rori-chart-wrap donut"><canvas id="chart-status"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ────── DEPARTMENT BAR ────── -->
+    <section class="rori-section">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-chart-bar"></i> Requests by Department</h3>
+        </div>
+        <div class="rori-chart-wrap"><canvas id="chart-departments"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ────── TOP LOCATIONS + WORK ORDER OVERVIEW ────── -->
+    <div class="rori-grid-2">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3>
+        </div>
+        {% if top_locations %}
+          <div class="rori-list">
+            {% for name, count in top_locations %}
+              <div class="rori-list-item">
+                <span class="rank">{{ loop.index }}</span>
+                <span class="name">{{ name }}</span>
+                <span class="count">{{ count }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="rori-empty"><i class="fas fa-location-dot"></i>No maintenance requests found for the selected filters.</div>
+        {% endif %}
+      </div>
+
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3>
+        </div>
+        <div class="rori-stats-grid">
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.total }}</div>
+            <div class="lbl">Total</div>
+          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.pending }}</div>
+            <div class="lbl">Pending</div>
+          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.assigned }}</div>
+            <div class="lbl">Assigned</div>
+          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.in_progress }}</div>
+            <div class="lbl">In Progress</div>
+          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.completed }}</div>
+            <div class="lbl">Completed</div>
+          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
+            <div class="val">{{ work_orders.verified }}</div>
+            <div class="lbl">Verified</div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────── RECENT REQUESTS TABLE ────── -->
+    <section class="rori-section">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-list"></i> Recent Maintenance Requests</h3>
+          <a href="{{ url_for('requests_list') }}" class="rori-btn rori-btn-ghost" style="padding:.35rem .85rem;font-size:.75rem">
+            View all <i class="fas fa-arrow-right"></i>
+          </a>
+        </div>
+        {% if recent_requests %}
+          <div class="rori-table-wrap">
+            <table class="rori-table">
+              <thead>
+                <tr>
+                  <th>Request #</th>
+                  <th>Room / Area</th>
+                  <th>Department</th>
+                  <th>Issue</th>
+                  <th>Category</th>
+                  <th>Priority</th>
+                  <th>Assigned</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in recent_requests %}
+                <tr>
+                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
+                  <td>{{ r.location_name }}</td>
+                  <td>{{ r.department.name if r.department else '—' }}</td>
+                  <td>{{ r.working_item.name if r.working_item else '—' }}</td>
+                  <td>{{ r.category.name if r.category else '—' }}</td>
+                  <td>
+                    <span class="rori-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
+                  </td>
+                  <td>{{ r.assigned_to.full_name if r.assigned_to else '—' }}</td>
+                  <td>
+                    <span class="rori-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
+                  </td>
+                  <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}"><i class="fas fa-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="rori-empty"><i class="fas fa-inbox"></i>No maintenance requests found for the selected filters.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- ────── STAFF + INVENTORY ────── -->
+    <div class="rori-grid-2">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3>
+        </div>
+        {% if staff_stats %}
+          <div class="rori-table-wrap">
+            <table class="rori-table">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th>Assigned</th>
+                  <th>In Progress</th>
+                  <th>Completed</th>
+                  <th>Avg Resolution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in staff_stats %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong><br><small style="color:#6B7280">{{ s.role }}</small></td>
+                  <td>{{ s.assigned }}</td>
+                  <td>{{ s.in_progress }}</td>
+                  <td>{{ s.completed }}</td>
+                  <td>{{ s.avg_resolution }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="rori-empty"><i class="fas fa-user-gear"></i>No maintenance staff data.</div>
+        {% endif %}
+      </div>
+
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3>
+        </div>
+        <div class="rori-stats-grid">
+          <div class="rori-stat">
+            <div class="val">{{ inventory.total_parts }}</div>
+            <div class="lbl">Total Parts</div>
+          </div>
+          <div class="rori-stat">
+            <div class="val" style="color:#F59E0B">{{ inventory.low_stock }}</div>
+            <div class="lbl">Low Stock</div>
+          </div>
+          <div class="rori-stat">
+            <div class="val" style="color:#EF4444">{{ inventory.out_of_stock }}</div>
+            <div class="lbl">Out of Stock</div>
+          </div>
+          <div class="rori-stat">
+            <div class="val">{{ inventory.parts_used }}</div>
+            <div class="lbl">Parts Used</div>
+          </div>
+        </div>
+        <div style="margin-top:1rem;padding:.75rem 1rem;background:#100d24;border:1px solid rgba(168,85,247,0.2);border-radius:12px;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#9CA3AF;font-size:.8rem">Estimated Inventory Value</span>
+          <span style="font-weight:700;color:#A855F7">{{ inventory.total_value }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────── RECENT ACTIVITY ────── -->
+    <section class="rori-section">
+      <div class="rori-card">
+        <div class="rori-card-header">
+          <h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3>
+        </div>
+        {% if recent_activity %}
+          <div class="rori-activity">
+            {% for a in recent_activity %}
+              <div class="rori-activity-item">
+                <div class="icon"><i class="fas fa-bolt"></i></div>
+                <div class="txt">
+                  <strong>{{ a.user }}</strong>
+                  {{ a.action }}
+                  {% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
+                  <div class="time">{{ a.time }} · {{ a.raw_time }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="rori-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
+        {% endif %}
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  window.RORI_DATA = {{ chart_data|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+
+</body>
+</html>
