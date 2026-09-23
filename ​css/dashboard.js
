@@ -1,0 +1,89 @@
+// static/js/dashboard.js
+
+document.addEventListener('DOMContentLoaded', function () {
+    
+    // 1. Maintenance Request Trends (Line Chart)
+    const trendCtx = document.getElementById('requestTrendChart');
+    if (trendCtx) {
+        const ctx = trendCtx.getContext('2d');
+        
+        // Neon Purple Gradient Background
+        const purpleGradient = ctx.createLinearGradient(0, 0, 0, 300);
+        purpleGradient.addColorStop(0, 'rgba(168, 85, 247, 0.4)');
+        purpleGradient.addColorStop(1, 'rgba(168, 85, 247, 0.0)');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5'],
+                datasets: [{
+                    label: 'Maintenance Requests',
+                    data: [18, 25, 14, 32, 28],
+                    borderColor: '#a855f7', // Neon Purple
+                    borderWidth: 3,
+                    backgroundColor: purpleGradient,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#38bdf8', // Cyan dot
+                    pointHoverRadius: 7,
+                    pointRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Requests by Category (Doughnut Chart)
+    const categoryCtx = document.getElementById('categoryDonutChart');
+    if (categoryCtx) {
+        new Chart(categoryCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Electrical', 'Plumbing', 'HVAC', 'Carpentry', 'Electronics'],
+                datasets: [{
+                    data: [35, 25, 20, 12, 8],
+                    backgroundColor: [
+                        '#a855f7', // Purple
+                        '#3b82f6', // Blue
+                        '#06b6d4', // Cyan
+                        '#f59e0b', // Amber
+                        '#ec4899'  // Pink
+                    ],
+                    borderWidth: 0,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#d1d5db',
+                            padding: 15,
+                            font: { size: 12 }
+                        }
+                    }
+                },
+                cutout: '70%'
+            }
+        });
+    }
+});
