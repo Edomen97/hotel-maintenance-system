@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Requests{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h2 style="color:#f59e0b;">📋 ጥያቄዎች</h2>
+  <a class="btn btn-primary" href="{{ url_for('new_request') }}">➕ አዲስ</a>
+</div>
+<div class="card">
+  <table class="table table-hover">
+    <thead><tr><th>ጥያቄ #</th><th>ቦታ</th><th>እቃ</th><th>ቅድሚያ</th><th>ሁኔታ</th><th>ቀን</th></tr></thead>
+    <tbody>
+      {% for r in requests %}
+      <tr>
+        <td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#f59e0b;">{{ r.request_no }}</a></td>
+        <td>{{ r.location_name }}</td>
+        <td>{{ r.working_item.name if r.working_item else "—" }}</td>
+        <td>
+          {% if r.priority == "URGENT" %}<span class="badge bg-danger">{{ r.priority }}</span>
+          {% elif r.priority == "HIGH" %}<span class="badge bg-warning text-dark">{{ r.priority }}</span>
+          {% else %}<span class="badge bg-info">{{ r.priority }}</span>{% endif %}
+        </td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-center">ጥያቄ የለም</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
