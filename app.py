@@ -377,8 +377,8 @@ def role_required(*roles):
 
 
 def is_housekeeping_approver(user):
-    """Housekeeping FIRST approval — only a MANAGER whose department is
-    Housekeeping (or ADMIN). Amir Awel (MANAGER, dept=None) is excluded."""
+    """Housekeeping FIRST approval — MANAGER with Housekeeping dept (or ADMIN).
+    The 'housekeeping' user account represents Kasahun Girma."""
     if not user or not user.is_authenticated:
         return False
     if user.role == "ADMIN":
@@ -393,7 +393,7 @@ def is_housekeeping_approver(user):
 
 def is_maintenance_manager(user):
     """Maintenance/Engineering Manager — MANAGER whose dept is NOT
-    Housekeeping (or has no dept), plus ADMIN. Amir Awel qualifies."""
+    Housekeeping (or has no dept), plus ADMIN."""
     if not user or not user.is_authenticated:
         return False
     if user.role == "ADMIN":
@@ -407,7 +407,6 @@ def is_maintenance_manager(user):
 
 
 def get_housekeeping_manager_users():
-    """Active Users who are the Housekeeping Manager(s)."""
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
     if not hk_dept:
         return []
@@ -419,7 +418,6 @@ def get_housekeeping_manager_users():
 
 
 def get_maintenance_manager_users():
-    """Active Users who are Maintenance/Engineering Manager(s)."""
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
     hk_id = hk_dept.id if hk_dept else -1
     return User.query.filter(
@@ -430,6 +428,8 @@ def get_maintenance_manager_users():
 
 
 def is_housekeeping_request(user):
+    """Requests created by Housekeeping department staff (DEPARTMENT role
+    whose dept is Housekeeping) need the HK Manager's first approval."""
     if not user or not user.is_authenticated:
         return False
     if user.role != "DEPARTMENT":
@@ -669,7 +669,7 @@ def page(title, content):
         badge = ""
         if unread > 0:
             badge = '<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">' + str(unread) + '</span>'
-        bell_html = '<a class="nav-link" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
+        bell_html = '<a class="nav-link" id="nav-bell" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
 
     flash_html = "".join(
         '<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
@@ -729,6 +729,14 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 .alert-info{border-left:4px solid #06b6d4}
 .login-card{background:rgba(30,41,59,0.5);backdrop-filter:blur(20px);border:1px solid rgba(245,158,11,0.2);border-radius:32px;padding:2rem 2.5rem;max-width:440px;margin:0 auto}
 .badge{padding:.4rem .8rem;border-radius:20px;font-weight:600;font-size:.75rem}
+@keyframes bell-pulse {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(1.35); }
+  50%  { transform: scale(1); }
+  75%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.bell-alert { animation: bell-pulse 0.6s ease-in-out 3; color:#f59e0b !important; }
 @media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.login-card{padding:1.5rem;margin:1rem}}
 </style>
 </head>
@@ -742,6 +750,100 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 </nav>
 <div class="container mt-4">""" + flash_html + content + """</div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════
+   REAL-TIME NOTIFICATIONS — Audio Chime + Vibration
+   ═══════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  if (!window.NotifState) {
+    window.NotifState = { lastUnread: null, audioCtx: null, armed: false, started: false };
+  }
+
+  function playChime() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!window.NotifState.audioCtx) window.NotifState.audioCtx = new Ctx();
+      var ctx = window.NotifState.audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      var notes = [880.00, 1108.73, 1318.51];
+      notes.forEach(function(freq, i) {
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        var t0 = ctx.currentTime + i * 0.15;
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.linearRampToValueAtTime(0.28, t0 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.6);
+      });
+    } catch (e) {}
+  }
+
+  function vibrate() {
+    try { if (navigator.vibrate) navigator.vibrate([250, 120, 250, 120, 400]); } catch (e) {}
+  }
+
+  function flashBell() {
+    var bell = document.getElementById('nav-bell');
+    if (!bell) return;
+    bell.classList.add('bell-alert');
+    setTimeout(function(){ bell.classList.remove('bell-alert'); }, 2000);
+  }
+
+  function flashTitle(n) {
+    var orig = document.title;
+    var c = 0;
+    var iv = setInterval(function(){
+      document.title = (c % 2 === 0) ? ('🔔 (' + n + ') ' + orig) : orig;
+      c++;
+      if (c > 6) { clearInterval(iv); document.title = orig; }
+    }, 700);
+  }
+
+  function poll() {
+    fetch('/api/notifications/unread', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if (!data) return;
+        var prev = window.NotifState.lastUnread;
+        var cur = data.unread;
+        if (prev === null) { window.NotifState.lastUnread = cur; return; }
+        if (cur > prev) {
+          playChime();
+          vibrate();
+          flashBell();
+          flashTitle(cur);
+        }
+        window.NotifState.lastUnread = cur;
+      })
+      .catch(function(){});
+  }
+
+  function armAudio() {
+    if (window.NotifState.armed) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        if (!window.NotifState.audioCtx) window.NotifState.audioCtx = new Ctx();
+        if (window.NotifState.audioCtx.state === 'suspended') window.NotifState.audioCtx.resume();
+      }
+      window.NotifState.armed = true;
+    } catch (e) {}
+  }
+  document.addEventListener('click', armAudio);
+  document.addEventListener('touchstart', armAudio);
+  document.addEventListener('keydown', armAudio);
+
+  if (document.getElementById('nav-bell')) {
+    poll();
+    setInterval(poll, 15000);
+    window.NotifState.started = true;
+  }
+})();
+</script>
 </body>
 </html>"""
 
@@ -791,16 +893,17 @@ def seed_data():
         u.set_password("admin123")
         db.session.add(u)
 
+    # NOTE: Kasahun Girma = the 'housekeeping' username (Housekeeping Manager).
+    # No separate kasahun account is created.
     for s in [
-        {"u": "amir",     "n": "Amir Awel",     "r": "MANAGER",    "d": None},
-        {"u": "kasahun",  "n": "Kasahun Girma", "r": "MANAGER",    "d": hk_dept.id if hk_dept else None},
-        {"u": "abebayhu", "n": "አበባየሁ ክፍሌ",   "r": "SUPERVISOR", "d": None},
-        {"u": "tesfahun", "n": "ተስፋሁን ነከረ",   "r": "TECHNICIAN", "d": None},
-        {"u": "simon",    "n": "ስምዖን ዮሐንስ",   "r": "TECHNICIAN", "d": None},
-        {"u": "chernet",  "n": "ቸርነት አሞና",     "r": "TECHNICIAN", "d": None},
-        {"u": "wale",     "n": "ዋሌ",              "r": "TECHNICIAN", "d": None},
-        {"u": "tsadiku",  "n": "ፃዲቁ",             "r": "TECHNICIAN", "d": None},
-        {"u": "housekeeping", "n": "Housekeeping Dept", "r": "DEPARTMENT", "d": hk_dept.id if hk_dept else None},
+        {"u": "amir",         "n": "Amir Awel",     "r": "MANAGER",    "d": None},
+        {"u": "housekeeping", "n": "Kasahun Girma", "r": "MANAGER",    "d": hk_dept.id if hk_dept else None},
+        {"u": "abebayhu",     "n": "አበባየሁ ክፍሌ",   "r": "SUPERVISOR", "d": None},
+        {"u": "tesfahun",     "n": "ተስፋሁን ነከረ",   "r": "TECHNICIAN", "d": None},
+        {"u": "simon",        "n": "ስምዖን ዮሐንስ",   "r": "TECHNICIAN", "d": None},
+        {"u": "chernet",      "n": "ቸርነት አሞና",     "r": "TECHNICIAN", "d": None},
+        {"u": "wale",         "n": "ዋሌ",              "r": "TECHNICIAN", "d": None},
+        {"u": "tsadiku",      "n": "ፃዲቁ",             "r": "TECHNICIAN", "d": None},
         {"u": "employee1",    "n": "Test Employee",     "r": "EMPLOYEE",   "d": None},
     ]:
         existing = User.query.filter_by(username=s["u"]).first()
@@ -815,16 +918,15 @@ def seed_data():
 
     db.session.commit()
 
-    # ── Startup verification ─────────────────────────────────
     try:
-        hk = User.query.filter_by(username="kasahun").first()
+        hk_user = User.query.filter_by(username="housekeeping").first()
         am = User.query.filter_by(username="amir").first()
-        print("🔎 VERIFY kasahun: role=%s, dept_id=%s, dept=%s" % (
-            hk.role if hk else "MISSING",
-            hk.department_id if hk else "—",
-            (hk.department.name if hk and hk.department else "—"),
+        print("🔎 VERIFY housekeeping (Kasahun Girma): role=%s, dept_id=%s, dept=%s" % (
+            hk_user.role if hk_user else "MISSING",
+            hk_user.department_id if hk_user else "—",
+            (hk_user.department.name if hk_user and hk_user.department else "—"),
         ))
-        print("🔎 VERIFY amir   : role=%s, dept_id=%s, dept=%s" % (
+        print("🔎 VERIFY amir (Maintenance Mgr): role=%s, dept_id=%s, dept=%s" % (
             am.role if am else "MISSING",
             am.department_id if am else "—",
             (am.department.name if am and am.department else "—"),
@@ -878,8 +980,8 @@ def login():
         </form>
         <hr class="my-4" style="border-color:rgba(245,158,11,0.2)">
         <div class="text-center small" style="color:#94a3b8">
-          <p class="mb-1">HK Manager: <b>kasahun / 123456</b></p>
-          <p class="mb-1">Maint Manager: <b>amir / 123456</b></p>
+          <p class="mb-1">HK Manager (Kasahun): <b>housekeeping / 123456</b></p>
+          <p class="mb-1">Maint Manager (Amir): <b>amir / 123456</b></p>
           <p class="mb-0">Admin: <b>admin / admin123</b></p>
         </div>
       </div></div>
@@ -965,8 +1067,20 @@ def requests_list():
             "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
         }.get(st, "secondary")
 
+    is_mgr = current_user.role in ["MANAGER", "ADMIN"]
+
     rows_parts = []
     for r in requests:
+        del_html = ""
+        if is_mgr:
+            del_html = (
+                '<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" '
+                'style="display:inline" '
+                'onsubmit="return confirm(\'Delete (archive) request ' + str(r.request_no) + '?\')">'
+                '<input type="hidden" name="reason" value="Deleted from list by manager">'
+                '<button type="submit" class="btn btn-sm btn-danger" title="Delete">'
+                '<i class="fas fa-trash"></i></button></form>'
+            )
         rows_parts.append(
             '<tr>'
             '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
@@ -976,18 +1090,25 @@ def requests_list():
             '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
             '<td><span class="badge bg-' + badge(r.status) + '">' + str(r.status) + '</span></td>'
             '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            + ('<td style="width:60px;text-align:center">' + del_html + '</td>' if is_mgr else '') +
             '</tr>'
         )
     rows = "".join(rows_parts)
+
+    header = ('<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th>'
+              '<th>Priority</th><th>Status</th><th>Created</th>'
+              + ('<th></th>' if is_mgr else '') +
+              '</tr></thead>')
 
     content = (
         '<div class="d-flex justify-content-between mb-3">'
         '<h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>'
         '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>'
         '</div>'
+        '<p style="color:#94a3b8;font-size:.85rem">All requests — including completed and closed — remain visible here.</p>'
         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="7" class="text-center">No requests found</td></tr>') + '</tbody>'
+        + header +
+        '<tbody>' + (rows if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" class="text-center">No requests found</td></tr>') + '</tbody>'
         '</table></div></div>'
     )
     return page("Requests", content)
@@ -1082,7 +1203,7 @@ def request_create():
                 notify_users(
                     recipients, req.id,
                     "📝 New Request",
-                    "Request " + str(req.request_no) + " is pending approval",
+                    "Request " + str(req.request_no) + " is pending your verification",
                     "New Request",
                     link=url_for("request_detail", req_id=req.id),
                 )
@@ -1213,27 +1334,37 @@ def request_detail(req_id):
         wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
 
     actions = []
-    if (req.status in ["Approved", "Assigned"]
-            and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))):
+
+    # Assign Staff — ONLY after Maintenance Manager has verified & approved
+    can_assign_staff = (
+        req.status in ["Approved", "Assigned"]
+        and not req.awaiting_hk_approval
+        and req.manager_id is not None
+        and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))
+    )
+    if can_assign_staff:
         actions.append(
             '<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary">'
             '<i class="fas fa-user-plus"></i> Assign Staff</a>'
         )
+
     if req.status == "Completed" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline">'
-            '<button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify</button></form>'
+            '<button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify Work</button></form>'
         )
     if req.status == "Verified" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline">'
             '<button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>'
         )
-    if current_user.role == "ADMIN" and not req.is_deleted:
+    if current_user.role in ["MANAGER", "ADMIN"] and not req.is_deleted:
         actions.append(
-            '<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')">'
-            '<input type="hidden" name="reason" value="Archived by admin">'
-            '<button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Archive</button></form>'
+            '<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" '
+            'style="display:inline" '
+            'onsubmit="return confirm(\'Delete (archive) this request? It will be restorable by Admin.\')">'
+            '<input type="hidden" name="reason" value="Deleted by manager">'
+            '<button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Delete</button></form>'
         )
     actions_html = " ".join(actions) if actions else ""
 
@@ -1241,7 +1372,6 @@ def request_detail(req_id):
     hk_block = ""
     if req.awaiting_hk_approval or req.hk_approval_status:
         hk_status = req.hk_approval_status or "Pending"
-
         if req.hk_approved_by:
             hk_approver_name = req.hk_approved_by.full_name
         else:
@@ -1303,13 +1433,12 @@ def request_detail(req_id):
             hk_buttons = (
                 '<div class="alert alert-info" style="margin-top:.75rem">'
                 '🛠️ <strong>Next step:</strong> <strong>' + str(next_mm_name) +
-                '</strong> (Maintenance / Engineering Manager) must approve this request.'
-                '</div>'
+                '</strong> must <strong>Verify &amp; Approve</strong> this request.</div>'
             )
 
         hk_block = (
             '<div class="card" style="border-left:4px solid #06b6d4">'
-            '<h5 style="color:#f59e0b"><i class="fas fa-broom"></i> Housekeeping Manager Approval</h5>'
+            '<h5 style="color:#f59e0b"><i class="fas fa-broom"></i> 1st Approval — Housekeeping Manager</h5>'
             '<table class="table"><tbody>'
             '<tr><th style="width:180px;color:#94a3b8">Approver</th><td><strong>' + str(hk_approver_name) + '</strong></td></tr>'
             '<tr><th style="color:#94a3b8">Role</th><td>Housekeeping Manager</td></tr>'
@@ -1321,15 +1450,9 @@ def request_detail(req_id):
             hk_block += '<tr><th style="color:#94a3b8">Approved at</th><td>' + req.hk_approved_at.strftime("%Y-%m-%d %H:%M") + '</td></tr>'
         if req.hk_approval_notes:
             hk_block += '<tr><th style="color:#94a3b8">Notes</th><td>' + str(req.hk_approval_notes) + '</td></tr>'
-
-        if req.hk_approval_status == "Approved" and req.status == "Pending":
-            mm_users = get_maintenance_manager_users()
-            next_mm_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
-            hk_block += '<tr><th style="color:#94a3b8">Next Approval</th><td>🛠️ <strong>' + str(next_mm_name) + '</strong> — Maintenance / Engineering Manager</td></tr>'
-
         hk_block += '</tbody></table>' + hk_buttons + '</div>'
 
-    # ── Maintenance / Engineering Manager Approval card ─────────
+    # ── Maintenance Manager Verification card ──────────────────
     mm_block = ""
     if (not req.awaiting_hk_approval) and req.status != "Rejected":
         mm_users = get_maintenance_manager_users()
@@ -1338,47 +1461,58 @@ def request_detail(req_id):
         else:
             mm_approver_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
 
-        if req.manager_id:
-            mm_status = "Approved"
+        if req.manager_id and req.status in ["Approved", "Assigned", "In Progress", "Completed", "Verified", "Closed"]:
+            mm_status = "Verified & Approved"
         elif req.status == "Pending":
-            mm_status = "Pending"
+            mm_status = "Pending Verification"
         else:
             mm_status = req.status
 
-        mm_status_color = {"Approved": "success", "Pending": "warning"}.get(mm_status, "secondary")
+        mm_status_color = {
+            "Verified & Approved": "success",
+            "Pending Verification": "warning",
+        }.get(mm_status, "secondary")
 
         mm_buttons = ""
-        can_mm_approve = (
-            mm_status == "Pending"
+        can_mm_verify = (
+            mm_status == "Pending Verification"
             and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))
         )
-        if can_mm_approve:
+        if can_mm_verify:
             mm_buttons = (
                 '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
-                '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="flex:1;min-width:180px">'
-                '<button type="submit" class="btn btn-success w-100" style="padding:.85rem 1.1rem;font-weight:700;font-size:1rem">'
-                '<i class="fas fa-check-circle"></i> ✅ Approve (Maintenance Manager)</button>'
+                '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="flex:1;min-width:220px">'
+                '<button type="submit" class="btn btn-success w-100" '
+                'style="padding:.9rem 1.1rem;font-weight:700;font-size:1rem" '
+                'onclick="return confirm(\'Verify & approve this request? This will unlock staff assignment.\')">'
+                '<i class="fas fa-check-circle"></i> ✅ Verify &amp; Approve</button>'
                 '</form>'
                 '</div>'
+                '<div class="alert alert-info" style="margin-top:.75rem;font-size:.85rem">'
+                '<i class="fas fa-info-circle"></i> '
+                '<strong>Staff assignment is locked</strong> until you complete this verification.'
+                '</div>'
             )
-        elif mm_status == "Pending":
+        elif mm_status == "Pending Verification":
             mm_buttons = (
-                '<div class="alert alert-info" style="margin-top:.75rem">'
-                '<i class="fas fa-hourglass-half"></i> '
+                '<div class="alert alert-warning" style="margin-top:.75rem">'
+                '<i class="fas fa-lock"></i> '
                 'Waiting for <strong>' + str(mm_approver_name) +
-                '</strong> (Maintenance / Engineering Manager) to approve.</div>'
+                '</strong> to verify &amp; approve. Staff assignment is locked.</div>'
             )
 
         mm_block = (
             '<div class="card" style="border-left:4px solid #f59e0b">'
-            '<h5 style="color:#f59e0b"><i class="fas fa-wrench"></i> Maintenance / Engineering Manager Approval</h5>'
+            '<h5 style="color:#f59e0b"><i class="fas fa-wrench"></i> 2nd Approval — Maintenance / Engineering Manager</h5>'
             '<table class="table"><tbody>'
             '<tr><th style="width:180px;color:#94a3b8">Approver</th><td><strong>' + str(mm_approver_name) + '</strong></td></tr>'
             '<tr><th style="color:#94a3b8">Role</th><td>Maintenance / Engineering Manager</td></tr>'
             '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-' + mm_status_color + '">' + str(mm_status) + '</span></td></tr>'
         )
         if req.manager:
-            mm_block += '<tr><th style="color:#94a3b8">Approved by</th><td>' + str(req.manager.full_name) + '</td></tr>'
+            mm_block += '<tr><th style="color:#94a3b8">Verified by</th><td>' + str(req.manager.full_name) + '</td></tr>'
+        if req.updated_at and req.manager_id:
+            mm_block += '<tr><th style="color:#94a3b8">Verified at</th><td>' + req.updated_at.strftime("%Y-%m-%d %H:%M") + '</td></tr>'
         mm_block += '</tbody></table>' + mm_buttons + '</div>'
 
     content = (
@@ -1451,7 +1585,7 @@ def hk_approvals():
         '<h3 style="color:#f59e0b"><i class="fas fa-broom"></i> '
         'Housekeeping Manager — Pending First Approval</h3>'
         '<p style="color:#94a3b8">Requests created by Housekeeping staff awaiting your approval. '
-        'After you approve, they go to the Maintenance Manager (Amir Awel) for second approval.</p>'
+        'After you approve, they go to the Maintenance Manager (Amir Awel) for Verify &amp; Approve.</p>'
         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
         '<thead><tr><th>Request #</th><th>Location</th><th>Item</th>'
         '<th>Department</th><th>Priority</th><th>Created</th><th>Action</th></tr></thead>'
@@ -1945,7 +2079,7 @@ def dashboard():
     staff_stats = get_staff_statistics(args)
     inventory = get_inventory_summary(args)
     recent_activity = get_recent_activity(10)
-    recent_requests = get_recent_requests(args, 10)
+    recent_requests = get_recent_requests(args, 20)
 
     all_departments = Department.query.order_by(Department.name).all()
     all_categories = Category.query.order_by(Category.name).all()
@@ -1958,16 +2092,35 @@ def dashboard():
     chart_data = {"trends": trends, "categories": categories, "statuses": statuses, "departments": departments}
 
     try:
-        return render_template("dashboard.html", title="Rori Hotel Maintenance Dashboard",
+        return render_template(
+            "dashboard.html",
+            title="Rori Hotel Maintenance Dashboard",
             kpis=kpis, work_orders=work_orders, top_locations=top_locations,
             staff_stats=staff_stats, inventory=inventory, recent_activity=recent_activity,
             recent_requests=recent_requests, all_departments=all_departments,
             all_categories=all_categories, all_rooms=all_rooms, all_areas=all_areas,
             all_floors=all_floors, nav_items=build_dashboard_nav(), chart_data=chart_data,
             filters={k: v for k, v in args.items()},
-            status_badge_class=status_badge_class, priority_badge_class=priority_badge_class)
+            status_badge_class=status_badge_class, priority_badge_class=priority_badge_class,
+            current_role=current_user.role,
+        )
     except Exception as e:
         print("Dashboard render failed, falling back: " + str(e))
+        is_mgr = current_user.role in ["MANAGER", "ADMIN"]
+        rows_html = "".join(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td><span class="badge bg-secondary">' + str(r.status) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            + (('<td><form method="post" action="' + url_for("request_delete", req_id=r.id) + '" '
+                'style="display:inline" onsubmit="return confirm(\'Delete (archive) this request?\')">'
+                '<input type="hidden" name="reason" value="Deleted from dashboard by manager">'
+                '<button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>'
+                '</form></td>') if is_mgr else '')
+            + '</tr>'
+            for r in recent_requests
+        )
         fallback = (
             '<h3 style="color:#f59e0b">Dashboard</h3>'
             '<div class="row g-3 mb-4">'
@@ -1976,7 +2129,16 @@ def dashboard():
             '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["completed"]) + '</div><div class="metric-label">Completed</div></div></div>'
             '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["completion_rate"]) + '%</div><div class="metric-label">Rate</div></div></div>'
             '</div>'
-            '<div class="card"><a class="btn btn-primary" href="' + url_for("requests_list") + '">View Requests</a></div>'
+            '<div class="card">'
+            '<div class="d-flex justify-content-between align-items-center mb-2">'
+            '<h5 style="color:#f59e0b;margin:0">Recent Requests</h5>'
+            '<a class="btn btn-sm btn-primary" href="' + url_for("requests_list") + '">View All</a></div>'
+            '<div class="table-responsive"><table class="table table-hover">'
+            '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Created</th>'
+            + ('<th></th>' if is_mgr else '') +
+            '</tr></thead><tbody>'
+            + (rows_html if rows_html else '<tr><td colspan="' + ('5' if is_mgr else '4') + '" class="text-center">No requests</td></tr>')
+            + '</tbody></table></div></div>'
         )
         return page("Dashboard", fallback)
 
@@ -2648,20 +2810,20 @@ def hk_approve_request(req_id):
             req.awaiting_hk_approval = False
             req.status = "Pending"
             log_status_change(req.id, "HK Approved", notes="HK Approved by " + str(current_user.full_name))
-            log_status_change(req.id, "Pending Maintenance Manager Approval", notes="Forwarded to Maintenance Manager")
+            log_status_change(req.id, "Pending Maintenance Manager Verification", notes="Forwarded to Maintenance Manager")
             log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting_hk", "hk_approved")
             mm_users = get_maintenance_manager_users()
             admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
             recipients = [u.id for u in mm_users] + [u.id for u in admins]
-            notify_users(recipients, req.id, "📬 HK Approved — Pending Your Approval",
+            notify_users(recipients, req.id, "📬 HK Approved — Pending Your Verification",
                 "Request " + str(req.request_no) + " was approved by Housekeeping Manager " +
-                str(current_user.full_name) + ". It now awaits Maintenance Manager approval.",
-                "Pending Maintenance Approval", link=url_for("request_detail", req_id=req.id))
+                str(current_user.full_name) + ". It now awaits your Verify & Approve step.",
+                "Pending Maintenance Verification", link=url_for("request_detail", req_id=req.id))
             notify_users([req.requested_by_id], req.id, "✅ Approved by Housekeeping",
                 "Your request " + str(req.request_no) + " was approved by Housekeeping Manager and sent to Maintenance Manager.",
                 "HK Approved", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
-            flash("✅ Approved and submitted to Maintenance Manager.", "success")
+            flash("✅ Approved and submitted to Maintenance Manager for verification.", "success")
             return redirect(url_for("request_detail", req_id=req_id))
 
         elif action == "reject":
@@ -2689,36 +2851,60 @@ def hk_approve_request(req_id):
 def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
+
         if current_user.role != "ADMIN" and is_housekeeping_approver(current_user):
             flash("Housekeeping Manager performs the FIRST approval only. "
-                  "The second approval is done by the Maintenance Manager.", "danger")
+                  "The second Verify & Approve is done by the Maintenance Manager.", "danger")
             return redirect(url_for("request_detail", req_id=req_id))
+
         if req.awaiting_hk_approval:
             flash("This request must be approved by Housekeeping Manager first.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
+
         if req.hk_approval_status == "Rejected":
             flash("This request was rejected by Housekeeping.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
+
         if req.status != "Pending":
             flash("Not pending", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
+
         req.status = "Approved"
         req.manager_id = current_user.id
-        log_status_change(req.id, "Approved", notes="Approved by " + str(current_user.full_name) + " (Maintenance Manager)")
-        log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
+
+        log_status_change(
+            req.id, "Verified by Maintenance Manager",
+            notes="Verified & approved by " + str(current_user.full_name) +
+                  " (Maintenance Manager). Staff assignment unlocked."
+        )
+        log_audit("MM Verify+Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
+
         existing = WorkOrder.query.filter_by(request_id=req.id).first()
         if not existing:
-            wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=None, status="Pending")
+            wo = WorkOrder(
+                work_order_no=work_order_no_generator(),
+                request_id=req.id,
+                assigned_to_id=None,
+                status="Pending",
+            )
             db.session.add(wo)
             db.session.flush()
             log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
-            log_status_change(req.id, "WO Created", notes="WO " + str(wo.work_order_no))
-            notify_maintenance_staff(req, wo)
-        notify_users([req.requested_by_id], req.id, "Request Approved",
-            "Request " + str(req.request_no) + " approved by Maintenance Manager",
-            "Approved", link=url_for("request_detail", req_id=req.id))
+            log_status_change(req.id, "WO Created",
+                              notes="WO " + str(wo.work_order_no) +
+                                    " — awaiting technician assignment")
+
+        notify_users(
+            [req.requested_by_id], req.id,
+            "✅ Verified by Maintenance Manager",
+            "Request " + str(req.request_no) + " verified by " + str(current_user.full_name) +
+            ". A technician will be assigned shortly.",
+            "Verified by MM",
+            link=url_for("request_detail", req_id=req.id),
+        )
+
         db.session.commit()
-        flash("✅ Request approved!", "success")
+        flash("✅ Verified & approved. You can now assign a technician.", "success")
     except Exception as e:
         db.session.rollback()
         print("Approve error: " + traceback.format_exc())
@@ -2743,7 +2929,7 @@ def request_verify(req_id):
             wo.status = "Verified"
             wo.verified_by_id = current_user.id
             wo.verified_date = datetime.utcnow()
-        log_status_change(req.id, "Verified", notes="Verified by " + str(current_user.full_name))
+        log_status_change(req.id, "Verified", notes="Work verified by " + str(current_user.full_name))
         log_audit("Verify", "MaintenanceRequest", req.id, "Completed", "Verified")
         notify_users([req.requested_by_id], req.id, "✅ Work Verified", "Request " + str(req.request_no) + " verified", "Verified", link=url_for("request_detail", req_id=req.id))
         if req.department_id:
@@ -2779,7 +2965,7 @@ def request_close(req_id):
 
 
 @app.route("/requests/<int:req_id>/delete", methods=["POST"])
-@role_required("ADMIN")
+@role_required("MANAGER", "ADMIN")
 def request_delete(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
@@ -2789,10 +2975,11 @@ def request_delete(req_id):
         req.is_deleted = True
         req.deleted_at = datetime.utcnow()
         req.deleted_by_id = current_user.id
-        req.deletion_reason = request.form.get("reason", "Deleted by admin")
-        log_audit("SoftDelete", "MaintenanceRequest", req.id, "active", "deleted")
+        req.deletion_reason = request.form.get("reason", "Deleted by manager")
+        log_audit("SoftDelete", "MaintenanceRequest", req.id, "active", "deleted",
+                  new_value=req.deletion_reason)
         db.session.commit()
-        flash("Request archived", "success")
+        flash("Request archived (restorable by Admin).", "success")
     except Exception as e:
         db.session.rollback()
         flash("Error: " + str(e), "danger")
@@ -2876,6 +3063,7 @@ def workorders_list():
         )
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h3>'
+        '<p style="color:#94a3b8;font-size:.85rem">All work orders — including completed — remain visible.</p>'
         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
         '<thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>'
         '<tbody>' + (rows if rows else '<tr><td colspan="6" class="text-center">No work orders</td></tr>') + '</tbody>'
@@ -2906,8 +3094,9 @@ def workorder_create():
             if req.awaiting_hk_approval:
                 flash("Awaiting Housekeeping approval first.", "warning")
                 return redirect(url_for("request_detail", req_id=request_id))
-            if req.status not in ["Approved", "Assigned"]:
-                flash("Request must be approved by Maintenance Manager first", "danger")
+            if req.status not in ["Approved", "Assigned"] or req.manager_id is None:
+                flash("Request must be Verified & Approved by Maintenance Manager first. "
+                      "Staff assignment is locked.", "danger")
                 return redirect(url_for("request_detail", req_id=request_id))
             assigned_user = get_one(User, assigned_to_id)
             existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
@@ -3129,7 +3318,7 @@ def workorder_verify(wo_id):
             wo.request.manager_id = current_user.id
             if not wo.request.completed_date:
                 wo.request.completed_date = datetime.utcnow()
-        log_status_change(wo.request_id, "Verified", notes="Verified by " + str(current_user.full_name))
+        log_status_change(wo.request_id, "Verified", notes="Work verified by " + str(current_user.full_name))
         log_audit("Verify", "WorkOrder", wo.id, "Completed", "Verified")
         if wo.request:
             notify_users([wo.request.requested_by_id], wo.request_id, "✅ Verified", str(wo.request.request_no) + " verified", "Verified", link=url_for("request_detail", req_id=wo.request_id))
@@ -3480,6 +3669,25 @@ def workorder_part_remove(wo_id, part_id):
 # ══════════════════════════════════════════════════════════════
 # NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════
+@app.route("/api/notifications/unread")
+@login_required
+def api_unread_notifications():
+    count = Notification.query.filter_by(
+        user_id=current_user.id, is_read=False
+    ).count()
+    latest = (Notification.query
+              .filter_by(user_id=current_user.id, is_read=False)
+              .order_by(Notification.created_at.desc())
+              .first())
+    return jsonify({
+        "unread": count,
+        "latest_id": latest.id if latest else None,
+        "latest_title": latest.title if latest else None,
+        "latest_type": latest.notification_type if latest else None,
+        "server_time": datetime.utcnow().isoformat(),
+    })
+
+
 @app.route("/notifications")
 @login_required
 def notifications():
@@ -3499,11 +3707,34 @@ def notifications():
             '<td>' + read_action + '</td></tr>')
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h3>'
+        '<p style="color:#94a3b8;font-size:.85rem">All notifications remain visible here.</p>'
         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
         '<thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead>'
         '<tbody>' + (rows if rows else '<tr><td colspan="5" class="text-center">No notifications</td></tr>') + '</tbody>'
         '</table></div></div>')
-    return page("Notifications", content)
+
+    unread_now = Notification.query.filter_by(
+        user_id=current_user.id, is_read=False
+    ).count()
+
+    extra_js = (
+        '<script>'
+        '(function(){'
+        'if(' + str(unread_now) + '>0){'
+        'var Ctx=window.AudioContext||window.webkitAudioContext;'
+        'if(Ctx){var c=new Ctx();var n=[880,1108.73,1318.51];'
+        'n.forEach(function(f,i){var o=c.createOscillator(),g=c.createGain(),t=c.currentTime+i*0.15;'
+        'o.type="sine";o.frequency.value=f;'
+        'g.gain.setValueAtTime(0.0001,t);'
+        'g.gain.linearRampToValueAtTime(0.22,t+0.03);'
+        'g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);'
+        'o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+0.6);});}'
+        'if(navigator.vibrate)navigator.vibrate([200,100,200]);'
+        '}'
+        '})();'
+        '</script>'
+    )
+    return page("Notifications", content + extra_js)
 
 
 @app.route("/notifications/mark-read/<int:n_id>", methods=["GET", "POST"])
@@ -3671,7 +3902,7 @@ def reports():
 @app.route("/debug")
 def debug():
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
-    kasahun = User.query.filter_by(username="kasahun").first()
+    hk_user = User.query.filter_by(username="housekeeping").first()
     amir = User.query.filter_by(username="amir").first()
     return jsonify({
         "users": User.query.count(),
@@ -3679,21 +3910,20 @@ def debug():
             "id": hk_dept.id if hk_dept else None,
             "name": hk_dept.name if hk_dept else None,
         },
-        "kasahun": {
-            "exists": bool(kasahun),
-            "username": kasahun.username if kasahun else None,
-            "full_name": kasahun.full_name if kasahun else None,
-            "role": kasahun.role if kasahun else None,
-            "department_id": kasahun.department_id if kasahun else None,
-            "department_name": kasahun.department.name if kasahun and kasahun.department else None,
-            "is_hk_approver": bool(kasahun and is_housekeeping_approver(kasahun)),
+        "housekeeping_account (Kasahun Girma)": {
+            "exists": bool(hk_user),
+            "username": hk_user.username if hk_user else None,
+            "full_name": hk_user.full_name if hk_user else None,
+            "role": hk_user.role if hk_user else None,
+            "department_id": hk_user.department_id if hk_user else None,
+            "department_name": hk_user.department.name if hk_user and hk_user.department else None,
+            "is_hk_approver": bool(hk_user and is_housekeeping_approver(hk_user)),
         },
-        "amir": {
+        "amir (Maintenance Mgr)": {
             "exists": bool(amir),
             "username": amir.username if amir else None,
             "full_name": amir.full_name if amir else None,
             "role": amir.role if amir else None,
-            "department_id": amir.department_id if amir else None,
             "is_maintenance_manager": bool(amir and is_maintenance_manager(amir)),
         },
         "housekeeping_managers": [
@@ -3707,29 +3937,30 @@ def debug():
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "awaiting_hk": MaintenanceRequest.query.filter_by(awaiting_hk_approval=True).count(),
         "work_orders": WorkOrder.query.count(),
+        "unread_notifications": Notification.query.filter_by(is_read=False).count(),
     })
 
 
-@app.route("/debug/fix-kasahun")
-def debug_fix_kasahun():
-    """Emergency route: force Kasahun's role and department to be correct."""
+@app.route("/debug/fix-housekeeping")
+def debug_fix_housekeeping():
+    """Emergency: force 'housekeeping' user to be Kasahun Girma (MANAGER, HK dept)."""
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
     if not hk_dept:
         return jsonify({"error": "Housekeeping department not found"}), 404
-    kasahun = User.query.filter_by(username="kasahun").first()
-    if not kasahun:
-        kasahun = User(username="kasahun", full_name="Kasahun Girma", role="MANAGER", department_id=hk_dept.id)
-        kasahun.set_password("123456")
-        db.session.add(kasahun)
+    u = User.query.filter_by(username="housekeeping").first()
+    if not u:
+        u = User(username="housekeeping", full_name="Kasahun Girma", role="MANAGER", department_id=hk_dept.id)
+        u.set_password("123456")
+        db.session.add(u)
         db.session.commit()
-        return jsonify({"created": True, "username": "kasahun", "role": "MANAGER",
+        return jsonify({"created": True, "username": "housekeeping", "role": "MANAGER",
                         "department": hk_dept.name, "password": "123456"})
-    kasahun.role = "MANAGER"
-    kasahun.department_id = hk_dept.id
-    kasahun.full_name = "Kasahun Girma"
+    u.role = "MANAGER"
+    u.department_id = hk_dept.id
+    u.full_name = "Kasahun Girma"
     db.session.commit()
-    return jsonify({"fixed": True, "username": "kasahun", "role": kasahun.role,
-                    "department": kasahun.department.name if kasahun.department else None})
+    return jsonify({"fixed": True, "username": "housekeeping", "role": u.role,
+                    "department": u.department.name if u.department else None})
 
 
 @app.route("/debug/routes")
@@ -3738,7 +3969,7 @@ def debug_routes():
     for r in app.url_map.iter_rules():
         if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete",
                                       "delete", "restore", "mark-read", "hk-approve",
-                                      "hk/approvals", "requests", "employee", "department", "debug"]):
+                                      "hk/approvals", "requests", "employee", "department", "debug", "api"]):
             routes.append({"rule": r.rule,
                            "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]),
                            "endpoint": r.endpoint})
