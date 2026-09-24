@@ -55,6 +55,7 @@ REQUEST_STATUSES = ["Pending", "Approved", "Assigned", "In Progress", "Completed
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", "xlsx", "csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
+HK_APPROVER_ROLES = ["SUPERVISOR", "MANAGER", "ADMIN"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -169,6 +170,14 @@ class MaintenanceRequest(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # ─── Housekeeping Approval Workflow ───
+    awaiting_hk_approval = db.Column(db.Boolean, default=False)
+    hk_approved_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    hk_approved_at = db.Column(db.DateTime)
+    hk_approval_status = db.Column(db.String(20))          # "Pending" / "Approved" / "Rejected"
+    hk_signature_data = db.Column(db.Text)                 # base64 data-URL
+    hk_approval_notes = db.Column(db.Text)
+
     room = db.relationship("Room", foreign_keys=[room_id])
     area = db.relationship("Area", foreign_keys=[area_id])
     working_item = db.relationship("WorkingItem", foreign_keys=[working_item_id])
@@ -178,6 +187,7 @@ class MaintenanceRequest(db.Model):
     manager = db.relationship("User", foreign_keys=[manager_id])
     department = db.relationship("Department", foreign_keys=[department_id])
     deleted_by = db.relationship("User", foreign_keys=[deleted_by_id])
+    hk_approved_by = db.relationship("User", foreign_keys=[hk_approved_by_id])
 
     @property
     def location_name(self):
@@ -228,7 +238,6 @@ class WorkOrderPart(db.Model):
     quantity = db.Column(db.Float, default=1)
     unit_cost = db.Column(db.Float, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     part = db.relationship("InventoryPart", foreign_keys=[part_id])
 
 
@@ -244,7 +253,6 @@ class InventoryPart(db.Model):
     storage_location = db.Column(db.String(120))
     status = db.Column(db.String(20), default="Active")
     supplier_id = db.Column(db.Integer, db.ForeignKey("suppliers.id"))
-
     supplier = db.relationship("Supplier", foreign_keys=[supplier_id])
 
     @property
@@ -367,6 +375,23 @@ def role_required(*roles):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def is_housekeeping_approver(user):
+    """True if the given user is allowed to approve Housekeeping requests."""
+    if not user or not user.is_authenticated:
+        return False
+    return user.role in HK_APPROVER_ROLES
+
+
+def is_housekeeping_request(user):
+    """True if the given user is a Housekeeping department member."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.role != "DEPARTMENT":
+        return False
+    dept = user.department
+    return bool(dept and (dept.name or "").strip().lower() == "housekeeping")
 
 
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
@@ -499,6 +524,13 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests", "deleted_at", "ALTER TABLE maintenance_requests ADD COLUMN deleted_at " + dt_type)
             add_column_if_missing("maintenance_requests", "deleted_by_id", "ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER")
             add_column_if_missing("maintenance_requests", "deletion_reason", "ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT")
+            # ─── Housekeeping approval workflow ───
+            add_column_if_missing("maintenance_requests", "awaiting_hk_approval", "ALTER TABLE maintenance_requests ADD COLUMN awaiting_hk_approval BOOLEAN " + bool_default)
+            add_column_if_missing("maintenance_requests", "hk_approved_by_id", "ALTER TABLE maintenance_requests ADD COLUMN hk_approved_by_id INTEGER")
+            add_column_if_missing("maintenance_requests", "hk_approved_at", "ALTER TABLE maintenance_requests ADD COLUMN hk_approved_at " + dt_type)
+            add_column_if_missing("maintenance_requests", "hk_approval_status", "ALTER TABLE maintenance_requests ADD COLUMN hk_approval_status VARCHAR(20)")
+            add_column_if_missing("maintenance_requests", "hk_signature_data", "ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT")
+            add_column_if_missing("maintenance_requests", "hk_approval_notes", "ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT")
             add_column_if_missing("users", "department_id", "ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications", "work_order_id", "ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders", "completed_date", "ALTER TABLE work_orders ADD COLUMN completed_date " + dt_type)
@@ -835,6 +867,16 @@ def _parse_date(value):
 def build_filtered_query(args):
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
 
+    # Managers do NOT see requests that are still awaiting Housekeeping approval
+    try:
+        if current_user.is_authenticated and current_user.role in ["MANAGER", "ADMIN"]:
+            q = q.filter(db.or_(
+                MaintenanceRequest.awaiting_hk_approval == False,
+                MaintenanceRequest.awaiting_hk_approval.is_(None),
+            ))
+    except Exception:
+        pass
+
     d_from = _parse_date(args.get("date_from"))
     if d_from:
         q = q.filter(MaintenanceRequest.created_at >= d_from)
@@ -931,7 +973,6 @@ def _previous_period(date_from_str, date_to_str):
 def get_dashboard_kpis(args):
     base = build_filtered_query(args)
     reqs = base.all()
-
     total = len(reqs)
     pending = sum(1 for r in reqs if r.status in PENDING_STATES)
     completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
@@ -968,7 +1009,6 @@ def get_dashboard_kpis(args):
         total_delta = ((total - prev_total) / prev_total) * 100
 
     completion_rate = (completed / total * 100) if total else 0.0
-
     avg_delta = None
     if prev_avg_seconds is not None and avg_seconds is not None:
         avg_delta = prev_avg_seconds - avg_seconds
@@ -987,10 +1027,8 @@ def get_dashboard_kpis(args):
 
 def get_request_trends(args):
     reqs = build_filtered_query(args).all()
-
     d_from = _parse_date(args.get("date_from"))
     d_to = _parse_date(args.get("date_to"))
-
     if d_from and d_to:
         start, end = d_from, d_to
     else:
@@ -1010,7 +1048,6 @@ def get_request_trends(args):
         gran = "month"
 
     ordered_keys, labels = [], []
-
     if gran == "day":
         cur = start
         while cur <= end:
@@ -1355,7 +1392,6 @@ def dashboard():
 @login_required
 @role_required("DEPARTMENT")
 def department_dashboard():
-    # ─── Fetch this department's requests ───
     if current_user.department_id:
         requests = MaintenanceRequest.query.filter(
             MaintenanceRequest.is_deleted == False,
@@ -1370,7 +1406,6 @@ def department_dashboard():
             requested_by_id=current_user.id
         ).order_by(MaintenanceRequest.created_at.desc()).all()
 
-    # ─── KPI counts ───
     total       = len(requests)
     pending     = sum(1 for r in requests if r.status == "Pending")
     approved    = sum(1 for r in requests if r.status in ["Approved", "Assigned"])
@@ -1381,7 +1416,6 @@ def department_dashboard():
     rejected    = sum(1 for r in requests if r.status == "Rejected")
     overdue     = sum(1 for r in requests if r.is_overdue)
 
-    # ─── Status breakdown ───
     flow = [
         ("Pending",     pending),
         ("Approved",    approved),
@@ -1393,7 +1427,6 @@ def department_dashboard():
     status_labels = [s[0] for s in flow if s[1] > 0]
     status_values = [s[1] for s in flow if s[1] > 0]
 
-    # ─── Category breakdown ───
     cat_counts = defaultdict(int)
     for r in requests:
         cat_counts[r.category.name if r.category else "Uncategorized"] += 1
@@ -1401,7 +1434,6 @@ def department_dashboard():
     category_labels = [k for k, _ in cat_sorted]
     category_values = [v for _, v in cat_sorted]
 
-    # ─── Floor breakdown ───
     floor_counts = defaultdict(int)
     for r in requests:
         floor_counts[r.floor if r.floor else 0] += 1
@@ -1409,7 +1441,6 @@ def department_dashboard():
     floor_labels = [f"Floor {f}" if f else "Unassigned" for f, _ in floor_sorted]
     floor_values = [v for _, v in floor_sorted]
 
-    # ─── Priority breakdown ───
     prio_counts = defaultdict(int)
     for r in requests:
         prio_counts[r.priority or "MEDIUM"] += 1
@@ -1417,13 +1448,11 @@ def department_dashboard():
     priority_labels = [p for p in prio_order if prio_counts.get(p, 0) > 0]
     priority_values = [prio_counts[p] for p in priority_labels]
 
-    # ─── Top locations ───
     loc_counts = defaultdict(int)
     for r in requests:
         loc_counts[r.location_name] += 1
     top_locations = sorted(loc_counts.items(), key=lambda x: -x[1])[:8]
 
-    # ─── 14-day trend ───
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     trend_labels, trend_total, trend_completed, trend_pending, trend_inprogress = [], [], [], [], []
     for i in range(13, -1, -1):
@@ -1436,7 +1465,6 @@ def department_dashboard():
         trend_pending.append(sum(1 for r in day_reqs if r.status == "Pending"))
         trend_inprogress.append(sum(1 for r in day_reqs if r.status == "In Progress"))
 
-    # ─── Activity from StatusHistory ───
     req_ids = [r.id for r in requests]
     activity = []
     if req_ids:
@@ -1452,14 +1480,12 @@ def department_dashboard():
                 "req_id": h.request_id,
             })
 
-    # ─── Work orders for follow-up ───
     work_orders = []
     if req_ids:
         work_orders = WorkOrder.query.filter(
             WorkOrder.request_id.in_(req_ids)
         ).order_by(WorkOrder.created_at.desc()).limit(5).all()
 
-    # ─── Notifications ───
     notifications_list = Notification.query.filter_by(
         user_id=current_user.id
     ).order_by(Notification.created_at.desc()).limit(5).all()
@@ -1539,9 +1565,19 @@ def requests_list():
         return redirect(url_for("department_dashboard"))
     if current_user.role == "EMPLOYEE":
         return redirect(url_for("employee_dashboard"))
+
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
+
+    # Managers don't see requests that are still awaiting HK approval
+    if current_user.role in ["MANAGER", "ADMIN"]:
+        q = q.filter(db.or_(
+            MaintenanceRequest.awaiting_hk_approval == False,
+            MaintenanceRequest.awaiting_hk_approval.is_(None),
+        ))
+
     if current_user.role in STAFF_ROLES:
         q = q.filter_by(assigned_to_id=current_user.id)
+
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
 
     rows_parts = []
@@ -1552,8 +1588,11 @@ def requests_list():
             badge = "warning"
         else:
             badge = "info"
+        hk_badge = ""
+        if r.awaiting_hk_approval:
+            hk_badge = ' <span class="badge bg-warning text-dark" style="font-size:.65rem">HK Pending</span>'
         rows_parts.append(
-            '<tr><td><a href="/requests/' + str(r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
+            '<tr><td><a href="/requests/' + str(r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a>' + hk_badge + '</td>'
             '<td>' + str(r.location_name) + '</td>'
             '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
             '<td><span class="badge bg-' + badge + '">' + str(r.priority) + '</span></td>'
@@ -1617,14 +1656,58 @@ def request_create():
             return redirect(url_for("request_create"))
 
         due = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio, 24))
-        req = MaintenanceRequest(request_no=request_no_generator(), location_type=loc, floor=floor, room_id=room_id, area_id=area_id, working_item_id=item_id, category_id=cat_id, department_id=dept_id, description=desc, priority=prio, status="Pending", requested_by_id=current_user.id, due_date=due)
+        req = MaintenanceRequest(
+            request_no=request_no_generator(),
+            location_type=loc, floor=floor, room_id=room_id, area_id=area_id,
+            working_item_id=item_id, category_id=cat_id, department_id=dept_id,
+            description=desc, priority=prio, status="Pending",
+            requested_by_id=current_user.id, due_date=due
+        )
+
+        # ─── Housekeeping approval routing ───
+        hk_request = is_housekeeping_request(current_user)
+        if hk_request:
+            req.awaiting_hk_approval = True
+            req.hk_approval_status = "Pending"
+
         db.session.add(req)
         db.session.flush()
         log_status_change(req.id, "Pending", notes="Submitted")
         log_audit("Create", "MaintenanceRequest", req.id, new_value=req.request_no)
-        managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-        notify_users([u.id for u in managers], req.id, "📬 New Request", "Request " + str(req.request_no) + " at " + str(req.location_name), "New Request", link=url_for("request_detail", req_id=req.id))
-        notify_users([current_user.id], req.id, "✅ Request Submitted", "Request " + str(req.request_no) + " submitted", "Request Submitted", link=url_for("request_detail", req_id=req.id))
+
+        if hk_request:
+            # Notify Housekeeping approvers (Supervisor / Manager / Admin)
+            approvers = User.query.filter(
+                User.role.in_(HK_APPROVER_ROLES),
+                User.active == True
+            ).all()
+            notify_users(
+                [u.id for u in approvers], req.id,
+                "📋 HK Approval Required",
+                "Request " + str(req.request_no) + " from Housekeeping needs your signature",
+                "HK Approval Required",
+                link=url_for("request_detail", req_id=req.id)
+            )
+            log_audit("HK Approval Requested", "MaintenanceRequest", req.id, new_value=req.request_no)
+        else:
+            # Non-HK requests go straight to managers
+            managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
+            notify_users(
+                [u.id for u in managers], req.id,
+                "📬 New Request",
+                "Request " + str(req.request_no) + " at " + str(req.location_name),
+                "New Request",
+                link=url_for("request_detail", req_id=req.id)
+            )
+
+        notify_users(
+            [current_user.id], req.id,
+            "✅ Request Submitted",
+            "Request " + str(req.request_no) + " submitted",
+            "Request Submitted",
+            link=url_for("request_detail", req_id=req.id)
+        )
+
         db.session.commit()
         flash("✅ ጥያቄዎ ተልኳል!", "success")
         if current_user.role == "DEPARTMENT":
@@ -1677,6 +1760,62 @@ def request_detail(req_id):
         )
     timeline = "".join(timeline_parts)
 
+    # ─── Housekeeping approval card ───
+    hk_html = ""
+    if req.awaiting_hk_approval:
+        if is_housekeeping_approver(current_user):
+            hk_html = (
+                '<div class="card" style="border-color:rgba(212,175,55,0.5);background:rgba(212,175,55,0.05)">'
+                '<h5 style="color:#D4AF37"><i class="fas fa-stamp"></i> Housekeeping Approval Required</h5>'
+                '<p style="color:#cbd5e1;font-size:.88rem;margin-bottom:.75rem">'
+                'This request is waiting for a Housekeeping Supervisor or Manager to review and sign.'
+                '</p>'
+                '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" class="btn btn-warning w-100">'
+                '<i class="fas fa-pen-nib"></i> Review &amp; Sign'
+                '</a></div>'
+            )
+        else:
+            hk_html = (
+                '<div class="card" style="border-color:rgba(245,158,11,0.35)">'
+                '<h5 style="color:#F59E0B"><i class="fas fa-hourglass-half"></i> Awaiting Housekeeping Approval</h5>'
+                '<p style="color:#94a3b8;font-size:.85rem">Pending review by Housekeeping Supervisor / Manager.</p>'
+                '</div>'
+            )
+    elif req.hk_approval_status == "Approved":
+        sig_html = ""
+        if req.hk_signature_data:
+            sig_html = (
+                '<div style="margin-top:.5rem;padding:.6rem;background:#fff;border-radius:10px;text-align:center">'
+                '<img src="' + str(req.hk_signature_data) + '" alt="Signature" style="max-height:90px;max-width:100%">'
+                '</div>'
+            )
+        approver_name = req.hk_approved_by.full_name if req.hk_approved_by else "—"
+        approver_role = ""
+        if req.hk_approved_by and req.hk_approved_by.role:
+            approver_role = "Housekeeping " + str(req.hk_approved_by.role).title()
+        hk_html = (
+            '<div class="card" style="border-color:rgba(34,197,94,0.4);background:rgba(34,197,94,0.05)">'
+            '<h5 style="color:#22c55e"><i class="fas fa-stamp"></i> Housekeeping Approval</h5>'
+            '<table class="table" style="margin-bottom:0"><tbody>'
+            '<tr><th style="width:180px;color:#94a3b8">Approved by</th><td>' + str(approver_name) + '</td></tr>'
+            '<tr><th style="color:#94a3b8">Position</th><td>' + str(approver_role or "—") + '</td></tr>'
+            '<tr><th style="color:#94a3b8">Approved at</th><td>' + (req.hk_approved_at.strftime("%Y-%m-%d %H:%M") if req.hk_approved_at else "—") + '</td></tr>'
+            '<tr><th style="color:#94a3b8">Notes</th><td>' + str(req.hk_approval_notes or "—") + '</td></tr>'
+            '</tbody></table>'
+            '<p style="color:#94a3b8;margin:.75rem 0 .25rem;font-weight:600">Signature:</p>'
+            + sig_html +
+            '<p style="color:#22c55e;font-size:.82rem;margin-top:.75rem">✅ Submitted to Maintenance Manager</p>'
+            '</div>'
+        )
+    elif req.hk_approval_status == "Rejected":
+        hk_html = (
+            '<div class="card" style="border-color:rgba(239,68,68,0.4);background:rgba(239,68,68,0.05)">'
+            '<h5 style="color:#EF4444"><i class="fas fa-times-circle"></i> Rejected by Housekeeping</h5>'
+            '<p><b>Rejected by:</b> ' + (req.hk_approved_by.full_name if req.hk_approved_by else "—") + '</p>'
+            '<p><b>Reason:</b> ' + str(req.hk_approval_notes or "—") + '</p>'
+            '</div>'
+        )
+
     wo = WorkOrder.query.filter_by(request_id=req.id).first()
     wo_html = ""
     if wo:
@@ -1700,13 +1839,21 @@ def request_detail(req_id):
 
     actions = ""
     if current_user.role in ["MANAGER", "ADMIN"]:
-        if req.status == "Pending":
+        # Only show approve when HK approval (if required) has been completed
+        hk_cleared = (not req.awaiting_hk_approval and req.hk_approval_status != "Rejected")
+        if req.status == "Pending" and hk_cleared:
             approve_url = url_for("request_approve", req_id=req.id)
             actions += (
                 '<form method="post" action="' + approve_url + '">'
                 '<button type="submit" class="btn btn-success mb-2 w-100">'
-                '<i class="fas fa-check"></i> Approve & Create WO'
+                '<i class="fas fa-check"></i> Approve &amp; Create WO'
                 '</button></form>'
+            )
+        if req.status == "Pending" and req.awaiting_hk_approval:
+            actions += (
+                '<div class="alert alert-warning" style="font-size:.82rem;margin-bottom:.5rem">'
+                '<i class="fas fa-hourglass-half"></i> Awaiting Housekeeping approval.'
+                '</div>'
             )
         if req.status in ["Approved", "Assigned"] and (not wo or wo.status == "Pending"):
             assign_url = url_for("workorder_create") + "?request_id=" + str(req.id)
@@ -1761,7 +1908,8 @@ def request_detail(req_id):
         '<tr><th style="color:#94a3b8">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Description</th><td>' + str(req.description or "") + '</td></tr>'
-        '</table></div>' + wo_html +
+        '</table></div>'
+        + hk_html + wo_html +
         '<div class="card"><h5 style="color:#f59e0b">📜 Timeline</h5>'
         + (timeline if timeline else "<p style='color:#94a3b8'>No activity</p>") +
         '</div></div>'
@@ -1772,11 +1920,100 @@ def request_detail(req_id):
     return page("Request Detail", content)
 
 
+# ══════════════════════════════════════════════════════════════
+# HOUSEKEEPING APPROVAL ROUTES
+# ══════════════════════════════════════════════════════════════
+@app.route("/requests/<int:req_id>/hk-approve", methods=["GET", "POST"])
+@login_required
+def hk_approve_request(req_id):
+    if not is_housekeeping_approver(current_user):
+        abort(403)
+
+    req = get_or_404(MaintenanceRequest, req_id)
+
+    if not req.awaiting_hk_approval:
+        flash("This request is not awaiting Housekeeping approval.", "warning")
+        return redirect(url_for("request_detail", req_id=req_id))
+
+    if request.method == "POST":
+        action = request.form.get("action", "approve")
+        signature = request.form.get("signature_data", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        if action == "approve":
+            if not signature or not signature.startswith("data:image/"):
+                flash("A digital signature is required to approve.", "danger")
+                return redirect(url_for("hk_approve_request", req_id=req_id))
+
+            req.hk_approved_by_id = current_user.id
+            req.hk_approved_at = datetime.utcnow()
+            req.hk_approval_status = "Approved"
+            req.hk_signature_data = signature
+            req.hk_approval_notes = notes or "Approved by Housekeeping"
+            req.awaiting_hk_approval = False
+
+            log_status_change(req.id, "HK Approved", notes="Approved by " + str(current_user.full_name))
+            log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting", "approved")
+            log_audit("Submitted to Maintenance Manager", "MaintenanceRequest", req.id, new_value=req.request_no)
+
+            managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
+            notify_users(
+                [u.id for u in managers], req.id,
+                "📬 HK Approved Request",
+                "Request " + str(req.request_no) + " approved by Housekeeping and sent to Maintenance Manager",
+                "New Request",
+                link=url_for("request_detail", req_id=req.id)
+            )
+            notify_users(
+                [req.requested_by_id], req.id,
+                "✅ Approved by Housekeeping",
+                "Your request " + str(req.request_no) + " was approved by Housekeeping",
+                "HK Approved",
+                link=url_for("request_detail", req_id=req.id)
+            )
+
+            db.session.commit()
+            flash("✅ Approved and submitted to Maintenance Manager.", "success")
+            return redirect(url_for("request_detail", req_id=req_id))
+
+        elif action == "reject":
+            req.hk_approved_by_id = current_user.id
+            req.hk_approved_at = datetime.utcnow()
+            req.hk_approval_status = "Rejected"
+            req.hk_approval_notes = notes or "Rejected by Housekeeping"
+            req.awaiting_hk_approval = False
+            req.status = "Rejected"
+
+            log_status_change(req.id, "HK Rejected",
+                              notes="Rejected by " + str(current_user.full_name) + ": " + req.hk_approval_notes)
+            log_audit("HK Reject", "MaintenanceRequest", req.id, "awaiting", "rejected")
+
+            notify_users(
+                [req.requested_by_id], req.id,
+                "❌ Rejected by Housekeeping",
+                "Your request " + str(req.request_no) + " was rejected: " + req.hk_approval_notes,
+                "HK Rejected",
+                link=url_for("request_detail", req_id=req_id)
+            )
+
+            db.session.commit()
+            flash("Request rejected.", "warning")
+            return redirect(url_for("request_detail", req_id=req_id))
+
+    return render_template("hk_approve.html", req=req, title="Housekeeping Approval")
+
+
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER", "ADMIN")
 def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
+        if req.awaiting_hk_approval:
+            flash("This request must be approved by Housekeeping first.", "warning")
+            return redirect(url_for("request_detail", req_id=req_id))
+        if req.hk_approval_status == "Rejected":
+            flash("This request was rejected by Housekeeping.", "warning")
+            return redirect(url_for("request_detail", req_id=req_id))
         if req.status != "Pending":
             flash("Not pending", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -1977,6 +2214,9 @@ def workorder_create():
                 flash("Select staff", "danger")
                 return redirect(url_for("workorder_create", request_id=request_id))
             req = get_or_404(MaintenanceRequest, request_id)
+            if req.awaiting_hk_approval:
+                flash("Awaiting Housekeeping approval first.", "warning")
+                return redirect(url_for("request_detail", req_id=request_id))
             if req.status not in ["Approved", "Assigned"]:
                 flash("Request must be approved", "danger")
                 return redirect(url_for("request_detail", req_id=request_id))
@@ -2785,6 +3025,7 @@ def debug():
         "users": User.query.count(),
         "dept_users": User.query.filter_by(role="DEPARTMENT").count(),
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
+        "awaiting_hk": MaintenanceRequest.query.filter_by(awaiting_hk_approval=True).count(),
         "deleted_requests": MaintenanceRequest.query.filter_by(is_deleted=True).count(),
         "work_orders": WorkOrder.query.count(),
         "unassigned_wos": WorkOrder.query.filter(WorkOrder.assigned_to_id.is_(None)).count(),
@@ -2796,7 +3037,7 @@ def debug():
 def debug_routes():
     routes = []
     for r in app.url_map.iter_rules():
-        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read"]):
+        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve"]):
             routes.append({"rule": r.rule, "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]), "endpoint": r.endpoint})
     return jsonify(routes)
 
