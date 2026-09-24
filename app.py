@@ -13,7 +13,7 @@ from sqlalchemy import text, inspect
 
 from flask import (
     Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-    render_template,
+    render_template, render_template_string,
     request, send_file, url_for, Response,
 )
 from flask_login import (
@@ -170,12 +170,11 @@ class MaintenanceRequest(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # ─── Housekeeping Approval Workflow ───
     awaiting_hk_approval = db.Column(db.Boolean, default=False)
     hk_approved_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     hk_approved_at = db.Column(db.DateTime)
-    hk_approval_status = db.Column(db.String(20))          # "Pending" / "Approved" / "Rejected"
-    hk_signature_data = db.Column(db.Text)                 # base64 data-URL
+    hk_approval_status = db.Column(db.String(20))
+    hk_signature_data = db.Column(db.Text)
     hk_approval_notes = db.Column(db.Text)
 
     room = db.relationship("Room", foreign_keys=[room_id])
@@ -378,14 +377,12 @@ def role_required(*roles):
 
 
 def is_housekeeping_approver(user):
-    """True if the given user is allowed to approve Housekeeping requests."""
     if not user or not user.is_authenticated:
         return False
     return user.role in HK_APPROVER_ROLES
 
 
 def is_housekeeping_request(user):
-    """True if the given user is a Housekeeping department member."""
     if not user or not user.is_authenticated:
         return False
     if user.role != "DEPARTMENT":
@@ -524,7 +521,6 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests", "deleted_at", "ALTER TABLE maintenance_requests ADD COLUMN deleted_at " + dt_type)
             add_column_if_missing("maintenance_requests", "deleted_by_id", "ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER")
             add_column_if_missing("maintenance_requests", "deletion_reason", "ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT")
-            # ─── Housekeeping approval workflow ───
             add_column_if_missing("maintenance_requests", "awaiting_hk_approval", "ALTER TABLE maintenance_requests ADD COLUMN awaiting_hk_approval BOOLEAN " + bool_default)
             add_column_if_missing("maintenance_requests", "hk_approved_by_id", "ALTER TABLE maintenance_requests ADD COLUMN hk_approved_by_id INTEGER")
             add_column_if_missing("maintenance_requests", "hk_approved_at", "ALTER TABLE maintenance_requests ADD COLUMN hk_approved_at " + dt_type)
@@ -866,8 +862,6 @@ def _parse_date(value):
 
 def build_filtered_query(args):
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
-
-    # Managers do NOT see requests that are still awaiting Housekeeping approval
     try:
         if current_user.is_authenticated and current_user.role in ["MANAGER", "ADMIN"]:
             q = q.filter(db.or_(
@@ -876,48 +870,39 @@ def build_filtered_query(args):
             ))
     except Exception:
         pass
-
     d_from = _parse_date(args.get("date_from"))
     if d_from:
         q = q.filter(MaintenanceRequest.created_at >= d_from)
-
     d_to = _parse_date(args.get("date_to"))
     if d_to:
         q = q.filter(MaintenanceRequest.created_at < d_to + timedelta(days=1))
-
     if args.get("department"):
         try:
             q = q.filter(MaintenanceRequest.department_id == int(args["department"]))
         except (ValueError, TypeError):
             pass
-
     if args.get("category"):
         try:
             q = q.filter(MaintenanceRequest.category_id == int(args["category"]))
         except (ValueError, TypeError):
             pass
-
     if args.get("status"):
         q = q.filter(MaintenanceRequest.status == args["status"])
-
     if args.get("floor"):
         try:
             q = q.filter(MaintenanceRequest.floor == int(args["floor"]))
         except (ValueError, TypeError):
             pass
-
     if args.get("room_id"):
         try:
             q = q.filter(MaintenanceRequest.room_id == int(args["room_id"]))
         except (ValueError, TypeError):
             pass
-
     if args.get("area_id"):
         try:
             q = q.filter(MaintenanceRequest.area_id == int(args["area_id"]))
         except (ValueError, TypeError):
             pass
-
     return q
 
 
@@ -1388,6 +1373,444 @@ def dashboard():
     )
 
 
+# ══════════════════════════════════════════════════════════════
+# HOUSEKEEPING DASHBOARD — embedded template (no external file)
+# ══════════════════════════════════════════════════════════════
+HK_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} | Rori Hotel</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0a1a;color:#fff;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45;min-height:100vh;padding:1rem;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+.hk-wrap{max-width:1400px;margin:0 auto}
+.hk-top{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
+.hk-title{display:flex;align-items:center;gap:.7rem}
+.hk-logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#8B5CF6,#3B82F6);display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff;box-shadow:0 4px 16px rgba(139,92,246,0.5)}
+.hk-title h1{font-size:1.1rem;font-weight:800;color:#fff}
+.hk-title h1 span{background:linear-gradient(135deg,#A855F7,#38BDF8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hk-title p{font-size:.68rem;color:#9CA3AF;margin-top:1px}
+.hk-user{display:flex;align-items:center;gap:.6rem;padding:.4rem .9rem .4rem .4rem;background:#14142a;border:1px solid rgba(139,92,246,0.15);border-radius:40px}
+.hk-user-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#EC4899);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:800;color:#fff}
+.hk-user-txt{display:flex;flex-direction:column;line-height:1.1}
+.hk-user-txt strong{font-size:.78rem;font-weight:600;color:#fff}
+.hk-user-txt small{font-size:.6rem;color:#A855F7;font-weight:700;text-transform:uppercase}
+.hk-flash{background:#14142a;border:1px solid rgba(139,92,246,0.2);color:#fff;font-size:.8rem;border-radius:12px;padding:.7rem 1rem;margin-bottom:1rem}
+.hk-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-bottom:1rem}
+.hk-c2{grid-column:span 2}
+.hk-c4{grid-column:span 4}
+.hk-c6{grid-column:span 6}
+.hk-c8{grid-column:span 8}
+.hk-card{background:#14142a;border:1px solid rgba(139,92,246,0.15);border-radius:18px;padding:1.1rem 1.2rem}
+.hk-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap}
+.hk-card-head h3{font-size:.85rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:.5rem}
+.hk-card-head h3 i{color:#A855F7;font-size:.8rem}
+.hk-hint{font-size:.6rem;color:#9CA3AF;background:rgba(139,92,246,0.1);padding:.2rem .55rem;border-radius:20px;font-weight:700;text-transform:uppercase}
+.hk-link{font-size:.68rem;color:#A855F7;font-weight:700}
+.hk-kpi{background:#14142a;border:1px solid rgba(139,92,246,0.15);border-radius:18px;padding:1rem 1.1rem;position:relative;overflow:hidden;min-height:110px;display:flex;flex-direction:column;justify-content:space-between}
+.hk-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#8B5CF6,#A855F7)}
+.hk-kpi.b::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
+.hk-kpi.g::before{background:linear-gradient(90deg,#22C55E,#10B981)}
+.hk-kpi.o::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
+.hk-kpi.p::before{background:linear-gradient(90deg,#EC4899,#8B5CF6)}
+.hk-kpi-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem}
+.hk-kpi-lbl{font-size:.6rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.8px;font-weight:700}
+.hk-kpi-val{font-size:1.7rem;font-weight:800;color:#fff;line-height:1;margin-top:.3rem;letter-spacing:-.02em}
+.hk-kpi-ico{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.75rem;background:rgba(139,92,246,0.14);color:#A855F7}
+.hk-kpi.b .hk-kpi-ico{background:rgba(56,189,248,0.14);color:#38BDF8}
+.hk-kpi.g .hk-kpi-ico{background:rgba(34,197,94,0.14);color:#22C55E}
+.hk-kpi.o .hk-kpi-ico{background:rgba(245,158,11,0.14);color:#F59E0B}
+.hk-kpi.p .hk-kpi-ico{background:rgba(236,72,153,0.14);color:#EC4899}
+.hk-kpi-foot{font-size:.62rem;color:#9CA3AF;display:flex;align-items:center;gap:.3rem;margin-top:.4rem}
+.hk-chart{position:relative;width:100%;height:230px}
+.hk-chart.tall{height:280px}
+.hk-chart.donut{height:230px}
+.hk-prog-list{display:flex;flex-direction:column;gap:.7rem}
+.hk-prog-row{display:flex;flex-direction:column;gap:.35rem}
+.hk-prog-top{display:flex;justify-content:space-between;font-size:.74rem}
+.hk-prog-top .nm{color:#e5e7eb;font-weight:600}
+.hk-prog-top .ct{color:#A855F7;font-weight:800}
+.hk-prog-bar{height:6px;background:rgba(139,92,246,0.1);border-radius:6px;overflow:hidden}
+.hk-prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#8B5CF6,#EC4899)}
+.hk-act{display:flex;flex-direction:column;gap:.55rem}
+.hk-act-item{display:flex;align-items:center;gap:.7rem;padding:.6rem .7rem;background:#0f0f22;border:1px solid rgba(139,92,246,0.12);border-radius:12px}
+.hk-act-item:hover{border-color:rgba(139,92,246,0.35);background:rgba(139,92,246,0.04)}
+.hk-act-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#8B5CF6,#38BDF8);flex-shrink:0}
+.hk-act-av.a2{background:linear-gradient(135deg,#38BDF8,#3B82F6)}
+.hk-act-av.a3{background:linear-gradient(135deg,#EC4899,#8B5CF6)}
+.hk-act-av.a4{background:linear-gradient(135deg,#22C55E,#10B981)}
+.hk-act-main{flex:1;min-width:0}
+.hk-act-line1{font-size:.76rem;font-weight:700;color:#fff;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.hk-act-line1 a{color:#A855F7}
+.hk-act-line2{font-size:.64rem;color:#9CA3AF;margin-top:2px;display:flex;gap:.55rem;flex-wrap:wrap}
+.hk-act-line2 i{font-size:.58rem}
+.hk-badge{display:inline-flex;align-items:center;padding:.2rem .5rem;border-radius:20px;font-size:.58rem;font-weight:800;text-transform:uppercase;white-space:nowrap}
+.hk-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.hk-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.hk-badge.b-assigned{background:rgba(139,92,246,0.15);color:#8B5CF6;border:1px solid rgba(139,92,246,0.3)}
+.hk-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
+.hk-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.hk-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
+.hk-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
+.hk-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.hk-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.hk-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
+.hk-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.hk-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.hk-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.hk-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.hk-table{width:100%;border-collapse:collapse;font-size:.74rem}
+.hk-table th{text-align:left;padding:.6rem .5rem;color:#9CA3AF;font-size:.6rem;text-transform:uppercase;border-bottom:1px solid rgba(139,92,246,0.15);font-weight:700;white-space:nowrap}
+.hk-table td{padding:.65rem .5rem;border-bottom:1px solid rgba(139,92,246,0.05);color:#e5e7eb;vertical-align:middle}
+.hk-table tr:last-child td{border-bottom:none}
+.hk-table a{color:#A855F7;font-weight:600}
+.hk-feed{display:flex;flex-direction:column;gap:.4rem}
+.hk-feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:#0f0f22;border-left:2px solid #8B5CF6;border-radius:9px;font-size:.74rem}
+.hk-feed-item.unread{border-left-color:#F59E0B}
+.hk-feed-ic{width:24px;height:24px;border-radius:7px;background:rgba(139,92,246,0.12);color:#A855F7;display:flex;align-items:center;justify-content:center;font-size:.6rem;flex-shrink:0}
+.hk-feed-b{flex:1;min-width:0}
+.hk-feed-b .tx{color:#e5e7eb;line-height:1.35}
+.hk-feed-b .tx strong{color:#fff}
+.hk-feed-b .tm{font-size:.6rem;color:#6B7280;margin-top:2px}
+.hk-empty{text-align:center;padding:1.6rem 1rem;color:#9CA3AF;font-size:.76rem}
+.hk-empty i{font-size:1.5rem;color:#A855F7;opacity:.4;display:block;margin-bottom:.4rem}
+@media (max-width:1200px){.hk-c2{grid-column:span 4}.hk-c4{grid-column:span 6}}
+@media (max-width:900px){.hk-c2,.hk-c4,.hk-c6,.hk-c8{grid-column:span 12}.hk-kpi-val{font-size:1.4rem}}
+</style>
+</head>
+<body>
+<div class="hk-wrap">
+
+  <div class="hk-top">
+    <div class="hk-title">
+      <div class="hk-logo"><i class="fas fa-broom"></i></div>
+      <div>
+        <h1>{{ dept_name }} <span>Dashboard</span></h1>
+        <p>Housekeeping &amp; Room Maintenance Overview</p>
+      </div>
+    </div>
+    <div class="hk-user">
+      <div class="hk-user-av">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
+      <div class="hk-user-txt">
+        <strong>{{ current_user.full_name or current_user.username }}</strong>
+        <small>{{ current_user.role }}</small>
+      </div>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, msg in messages %}
+      <div class="hk-flash"><strong>{{ cat|upper }}:</strong> {{ msg }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <div class="hk-grid">
+    <div class="hk-c2">
+      <div class="hk-kpi">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">Total</div><div class="hk-kpi-val">{{ kpis.total }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-clipboard-list"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-list"></i> All requests</div>
+      </div>
+    </div>
+    <div class="hk-c2">
+      <div class="hk-kpi o">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">Pending</div><div class="hk-kpi-val">{{ kpis.pending }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-hourglass-half"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-circle-exclamation"></i> Awaiting</div>
+      </div>
+    </div>
+    <div class="hk-c2">
+      <div class="hk-kpi b">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">Approved</div><div class="hk-kpi-val">{{ kpis.approved }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-check-circle"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-thumbs-up"></i> Ready</div>
+      </div>
+    </div>
+    <div class="hk-c2">
+      <div class="hk-kpi p">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">In Progress</div><div class="hk-kpi-val">{{ kpis.in_progress }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-spinner"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-wrench"></i> Working</div>
+      </div>
+    </div>
+    <div class="hk-c2">
+      <div class="hk-kpi g">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">Completed</div><div class="hk-kpi-val">{{ kpis.completed }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-circle-check"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-check-double"></i> Finished</div>
+      </div>
+    </div>
+    <div class="hk-c2">
+      <div class="hk-kpi">
+        <div class="hk-kpi-top">
+          <div><div class="hk-kpi-lbl">Closed</div><div class="hk-kpi-val">{{ kpis.closed }}</div></div>
+          <div class="hk-kpi-ico"><i class="fas fa-archive"></i></div>
+        </div>
+        <div class="hk-kpi-foot"><i class="fas fa-lock"></i> Archived</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hk-grid">
+    <div class="hk-c8">
+      <div class="hk-card">
+        <div class="hk-card-head">
+          <h3><i class="fas fa-chart-area"></i> Housekeeping Request Trends</h3>
+          <span class="hk-hint">Last 14 Days</span>
+        </div>
+        <div class="hk-chart tall"><canvas id="chart-trends"></canvas></div>
+      </div>
+    </div>
+    <div class="hk-c4">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-chart-pie"></i> Status Distribution</h3></div>
+        <div class="hk-chart donut"><canvas id="chart-status"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hk-grid">
+    <div class="hk-c4">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-building"></i> By Floor</h3></div>
+        <div class="hk-chart"><canvas id="chart-floors"></canvas></div>
+      </div>
+    </div>
+    <div class="hk-c4">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-chart-bar"></i> By Category</h3></div>
+        <div class="hk-chart"><canvas id="chart-categories"></canvas></div>
+      </div>
+    </div>
+    <div class="hk-c4">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-fire"></i> Priority</h3></div>
+        <div class="hk-chart donut"><canvas id="chart-priorities"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hk-grid">
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-location-dot"></i> Top Housekeeping Areas</h3></div>
+        {% if top_locations and top_locations|length > 0 %}
+          {% set max_c = top_locations[0][1] if top_locations[0][1] > 0 else 1 %}
+          <div class="hk-prog-list">
+            {% for name, count in top_locations %}
+              <div class="hk-prog-row">
+                <div class="hk-prog-top"><span class="nm">{{ name }}</span><span class="ct">{{ count }}</span></div>
+                <div class="hk-prog-bar"><span style="width:{{ (count / max_c * 100)|round|int }}%"></span></div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-location-dot"></i>No data yet.</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head">
+          <h3><i class="fas fa-list"></i> My Housekeeping Requests</h3>
+          <a href="{{ url_for('request_create') }}" class="hk-link"><i class="fas fa-plus"></i> New</a>
+        </div>
+        {% if my_requests and my_requests|length > 0 %}
+          <div class="hk-act">
+            {% for r in my_requests %}
+              {% set av_class = 'a2' if loop.index % 4 == 2 else 'a3' if loop.index % 4 == 3 else 'a4' if loop.index % 4 == 0 else '' %}
+              <div class="hk-act-item">
+                <div class="hk-act-av {{ av_class }}">{{ (r.request_no or 'R')[0]|upper }}</div>
+                <div class="hk-act-main">
+                  <div class="hk-act-line1">
+                    <a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a>
+                    <span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
+                    <span class="hk-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
+                  </div>
+                  <div class="hk-act-line2">
+                    <span><i class="fas fa-location-dot"></i> {{ r.location_name }}</span>
+                    <span><i class="fas fa-clock"></i> {{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</span>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="hk-grid">
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-clock-rotate-left"></i> Latest Requests</h3></div>
+        {% if recent_requests and recent_requests|length > 0 %}
+          <table class="hk-table">
+            <thead><tr><th>Request</th><th>Location</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>
+              {% for r in recent_requests %}
+                <tr>
+                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
+                  <td>{{ r.location_name }}</td>
+                  <td><span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
+                  <td style="color:#9CA3AF;font-size:.7rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-wrench"></i> Maintenance Follow-up</h3></div>
+        {% if work_orders and work_orders|length > 0 %}
+          <div class="hk-act">
+            {% for wo in work_orders %}
+              <div class="hk-act-item">
+                <div class="hk-act-av a2"><i class="fas fa-tools"></i></div>
+                <div class="hk-act-main">
+                  <div class="hk-act-line1">
+                    <a href="{{ url_for('workorder_detail', wo_id=wo.id) }}">{{ wo.work_order_no }}</a>
+                    <span class="hk-badge {{ status_badge_class(wo.status) }}">{{ wo.status }}</span>
+                  </div>
+                  <div class="hk-act-line2">
+                    <span><i class="fas fa-user"></i> {{ wo.assigned_to.full_name if wo.assigned_to else 'Unassigned' }}</span>
+                    <span><i class="fas fa-clock"></i> {{ wo.created_at.strftime('%b %d') if wo.created_at else '—' }}</span>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-wrench"></i>No work orders yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="hk-grid">
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head"><h3><i class="fas fa-wave-square"></i> Housekeeping Activity</h3></div>
+        {% if activity and activity|length > 0 %}
+          <div class="hk-feed">
+            {% for a in activity %}
+              <div class="hk-feed-item">
+                <div class="hk-feed-ic"><i class="fas fa-bolt"></i></div>
+                <div class="hk-feed-b">
+                  <div class="tx"><strong>{{ a.user }}</strong>{% if a.status %} set <strong>{{ a.status }}</strong>{% endif %}{% if a.notes %} — {{ a.notes }}{% endif %}</div>
+                  <div class="tm">{{ a.time }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="hk-c6">
+      <div class="hk-card">
+        <div class="hk-card-head">
+          <h3><i class="fas fa-bell"></i> Notifications</h3>
+          <a href="{{ url_for('notifications') }}" class="hk-link">View all</a>
+        </div>
+        {% if notifications_list and notifications_list|length > 0 %}
+          <div class="hk-feed">
+            {% for n in notifications_list %}
+              <div class="hk-feed-item {% if not n.is_read %}unread{% endif %}">
+                <div class="hk-feed-ic"><i class="fas fa-envelope"></i></div>
+                <div class="hk-feed-b">
+                  <div class="tx"><strong>{{ n.title }}</strong>{% if n.message %} — {{ n.message }}{% endif %}</div>
+                  <div class="tm">{{ n.created_at.strftime('%b %d, %H:%M') if n.created_at else '' }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="hk-empty"><i class="fas fa-bell"></i>No notifications yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>window.HK_DATA = {{ chart_data|tojson }};</script>
+<script>
+(function(){
+  'use strict';
+  if(typeof Chart==='undefined')return;
+  var D=window.HK_DATA||{};
+  Chart.defaults.color='#9CA3AF';
+  Chart.defaults.borderColor='rgba(139,92,246,0.1)';
+  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
+  Chart.defaults.font.size=10;
+  var TT={backgroundColor:'rgba(10,10,26,0.97)',borderColor:'rgba(139,92,246,0.5)',borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:11,cornerRadius:10};
+  var P2='#A855F7',B='#38BDF8',PK='#EC4899',G='#22C55E';
+  function gr(c,a,b){var g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,a);g.addColorStop(1,b);return g;}
+  function em(el,i,m){if(!el||!el.parentElement)return;el.parentElement.innerHTML='<div class="hk-empty"><i class="fas '+i+'"></i>'+m+'</div>';}
+
+  (function(){var el=document.getElementById('chart-trends');if(!el)return;var x=D.trends;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-area','No data yet.');return;}
+    var c=el.getContext('2d');
+    new Chart(c,{type:'line',data:{labels:x.labels,datasets:[
+      {label:'Total',data:x.total,borderColor:P2,borderWidth:2.5,fill:true,backgroundColor:gr(c,'rgba(139,92,246,0.35)','rgba(139,92,246,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:6},
+      {label:'Completed',data:x.completed,borderColor:B,borderWidth:2.2,fill:true,backgroundColor:gr(c,'rgba(56,189,248,0.22)','rgba(56,189,248,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:5},
+      {label:'Pending',data:x.pending,borderColor:PK,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5},
+      {label:'In Progress',data:x.in_progress,borderColor:G,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5}
+    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
+      plugins:{legend:{position:'top',align:'end',labels:{boxWidth:8,boxHeight:8,padding:14,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT},
+      scales:{x:{grid:{color:'rgba(139,92,246,0.06)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:8}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+  })();
+
+  (function(){var el=document.getElementById('chart-status');if(!el)return;var x=D.statuses;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-pie','No status data.');return;}
+    var m={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#8B5CF6','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
+    new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}}});
+  })();
+
+  (function(){var el=document.getElementById('chart-floors');if(!el)return;var x=D.floors;if(!x||!x.labels||!x.labels.length){em(el,'fa-building','No floor data.');return;}
+    var c=el.getContext('2d');
+    new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.35)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+  })();
+
+  (function(){var el=document.getElementById('chart-categories');if(!el)return;var x=D.categories;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-bar','No category data.');return;}
+    var c=el.getContext('2d');
+    new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+  })();
+
+  (function(){var el=document.getElementById('chart-priorities');if(!el)return;var x=D.priorities;if(!x||!x.labels||!x.labels.length){em(el,'fa-fire','No priority data.');return;}
+    var m={'URGENT':'#EF4444','HIGH':'#F59E0B','MEDIUM':'#38BDF8','LOW':'#22C55E'};
+    new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}}});
+  })();
+})();
+</script>
+</body>
+</html>"""
+
+
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -1509,8 +1932,8 @@ def department_dashboard():
         "priorities": {"labels": priority_labels, "values": priority_values},
     }
 
-    return render_template(
-        "department_dashboard.html",
+    return render_template_string(
+        HK_DASHBOARD_TEMPLATE,
         title="Housekeeping Dashboard",
         dept_name=dept_name,
         kpis={
@@ -1568,7 +1991,6 @@ def requests_list():
 
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
 
-    # Managers don't see requests that are still awaiting HK approval
     if current_user.role in ["MANAGER", "ADMIN"]:
         q = q.filter(db.or_(
             MaintenanceRequest.awaiting_hk_approval == False,
@@ -1664,7 +2086,6 @@ def request_create():
             requested_by_id=current_user.id, due_date=due
         )
 
-        # ─── Housekeeping approval routing ───
         hk_request = is_housekeeping_request(current_user)
         if hk_request:
             req.awaiting_hk_approval = True
@@ -1676,7 +2097,6 @@ def request_create():
         log_audit("Create", "MaintenanceRequest", req.id, new_value=req.request_no)
 
         if hk_request:
-            # Notify Housekeeping approvers (Supervisor / Manager / Admin)
             approvers = User.query.filter(
                 User.role.in_(HK_APPROVER_ROLES),
                 User.active == True
@@ -1690,7 +2110,6 @@ def request_create():
             )
             log_audit("HK Approval Requested", "MaintenanceRequest", req.id, new_value=req.request_no)
         else:
-            # Non-HK requests go straight to managers
             managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
             notify_users(
                 [u.id for u in managers], req.id,
@@ -1760,7 +2179,6 @@ def request_detail(req_id):
         )
     timeline = "".join(timeline_parts)
 
-    # ─── Housekeeping approval card ───
     hk_html = ""
     if req.awaiting_hk_approval:
         if is_housekeeping_approver(current_user):
@@ -1839,7 +2257,6 @@ def request_detail(req_id):
 
     actions = ""
     if current_user.role in ["MANAGER", "ADMIN"]:
-        # Only show approve when HK approval (if required) has been completed
         hk_cleared = (not req.awaiting_hk_approval and req.hk_approval_status != "Rejected")
         if req.status == "Pending" and hk_cleared:
             approve_url = url_for("request_approve", req_id=req.id)
