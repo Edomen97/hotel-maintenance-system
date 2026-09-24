@@ -3,167 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ title|default('Housekeeping') }} | Rori Hotel</title>
+<title>{{ title|default('Dashboard') }} | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#080812;--bg-2:#0D0D1A;--card:#15152A;--card-hover:#1A1A32;
-  --border:rgba(212,175,55,0.15);--border-strong:rgba(212,175,55,0.32);
-  --gold:#D4AF37;--gold-light:#E6C65C;--text:#FFFFFF;--muted:#9CA3AF;--muted-2:#6B7280;
-  --blue:#38BDF8;--green:#22C55E;--orange:#F59E0B;--red:#EF4444;--purple:#8B5CF6;
-  --sidebar-w:240px;--radius:16px;
-}
+:root{--bg:#080812;--bg-2:#0D0D1A;--card:#15152A;--border:rgba(212,175,55,0.15);--gold:#D4AF37;--gold-light:#E6C65C;--text:#FFFFFF;--muted:#9CA3AF;--blue:#38BDF8;--green:#22C55E;--orange:#F59E0B;--red:#EF4444;--purple:#8B5CF6;--sidebar-w:240px;--radius:16px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45;overflow-x:hidden}
 a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-.hk-layout{display:flex;min-height:100vh}
-.hk-sidebar{width:var(--sidebar-w);background:var(--bg-2);border-right:1px solid var(--border);padding:1.25rem 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:1000;display:flex;flex-direction:column}
-.hk-brand{display:flex;align-items:center;gap:.7rem;padding:0 1.25rem 1.25rem;border-bottom:1px solid var(--border);margin-bottom:1rem}
-.hk-brand-logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:1rem;color:#080812;flex-shrink:0;box-shadow:0 4px 14px rgba(212,175,55,0.35)}
-.hk-brand-text h2{font-size:.9rem;font-weight:800;color:#fff}
-.hk-brand-text p{font-size:.6rem;color:var(--muted);letter-spacing:.7px;text-transform:uppercase;margin-top:1px}
-.hk-nav{display:flex;flex-direction:column;padding:0 .65rem;gap:2px;flex:1}
-.hk-nav a{display:flex;align-items:center;gap:.7rem;padding:.6rem .85rem;color:var(--muted);border-radius:10px;font-size:.8rem;font-weight:500;transition:all .15s;border:1px solid transparent}
-.hk-nav a i{font-size:.85rem;width:16px;text-align:center;opacity:.9}
-.hk-nav a:hover{background:rgba(212,175,55,0.06);color:#fff;border-color:rgba(212,175,55,0.18)}
-.hk-nav a.active{background:linear-gradient(90deg,rgba(212,175,55,0.15),rgba(212,175,55,0.02));color:#fff;border-color:rgba(212,175,55,0.35);box-shadow:inset 2px 0 0 var(--gold)}
-.hk-nav a.active i{color:var(--gold)}
-.hk-main{flex:1;margin-left:var(--sidebar-w);padding:1.25rem 1.5rem 2rem;min-width:0;max-width:calc(100vw - var(--sidebar-w))}
-.hk-header{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}
-.hk-header-left{display:flex;align-items:center;gap:.75rem;min-width:0}
-.hk-mobile-toggle{display:none;width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:#fff;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0}
-.hk-title h1{font-size:1.15rem;font-weight:800;color:#fff;line-height:1.2}
-.hk-title h1 span{color:var(--gold)}
-.hk-title p{font-size:.7rem;color:var(--muted);margin-top:2px}
-.hk-header-right{display:flex;align-items:center;gap:.6rem}
-.hk-icon-btn{width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.85rem;position:relative}
-.hk-icon-btn:hover{color:var(--gold);border-color:var(--border-strong)}
-.hk-badge-count{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;font-size:.55rem;font-weight:800;padding:.1rem .35rem;border-radius:20px;min-width:16px;text-align:center}
-.hk-user{display:flex;align-items:center;gap:.6rem;padding:.35rem .8rem .35rem .35rem;background:var(--card);border:1px solid var(--border);border-radius:40px}
-.hk-user-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#080812;flex-shrink:0}
-.hk-user-info{display:flex;flex-direction:column;line-height:1.1}
-.hk-user-info strong{font-size:.75rem;font-weight:600;color:#fff;white-space:nowrap}
-.hk-user-info small{font-size:.6rem;color:var(--gold);font-weight:700;letter-spacing:.5px;text-transform:uppercase}
-.hk-flash{background:var(--card);border:1px solid rgba(212,175,55,0.3);color:#fff;font-size:.8rem;border-radius:12px}
-.hk-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-bottom:1rem}
-.hk-col-2{grid-column:span 2}
-.hk-col-4{grid-column:span 4}
-.hk-col-6{grid-column:span 6}
-.hk-col-8{grid-column:span 8}
-.hk-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.2rem;position:relative;overflow:hidden;transition:all .2s}
-.hk-card:hover{border-color:var(--border-strong);background:var(--card-hover)}
-.hk-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap}
-.hk-card-head h3{font-size:.85rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:.5rem}
-.hk-card-head h3 i{color:var(--gold);font-size:.8rem}
-.hk-hint{font-size:.6rem;color:var(--muted);background:rgba(212,175,55,0.08);padding:.2rem .55rem;border-radius:20px;letter-spacing:.6px;text-transform:uppercase;font-weight:700}
-.hk-card-link{font-size:.68rem;color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:.3rem}
-.hk-kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.05rem;position:relative;overflow:hidden;transition:all .25s;min-height:108px;display:flex;flex-direction:column;justify-content:space-between}
-.hk-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--gold-light))}
-.hk-kpi.blue::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
-.hk-kpi.green::before{background:linear-gradient(90deg,#22C55E,#10B981)}
-.hk-kpi.purple::before{background:linear-gradient(90deg,#8B5CF6,#A855F7)}
-.hk-kpi.orange::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
-.hk-kpi.gold::before{background:linear-gradient(90deg,#D4AF37,#E6C65C)}
-.hk-kpi:hover{transform:translateY(-2px);border-color:var(--border-strong);background:var(--card-hover);box-shadow:0 8px 24px rgba(0,0,0,0.4)}
-.hk-kpi-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem}
-.hk-kpi-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.9px;font-weight:700}
-.hk-kpi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.8rem;background:rgba(212,175,55,0.12);color:var(--gold);flex-shrink:0}
-.hk-kpi.blue .hk-kpi-icon{background:rgba(56,189,248,0.12);color:var(--blue)}
-.hk-kpi.green .hk-kpi-icon{background:rgba(34,197,94,0.12);color:var(--green)}
-.hk-kpi.purple .hk-kpi-icon{background:rgba(139,92,246,0.12);color:var(--purple)}
-.hk-kpi.orange .hk-kpi-icon{background:rgba(245,158,11,0.12);color:var(--orange)}
-.hk-kpi.gold .hk-kpi-icon{background:rgba(212,175,55,0.14);color:var(--gold-light)}
-.hk-kpi-value{font-size:1.65rem;font-weight:800;color:#fff;line-height:1;letter-spacing:-.02em;margin-bottom:.35rem}
-.hk-kpi-sub{font-size:.66rem;color:var(--muted);display:flex;align-items:center;gap:.3rem;font-weight:500}
-.hk-chart{position:relative;width:100%;height:240px}
-.hk-chart.tall{height:300px}
-.hk-chart.donut{height:240px}
-.hk-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.22rem .55rem;border-radius:20px;font-size:.6rem;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap}
-.hk-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
-.hk-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
-.hk-badge.b-assigned{background:rgba(212,175,55,0.15);color:#D4AF37;border:1px solid rgba(212,175,55,0.3)}
-.hk-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
-.hk-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
-.hk-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
-.hk-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
-.hk-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
-.hk-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
-.hk-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
-.hk-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
-.hk-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
-.hk-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
-.hk-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
-.hk-recent-list{display:flex;flex-direction:column;gap:.5rem}
-.hk-recent-item{display:flex;align-items:center;gap:.7rem;padding:.65rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:10px;transition:all .15s}
-.hk-recent-item:hover{border-color:var(--border-strong);background:rgba(212,175,55,0.03);transform:translateX(2px)}
-.hk-recent-marker{width:4px;height:34px;border-radius:4px;background:var(--gold);flex-shrink:0}
-.hk-recent-marker.b-pending{background:#F59E0B}
-.hk-recent-marker.b-approved{background:#3B82F6}
-.hk-recent-marker.b-assigned{background:#D4AF37}
-.hk-recent-marker.b-inprogress{background:#38BDF8}
-.hk-recent-marker.b-completed{background:#22C55E}
-.hk-recent-marker.b-verified{background:#10B981}
-.hk-recent-marker.b-closed{background:#16A34A}
-.hk-recent-marker.b-rejected{background:#EF4444}
-.hk-recent-marker.b-overdue{background:#DC2626}
-.hk-recent-main{flex:1;min-width:0}
-.hk-recent-line1{display:flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:700;color:#fff;margin-bottom:2px;flex-wrap:wrap}
-.hk-recent-line1 a{color:var(--gold)}
-.hk-recent-line2{display:flex;align-items:center;gap:.5rem;font-size:.68rem;color:var(--muted);flex-wrap:wrap}
-.hk-recent-line2 i{font-size:.6rem}
-.hk-rank-list{display:flex;flex-direction:column;gap:.5rem}
-.hk-rank-item{display:flex;align-items:center;gap:.65rem;padding:.55rem .7rem;background:var(--bg);border:1px solid var(--border);border-radius:10px}
-.hk-rank-item:hover{border-color:var(--border-strong);background:rgba(212,175,55,0.03)}
-.hk-rank-num{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,0.12);color:var(--gold);font-size:.65rem;font-weight:800;flex-shrink:0}
-.hk-rank-body{flex:1;min-width:0}
-.hk-rank-top{display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px;gap:.5rem}
-.hk-rank-top .name{color:#e5e7eb;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hk-rank-top .count{color:var(--gold);font-weight:800;flex-shrink:0}
-.hk-rank-bar{height:4px;background:rgba(212,175,55,0.08);border-radius:4px;overflow:hidden}
-.hk-rank-bar span{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:4px}
-.hk-table-wrap{overflow-x:auto}
-.hk-table{width:100%;border-collapse:collapse;font-size:.75rem}
-.hk-table th{text-align:left;padding:.6rem .5rem;color:var(--muted);font-size:.6rem;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);font-weight:700;white-space:nowrap}
-.hk-table td{padding:.65rem .5rem;border-bottom:1px solid rgba(212,175,55,0.05);color:#e5e7eb;vertical-align:middle}
-.hk-table tr:last-child td{border-bottom:none}
-.hk-table tbody tr:hover{background:rgba(212,175,55,0.03)}
-.hk-table a{color:var(--gold);font-weight:600}
-.hk-feed{display:flex;flex-direction:column;gap:.4rem}
-.hk-feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:var(--bg);border-left:2px solid var(--gold);border-radius:8px;font-size:.75rem}
-.hk-feed-item.unread{border-left-color:var(--orange)}
-.hk-feed-icon{width:26px;height:26px;border-radius:7px;background:rgba(212,175,55,0.1);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
-.hk-feed-body{flex:1;min-width:0}
-.hk-feed-body .txt{color:#e5e7eb;line-height:1.35}
-.hk-feed-body .txt strong{color:#fff;font-weight:700}
-.hk-feed-body .time{font-size:.6rem;color:var(--muted-2);margin-top:2px}
-.hk-empty{text-align:center;padding:1.75rem 1rem;color:var(--muted);font-size:.78rem}
-.hk-empty i{font-size:1.6rem;color:var(--gold);opacity:.4;display:block;margin-bottom:.4rem}
-.hk-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(2px);z-index:999}
-.hk-backdrop.show{display:block}
-@media (max-width:1200px){.hk-col-2{grid-column:span 4}.hk-col-4{grid-column:span 6}}
-@media (max-width:1024px){.hk-sidebar{transform:translateX(-100%);transition:transform .3s ease}.hk-sidebar.open{transform:translateX(0)}.hk-main{margin-left:0;max-width:100vw;padding:1rem}.hk-mobile-toggle{display:flex}.hk-col-2{grid-column:span 4}.hk-col-4,.hk-col-6,.hk-col-8{grid-column:span 12}}
-@media (max-width:768px){.hk-col-2{grid-column:span 6}.hk-title h1{font-size:1rem}.hk-user-info{display:none}.hk-user{padding:.35rem}.hk-chart{height:220px}.hk-chart.tall{height:260px}.hk-chart.donut{height:230px}}
-@media (max-width:520px){.hk-main{padding:.75rem}.hk-col-2{grid-column:span 12}.hk-kpi-value{font-size:1.4rem}.hk-card{padding:.9rem}}
+.rh-layout{display:flex;min-height:100vh}
+.rh-sidebar{width:var(--sidebar-w);background:var(--bg-2);border-right:1px solid var(--border);padding:1.25rem 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:1000;display:flex;flex-direction:column}
+.rh-brand{display:flex;align-items:center;gap:.7rem;padding:0 1.25rem 1.25rem;border-bottom:1px solid var(--border);margin-bottom:1rem}
+.rh-brand-logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:1rem;color:#080812;flex-shrink:0}
+.rh-brand-text h2{font-size:.9rem;font-weight:800;color:#fff}
+.rh-brand-text p{font-size:.6rem;color:var(--muted);letter-spacing:.7px;text-transform:uppercase;margin-top:1px}
+.rh-nav{display:flex;flex-direction:column;padding:0 .65rem;gap:2px;flex:1}
+.rh-nav a{display:flex;align-items:center;gap:.7rem;padding:.6rem .85rem;color:var(--muted);border-radius:10px;font-size:.8rem;font-weight:500;transition:all .15s;border:1px solid transparent}
+.rh-nav a i{font-size:.85rem;width:16px;text-align:center}
+.rh-nav a:hover{background:rgba(212,175,55,0.06);color:#fff;border-color:rgba(212,175,55,0.18)}
+.rh-nav a.active{background:linear-gradient(90deg,rgba(212,175,55,0.15),rgba(212,175,55,0.02));color:#fff;border-color:rgba(212,175,55,0.35);box-shadow:inset 2px 0 0 var(--gold)}
+.rh-nav a.active i{color:var(--gold)}
+.rh-main{flex:1;margin-left:var(--sidebar-w);padding:1.25rem 1.5rem 2rem;min-width:0;max-width:calc(100vw - var(--sidebar-w))}
+.rh-header{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}
+.rh-header-left{display:flex;align-items:center;gap:.75rem;min-width:0}
+.rh-mobile-toggle{display:none;width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:#fff;align-items:center;justify-content:center;font-size:.9rem}
+.rh-title h1{font-size:1.15rem;font-weight:800;color:#fff}
+.rh-title h1 span{color:var(--gold)}
+.rh-title p{font-size:.7rem;color:var(--muted);margin-top:2px}
+.rh-header-right{display:flex;align-items:center;gap:.6rem}
+.rh-icon-btn{width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.85rem}
+.rh-icon-btn:hover{color:var(--gold);border-color:rgba(212,175,55,0.32)}
+.rh-user{display:flex;align-items:center;gap:.6rem;padding:.35rem .8rem .35rem .35rem;background:var(--card);border:1px solid var(--border);border-radius:40px}
+.rh-user-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#080812;flex-shrink:0}
+.rh-user-info{display:flex;flex-direction:column;line-height:1.1}
+.rh-user-info strong{font-size:.75rem;font-weight:600;color:#fff;white-space:nowrap}
+.rh-user-info small{font-size:.6rem;color:var(--gold);font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.rh-flash{background:var(--card);border:1px solid rgba(212,175,55,0.3);color:#fff;font-size:.8rem;border-radius:12px}
+.rh-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-bottom:1rem}
+.rh-col-2{grid-column:span 2}
+.rh-col-3{grid-column:span 3}
+.rh-col-4{grid-column:span 4}
+.rh-col-6{grid-column:span 6}
+.rh-col-8{grid-column:span 8}
+.rh-col-12{grid-column:span 12}
+.rh-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.2rem;overflow:hidden}
+.rh-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap}
+.rh-card-head h3{font-size:.85rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:.5rem}
+.rh-card-head h3 i{color:var(--gold);font-size:.8rem}
+.rh-hint{font-size:.6rem;color:var(--muted);background:rgba(212,175,55,0.08);padding:.2rem .55rem;border-radius:20px;text-transform:uppercase;font-weight:700}
+.rh-card-link{font-size:.68rem;color:var(--gold);font-weight:700}
+.rh-kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.05rem;position:relative;overflow:hidden;min-height:108px;display:flex;flex-direction:column;justify-content:space-between}
+.rh-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--gold-light))}
+.rh-kpi.blue::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
+.rh-kpi.green::before{background:linear-gradient(90deg,#22C55E,#10B981)}
+.rh-kpi.orange::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
+.rh-kpi.purple::before{background:linear-gradient(90deg,#8B5CF6,#A855F7)}
+.rh-kpi-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem}
+.rh-kpi-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.9px;font-weight:700}
+.rh-kpi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.8rem;background:rgba(212,175,55,0.12);color:var(--gold);flex-shrink:0}
+.rh-kpi.blue .rh-kpi-icon{background:rgba(56,189,248,0.12);color:var(--blue)}
+.rh-kpi.green .rh-kpi-icon{background:rgba(34,197,94,0.12);color:var(--green)}
+.rh-kpi.orange .rh-kpi-icon{background:rgba(245,158,11,0.12);color:var(--orange)}
+.rh-kpi.purple .rh-kpi-icon{background:rgba(139,92,246,0.12);color:var(--purple)}
+.rh-kpi-value{font-size:1.65rem;font-weight:800;color:#fff;line-height:1;margin-bottom:.35rem}
+.rh-kpi-sub{font-size:.66rem;color:var(--muted);display:flex;align-items:center;gap:.3rem}
+.rh-chart{position:relative;width:100%;height:240px}
+.rh-chart.tall{height:300px}
+.rh-chart.donut{height:240px}
+.rh-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.22rem .55rem;border-radius:20px;font-size:.6rem;font-weight:800;text-transform:uppercase;white-space:nowrap}
+.rh-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rh-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rh-badge.b-assigned{background:rgba(212,175,55,0.15);color:#D4AF37;border:1px solid rgba(212,175,55,0.3)}
+.rh-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
+.rh-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.rh-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
+.rh-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
+.rh-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rh-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.rh-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
+.rh-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rh-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rh-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rh-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.rh-table-wrap{overflow-x:auto}
+.rh-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.rh-table th{text-align:left;padding:.6rem .5rem;color:var(--muted);font-size:.6rem;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:700;white-space:nowrap}
+.rh-table td{padding:.65rem .5rem;border-bottom:1px solid rgba(212,175,55,0.05);color:#e5e7eb;vertical-align:middle}
+.rh-table tr:last-child td{border-bottom:none}
+.rh-table a{color:var(--gold);font-weight:600}
+.rh-rank-list{display:flex;flex-direction:column;gap:.5rem}
+.rh-rank-item{display:flex;align-items:center;gap:.65rem;padding:.55rem .7rem;background:var(--bg);border:1px solid var(--border);border-radius:10px}
+.rh-rank-num{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,0.12);color:var(--gold);font-size:.65rem;font-weight:800;flex-shrink:0}
+.rh-rank-body{flex:1;min-width:0}
+.rh-rank-top{display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px;gap:.5rem}
+.rh-rank-top .name{color:#e5e7eb;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rh-rank-top .count{color:var(--gold);font-weight:800}
+.rh-rank-bar{height:4px;background:rgba(212,175,55,0.08);border-radius:4px;overflow:hidden}
+.rh-rank-bar span{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light))}
+.rh-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:.5rem}
+.rh-stat{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:.7rem .5rem;text-align:center;display:block}
+.rh-stat .v{font-size:1.15rem;font-weight:800;color:#fff;line-height:1}
+.rh-stat .v.gold{color:var(--gold)}
+.rh-stat .v.red{color:var(--red)}
+.rh-stat .v.green{color:var(--green)}
+.rh-stat .v.blue{color:var(--blue)}
+.rh-stat .v.orange{color:var(--orange)}
+.rh-stat .l{font-size:.55rem;color:var(--muted);text-transform:uppercase;margin-top:.35rem;font-weight:700}
+.rh-feed{display:flex;flex-direction:column;gap:.4rem}
+.rh-feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:var(--bg);border-left:2px solid var(--gold);border-radius:8px;font-size:.75rem}
+.rh-feed-icon{width:26px;height:26px;border-radius:7px;background:rgba(212,175,55,0.1);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
+.rh-feed-body{flex:1;min-width:0}
+.rh-feed-body .txt{color:#e5e7eb;line-height:1.35}
+.rh-feed-body .txt strong{color:#fff}
+.rh-feed-body .time{font-size:.6rem;color:#6B7280;margin-top:2px}
+.rh-empty{text-align:center;padding:1.75rem 1rem;color:var(--muted);font-size:.78rem}
+.rh-empty i{font-size:1.6rem;color:var(--gold);opacity:.4;display:block;margin-bottom:.4rem}
+.rh-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:999}
+.rh-backdrop.show{display:block}
+@media (max-width:1200px){.rh-col-2{grid-column:span 4}.rh-col-3{grid-column:span 6}}
+@media (max-width:1024px){.rh-sidebar{transform:translateX(-100%);transition:transform .3s}.rh-sidebar.open{transform:translateX(0)}.rh-main{margin-left:0;max-width:100vw;padding:1rem}.rh-mobile-toggle{display:flex}.rh-col-2,.rh-col-3,.rh-col-4,.rh-col-6,.rh-col-8{grid-column:span 12}}
+@media (max-width:768px){.rh-col-2{grid-column:span 6}.rh-title h1{font-size:1rem}.rh-user-info{display:none}.rh-chart{height:220px}.rh-chart.tall{height:260px}}
+@media (max-width:520px){.rh-main{padding:.75rem}.rh-col-2{grid-column:span 12}.rh-kpi-value{font-size:1.4rem}.rh-card{padding:.9rem}}
 </style>
 </head>
 <body>
 
-<div class="hk-backdrop" id="hk-backdrop"></div>
+<div class="rh-backdrop" id="rh-backdrop"></div>
 
-<div class="hk-layout">
+<div class="rh-layout">
 
-  <aside class="hk-sidebar" id="hk-sidebar">
-    <div class="hk-brand">
-      <div class="hk-brand-logo"><i class="fas fa-broom"></i></div>
-      <div class="hk-brand-text">
+  <aside class="rh-sidebar" id="rh-sidebar">
+    <div class="rh-brand">
+      <div class="rh-brand-logo"><i class="fas fa-hotel"></i></div>
+      <div class="rh-brand-text">
         <h2>Rori Hotel</h2>
-        <p>{{ dept_name|default('Housekeeping') }}</p>
+        <p>Maintenance</p>
       </div>
     </div>
-    <nav class="hk-nav">
+    <nav class="rh-nav">
       {% for item in nav_items %}
         <a href="{{ item.url }}" class="{{ 'active' if item.active else '' }}">
           <i class="fas {{ item.icon }}"></i>
@@ -173,24 +152,21 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     </nav>
   </aside>
 
-  <main class="hk-main">
+  <main class="rh-main">
 
-    <header class="hk-header">
-      <div class="hk-header-left">
-        <button class="hk-mobile-toggle" id="hk-toggle" aria-label="Menu"><i class="fas fa-bars"></i></button>
-        <div class="hk-title">
-          <h1>{{ dept_name|default('Housekeeping') }} <span>Dashboard</span></h1>
-          <p>Housekeeping &amp; Room Maintenance Overview</p>
+    <header class="rh-header">
+      <div class="rh-header-left">
+        <button class="rh-mobile-toggle" id="rh-toggle"><i class="fas fa-bars"></i></button>
+        <div class="rh-title">
+          <h1>Rori Hotel <span>Maintenance Analytics</span></h1>
+          <p>Engineering &amp; Maintenance Management</p>
         </div>
       </div>
-      <div class="hk-header-right">
-        <a href="{{ url_for('notifications') }}" class="hk-icon-btn" title="Notifications">
-          <i class="fas fa-bell"></i>
-          {% if unread_count and unread_count > 0 %}<span class="hk-badge-count">{{ unread_count }}</span>{% endif %}
-        </a>
-        <div class="hk-user">
-          <div class="hk-user-avatar">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
-          <div class="hk-user-info">
+      <div class="rh-header-right">
+        <a href="{{ url_for('notifications') }}" class="rh-icon-btn"><i class="fas fa-bell"></i></a>
+        <div class="rh-user">
+          <div class="rh-user-avatar">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
+          <div class="rh-user-info">
             <strong>{{ current_user.full_name or current_user.username }}</strong>
             <small>{{ current_user.role }}</small>
           </div>
@@ -201,7 +177,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} alert-dismissible fade show hk-flash">
+          <div class="alert alert-{{ cat }} alert-dismissible fade show rh-flash">
             {{ msg }}
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
           </div>
@@ -209,118 +185,150 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
       {% endif %}
     {% endwith %}
 
-    <section class="hk-grid">
-      <div class="hk-col-2">
-        <div class="hk-kpi">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">Total</div><div class="hk-kpi-value">{{ kpis.total }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
+    <!-- FILTERS -->
+    <section class="rh-card" style="margin-bottom:1rem">
+      <form method="get" action="{{ url_for('dashboard') }}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;align-items:end">
+        <div>
+          <label style="display:block;font-size:.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:.3rem;font-weight:700">Date From</label>
+          <input type="date" name="date_from" value="{{ filters.get('date_from','') if filters else '' }}"
+                 style="width:100%;background:var(--bg);border:1px solid rgba(212,175,55,0.2);color:#fff;padding:.5rem .7rem;border-radius:9px;font-size:.75rem;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:.3rem;font-weight:700">Date To</label>
+          <input type="date" name="date_to" value="{{ filters.get('date_to','') if filters else '' }}"
+                 style="width:100%;background:var(--bg);border:1px solid rgba(212,175,55,0.2);color:#fff;padding:.5rem .7rem;border-radius:9px;font-size:.75rem;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:.3rem;font-weight:700">Status</label>
+          <select name="status" style="width:100%;background:var(--bg);border:1px solid rgba(212,175,55,0.2);color:#fff;padding:.5rem .7rem;border-radius:9px;font-size:.75rem;outline:none">
+            <option value="">All</option>
+            {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected','Overdue'] %}
+              <option value="{{ s }}" {{ 'selected' if filters and filters.get('status') == s else '' }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <button type="submit" style="padding:.55rem 1rem;border-radius:9px;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#080812;font-size:.75rem;font-weight:700;border:none;white-space:nowrap">
+            <i class="fas fa-filter"></i> Apply
+          </button>
+          <a href="{{ url_for('dashboard') }}" style="padding:.55rem 1rem;border-radius:9px;background:transparent;color:var(--muted);border:1px solid var(--border);font-size:.75rem;font-weight:700;white-space:nowrap;display:inline-flex;align-items:center;gap:.3rem">
+            <i class="fas fa-rotate-left"></i> Reset
+          </a>
+        </div>
+      </form>
+    </section>
+
+    <!-- KPI ROW -->
+    <section class="rh-grid">
+      <div class="rh-col-3">
+        <div class="rh-kpi">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Total Requests</div>
+              <div class="rh-kpi-value">{{ kpis.total }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
           </div>
-          <div class="hk-kpi-sub"><i class="fas fa-list"></i> All requests</div>
+          <div class="rh-kpi-sub">
+            {% if kpis.has_prev and kpis.total_delta is not none %}
+              <i class="fas {{ 'fa-arrow-trend-up' if kpis.total_delta > 0 else 'fa-arrow-trend-down' if kpis.total_delta < 0 else 'fa-minus' }}"></i>
+              {{ kpis.total_delta }}% vs previous
+            {% else %}<i class="fas fa-minus"></i> All-time total{% endif %}
+          </div>
         </div>
       </div>
-      <div class="hk-col-2">
-        <div class="hk-kpi orange">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">Pending</div><div class="hk-kpi-value">{{ kpis.pending }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
+      <div class="rh-col-3">
+        <div class="rh-kpi orange">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Pending</div>
+              <div class="rh-kpi-value">{{ kpis.pending }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
           </div>
-          <div class="hk-kpi-sub"><i class="fas fa-circle-exclamation"></i> Awaiting approval</div>
+          <div class="rh-kpi-sub"><i class="fas fa-circle-exclamation"></i> Requires action</div>
         </div>
       </div>
-      <div class="hk-col-2">
-        <div class="hk-kpi blue">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">Approved</div><div class="hk-kpi-value">{{ kpis.approved }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-check-circle"></i></div>
+      <div class="rh-col-3">
+        <div class="rh-kpi green">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Completed</div>
+              <div class="rh-kpi-value">{{ kpis.completed }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-circle-check"></i></div>
           </div>
-          <div class="hk-kpi-sub"><i class="fas fa-thumbs-up"></i> Ready for work</div>
+          <div class="rh-kpi-sub"><i class="fas fa-percent"></i> {{ kpis.completion_rate }}% rate</div>
         </div>
       </div>
-      <div class="hk-col-2">
-        <div class="hk-kpi purple">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">In Progress</div><div class="hk-kpi-value">{{ kpis.in_progress }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-spinner"></i></div>
+      <div class="rh-col-3">
+        <div class="rh-kpi purple">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Avg Resolution</div>
+              <div class="rh-kpi-value" style="font-size:1.35rem">{{ kpis.avg_resolution }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-stopwatch"></i></div>
           </div>
-          <div class="hk-kpi-sub"><i class="fas fa-wrench"></i> Being worked on</div>
-        </div>
-      </div>
-      <div class="hk-col-2">
-        <div class="hk-kpi green">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">Completed</div><div class="hk-kpi-value">{{ kpis.completed }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-circle-check"></i></div>
-          </div>
-          <div class="hk-kpi-sub"><i class="fas fa-check-double"></i> Finished work</div>
-        </div>
-      </div>
-      <div class="hk-col-2">
-        <div class="hk-kpi gold">
-          <div class="hk-kpi-head">
-            <div><div class="hk-kpi-label">Closed</div><div class="hk-kpi-value">{{ kpis.closed }}</div></div>
-            <div class="hk-kpi-icon"><i class="fas fa-archive"></i></div>
-          </div>
-          <div class="hk-kpi-sub"><i class="fas fa-lock"></i> Archived</div>
+          <div class="rh-kpi-sub"><i class="fas fa-stopwatch"></i> Across completed</div>
         </div>
       </div>
     </section>
 
-    <section class="hk-grid">
-      <div class="hk-col-8">
-        <div class="hk-card">
-          <div class="hk-card-head">
-            <h3><i class="fas fa-chart-line"></i> Housekeeping Request Trends</h3>
-            <span class="hk-hint">Last 14 Days</span>
+    <!-- TRENDS + STATUS -->
+    <section class="rh-grid">
+      <div class="rh-col-8">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-chart-line"></i> Maintenance Request Trends</h3>
+            <span class="rh-hint">
+              {% if chart_data.trends.granularity == 'day' %}Daily{% elif chart_data.trends.granularity == 'week' %}Weekly{% else %}Monthly{% endif %}
+            </span>
           </div>
-          <div class="hk-chart tall"><canvas id="chart-trends"></canvas></div>
+          <div class="rh-chart tall"><canvas id="chart-trends"></canvas></div>
         </div>
       </div>
-      <div class="hk-col-4">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-circle-notch"></i> Requests by Status</h3></div>
-          <div class="hk-chart donut"><canvas id="chart-status"></canvas></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="hk-grid">
-      <div class="hk-col-4">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-building"></i> Requests by Floor</h3></div>
-          <div class="hk-chart"><canvas id="chart-floors"></canvas></div>
-        </div>
-      </div>
-      <div class="hk-col-4">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-chart-pie"></i> Requests by Category</h3></div>
-          <div class="hk-chart donut"><canvas id="chart-categories"></canvas></div>
-        </div>
-      </div>
-      <div class="hk-col-4">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-fire"></i> Priority Overview</h3></div>
-          <div class="hk-chart donut"><canvas id="chart-priorities"></canvas></div>
+      <div class="rh-col-4">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-circle-notch"></i> Requests by Status</h3></div>
+          <div class="rh-chart donut"><canvas id="chart-status"></canvas></div>
         </div>
       </div>
     </section>
 
-    <section class="hk-grid">
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-location-dot"></i> Top Housekeeping Areas</h3></div>
+    <!-- DEPARTMENT + CATEGORY -->
+    <section class="rh-grid">
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-chart-bar"></i> Requests by Department</h3></div>
+          <div class="rh-chart"><canvas id="chart-departments"></canvas></div>
+        </div>
+      </div>
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-chart-pie"></i> Requests by Category</h3></div>
+          <div class="rh-chart donut"><canvas id="chart-categories"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TOP LOCATIONS + WORK ORDERS -->
+    <section class="rh-grid">
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3></div>
           {% if top_locations %}
             {% set max_c = top_locations[0][1] if top_locations[0][1] > 0 else 1 %}
-            <div class="hk-rank-list">
+            <div class="rh-rank-list">
               {% for name, count in top_locations %}
-                <div class="hk-rank-item">
-                  <div class="hk-rank-num">{{ loop.index }}</div>
-                  <div class="hk-rank-body">
-                    <div class="hk-rank-top">
+                <div class="rh-rank-item">
+                  <div class="rh-rank-num">{{ loop.index }}</div>
+                  <div class="rh-rank-body">
+                    <div class="rh-rank-top">
                       <span class="name">{{ name }}</span>
                       <span class="count">{{ count }}</span>
                     </div>
-                    <div class="hk-rank-bar">
+                    <div class="rh-rank-bar">
                       <span style="width: {{ (count / max_c * 100)|round|int }}%"></span>
                     </div>
                   </div>
@@ -328,147 +336,135 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
               {% endfor %}
             </div>
           {% else %}
-            <div class="hk-empty"><i class="fas fa-location-dot"></i>No location data yet.</div>
+            <div class="rh-empty"><i class="fas fa-location-dot"></i>No data yet.</div>
           {% endif %}
         </div>
       </div>
 
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head">
-            <h3><i class="fas fa-list"></i> My Housekeeping Requests</h3>
-            <a href="{{ url_for('request_create') }}" class="hk-card-link"><i class="fas fa-plus"></i> New</a>
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3>
+            <a href="{{ url_for('workorders_list') }}" class="rh-card-link">View all <i class="fas fa-arrow-right"></i></a>
           </div>
-          {% if my_requests %}
-            <div class="hk-recent-list">
-              {% for r in my_requests %}
-                {% set sk = status_badge_class(r.status).replace('b-','') %}
-                <div class="hk-recent-item">
-                  <div class="hk-recent-marker b-{{ sk }}"></div>
-                  <div class="hk-recent-main">
-                    <div class="hk-recent-line1">
-                      <a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a>
-                      <span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
-                      <span class="hk-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
-                    </div>
-                    <div class="hk-recent-line2">
-                      <span><i class="fas fa-location-dot"></i> {{ r.location_name }}</span>
-                      <span><i class="fas fa-clock"></i> {{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</span>
-                    </div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
-          {% endif %}
+          <div class="rh-stats" style="grid-template-columns:repeat(3,1fr)">
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v gold">{{ work_orders.total }}</div><div class="l">Total</div></a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v orange">{{ work_orders.pending }}</div><div class="l">Pending</div></a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v gold">{{ work_orders.assigned }}</div><div class="l">Assigned</div></a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v blue">{{ work_orders.in_progress }}</div><div class="l">In Progress</div></a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v green">{{ work_orders.completed }}</div><div class="l">Completed</div></a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}"><div class="v green">{{ work_orders.verified }}</div><div class="l">Verified</div></a>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="hk-grid">
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-clock-rotate-left"></i> Latest Housekeeping Requests</h3></div>
+    <!-- RECENT REQUESTS -->
+    <section class="rh-grid">
+      <div class="rh-col-12">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-list"></i> Recent Maintenance Requests</h3>
+            <a href="{{ url_for('requests_list') }}" class="rh-card-link">View all <i class="fas fa-arrow-right"></i></a>
+          </div>
           {% if recent_requests %}
-            <div class="hk-table-wrap">
-              <table class="hk-table">
-                <thead><tr><th>Request</th><th>Location</th><th>Status</th><th>Date</th></tr></thead>
+            <div class="rh-table-wrap">
+              <table class="rh-table">
+                <thead>
+                  <tr><th>Request #</th><th>Location</th><th>Department</th><th>Category</th><th>Priority</th><th>Status</th><th>Created</th><th>Action</th></tr>
+                </thead>
                 <tbody>
                   {% for r in recent_requests %}
                     <tr>
                       <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
                       <td>{{ r.location_name }}</td>
-                      <td><span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
-                      <td style="color:#9CA3AF;font-size:.7rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
+                      <td>{{ r.department.name if r.department else '—' }}</td>
+                      <td>{{ r.category.name if r.category else '—' }}</td>
+                      <td><span class="rh-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span></td>
+                      <td><span class="rh-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
+                      <td style="color:#9CA3AF;font-size:.7rem">{{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</td>
+                      <td><a href="{{ url_for('request_detail', req_id=r.id) }}"><i class="fas fa-eye"></i></a></td>
                     </tr>
                   {% endfor %}
                 </tbody>
               </table>
             </div>
           {% else %}
-            <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-wrench"></i> Maintenance Follow-up</h3></div>
-          {% if work_orders %}
-            <div class="hk-recent-list">
-              {% for wo in work_orders %}
-                <div class="hk-recent-item">
-                  <div class="hk-recent-marker b-inprogress"></div>
-                  <div class="hk-recent-main">
-                    <div class="hk-recent-line1">
-                      <a href="{{ url_for('workorder_detail', wo_id=wo.id) }}">{{ wo.work_order_no }}</a>
-                      <span class="hk-badge {{ status_badge_class(wo.status) }}">{{ wo.status }}</span>
-                    </div>
-                    <div class="hk-recent-line2">
-                      <span><i class="fas fa-user"></i> {{ wo.assigned_to.full_name if wo.assigned_to else 'Unassigned' }}</span>
-                      <span><i class="fas fa-clock"></i> {{ wo.created_at.strftime('%b %d') if wo.created_at else '—' }}</span>
-                    </div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="hk-empty"><i class="fas fa-wrench"></i>No work orders yet.</div>
+            <div class="rh-empty"><i class="fas fa-inbox"></i>No requests found.</div>
           {% endif %}
         </div>
       </div>
     </section>
 
-    <section class="hk-grid">
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head"><h3><i class="fas fa-wave-square"></i> Housekeeping Activity</h3></div>
-          {% if activity %}
-            <div class="hk-feed">
-              {% for a in activity %}
-                <div class="hk-feed-item">
-                  <div class="hk-feed-icon"><i class="fas fa-bolt"></i></div>
-                  <div class="hk-feed-body">
-                    <div class="txt">
-                      <strong>{{ a.user }}</strong>
-                      {% if a.status %}set status to <strong>{{ a.status }}</strong>{% endif %}
-                      {% if a.notes %} — {{ a.notes }}{% endif %}
-                    </div>
-                    <div class="time">{{ a.time }}</div>
-                  </div>
-                </div>
-              {% endfor %}
+    <!-- STAFF + INVENTORY -->
+    <section class="rh-grid">
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3></div>
+          {% if staff_stats %}
+            <div class="rh-table-wrap">
+              <table class="rh-table">
+                <thead><tr><th>Staff</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg</th></tr></thead>
+                <tbody>
+                  {% for s in staff_stats %}
+                    <tr>
+                      <td><strong style="color:#fff">{{ s.name }}</strong><br><small style="color:var(--muted);font-size:.6rem">{{ s.role }}</small></td>
+                      <td><span class="rh-badge b-assigned">{{ s.assigned }}</span></td>
+                      <td><span class="rh-badge b-inprogress">{{ s.in_progress }}</span></td>
+                      <td><span class="rh-badge b-completed">{{ s.completed }}</span></td>
+                      <td style="color:var(--gold);font-weight:700;font-size:.72rem">{{ s.avg_resolution }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
           {% else %}
-            <div class="hk-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
+            <div class="rh-empty"><i class="fas fa-user-gear"></i>No staff data.</div>
           {% endif %}
         </div>
       </div>
 
-      <div class="hk-col-6">
-        <div class="hk-card">
-          <div class="hk-card-head">
-            <h3><i class="fas fa-bell"></i> Notifications</h3>
-            <a href="{{ url_for('notifications') }}" class="hk-card-link">View all</a>
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3>
+            <a href="{{ url_for('inventory_list') }}" class="rh-card-link">Manage <i class="fas fa-arrow-right"></i></a>
           </div>
-          {% if notifications_list %}
-            <div class="hk-feed">
-              {% for n in notifications_list %}
-                <div class="hk-feed-item {% if not n.is_read %}unread{% endif %}">
-                  <div class="hk-feed-icon"><i class="fas fa-envelope"></i></div>
-                  <div class="hk-feed-body">
+          <div class="rh-stats" style="grid-template-columns:repeat(4,1fr)">
+            <div class="rh-stat"><div class="v gold">{{ inventory.total_parts }}</div><div class="l">Total</div></div>
+            <div class="rh-stat"><div class="v orange">{{ inventory.low_stock }}</div><div class="l">Low</div></div>
+            <div class="rh-stat"><div class="v red">{{ inventory.out_of_stock }}</div><div class="l">Out</div></div>
+            <div class="rh-stat"><div class="v blue">{{ inventory.parts_used }}</div><div class="l">Used</div></div>
+          </div>
+          <div style="margin-top:.85rem;padding:.7rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+            <span style="color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:700">Inventory Value</span>
+            <span style="font-weight:800;color:var(--gold);font-size:.95rem">{{ inventory.total_value }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section class="rh-grid">
+      <div class="rh-col-12">
+        <div class="rh-card">
+          <div class="rh-card-head"><h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3></div>
+          {% if recent_activity %}
+            <div class="rh-feed">
+              {% for a in recent_activity %}
+                <div class="rh-feed-item">
+                  <div class="rh-feed-icon"><i class="fas fa-bolt"></i></div>
+                  <div class="rh-feed-body">
                     <div class="txt">
-                      <strong>{{ n.title }}</strong>
-                      {% if n.message %} — {{ n.message }}{% endif %}
+                      <strong>{{ a.user }}</strong> {{ a.action }}{% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
                     </div>
-                    <div class="time">{{ n.created_at.strftime('%b %d, %H:%M') if n.created_at else '' }}</div>
+                    <div class="time">{{ a.time }} · {{ a.raw_time }}</div>
                   </div>
                 </div>
               {% endfor %}
             </div>
           {% else %}
-            <div class="hk-empty"><i class="fas fa-bell"></i>No notifications yet.</div>
+            <div class="rh-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
           {% endif %}
         </div>
       </div>
@@ -480,52 +476,60 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-window.HK_DATA = {{ chart_data|tojson }};
+window.RORI_DATA = {{ chart_data|tojson }};
 </script>
 <script>
 (function () {
   'use strict';
   function init() {
-    var toggle   = document.getElementById('hk-toggle');
-    var sidebar  = document.getElementById('hk-sidebar');
-    var backdrop = document.getElementById('hk-backdrop');
-    if (toggle && sidebar) {
-      toggle.addEventListener('click', function () {
-        sidebar.classList.toggle('open');
-        if (backdrop) backdrop.classList.toggle('show');
-      });
-    }
-    if (backdrop && sidebar) {
-      backdrop.addEventListener('click', function () {
-        sidebar.classList.remove('open');
-        backdrop.classList.remove('show');
-      });
-    }
+    var t = document.getElementById('rh-toggle');
+    var s = document.getElementById('rh-sidebar');
+    var b = document.getElementById('rh-backdrop');
+    if (t && s) t.addEventListener('click', function () { s.classList.toggle('open'); if (b) b.classList.toggle('show'); });
+    if (b && s) b.addEventListener('click', function () { s.classList.remove('open'); b.classList.remove('show'); });
+
     if (typeof Chart === 'undefined') return;
-    var DATA = window.HK_DATA || {};
+    var D = window.RORI_DATA || {};
     Chart.defaults.color = '#9CA3AF';
     Chart.defaults.borderColor = 'rgba(212,175,55,0.10)';
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
     Chart.defaults.font.size = 10;
-    var TOOLTIP = { backgroundColor:'rgba(8,8,18,0.97)', borderColor:'rgba(212,175,55,0.4)', borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:10, cornerRadius:8, titleFont:{size:11,weight:'700'}, bodyFont:{size:11} };
-    var GOLD='#D4AF37', BLUE='#38BDF8', PINK='#EC4899', GREEN='#22C55E';
-    function grad(ctx,c1,c2){var g=ctx.createLinearGradient(0,0,0,320);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;}
-    function empty(el,icon,msg){if(!el||!el.parentElement)return;el.parentElement.innerHTML='<div class="hk-empty"><i class="fas '+icon+'"></i>'+msg+'</div>';}
+    var TT = { backgroundColor:'rgba(8,8,18,0.97)', borderColor:'rgba(212,175,55,0.4)', borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:10, cornerRadius:8 };
+    function gr(c, a, b){var g=c.createLinearGradient(0,0,0,320);g.addColorStop(0,a);g.addColorStop(1,b);return g;}
+    function em(el, i, m){if(!el||!el.parentElement)return;el.parentElement.innerHTML='<div class="rh-empty"><i class="fas '+i+'"></i>'+m+'</div>';}
 
-    (function(){var el=document.getElementById('chart-trends');if(!el)return;var t=DATA.trends;if(!t||!t.labels||!t.labels.length){empty(el,'fa-chart-line','No data yet.');return;}var ctx=el.getContext('2d');new Chart(ctx,{type:'line',data:{labels:t.labels,datasets:[
-      {label:'Total',data:t.total,borderColor:GOLD,backgroundColor:grad(ctx,'rgba(212,175,55,0.30)','rgba(212,175,55,0.01)'),fill:true,tension:0.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5},
-      {label:'Completed',data:t.completed,borderColor:GREEN,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0,pointHoverRadius:4},
-      {label:'Pending',data:t.pending,borderColor:PINK,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0,pointHoverRadius:4},
-      {label:'In Progress',data:t.in_progress,borderColor:BLUE,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0,pointHoverRadius:4}
-    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{position:'top',align:'end',labels:{boxWidth:7,boxHeight:7,padding:14,usePointStyle:true,pointStyle:'circle',font:{size:11,weight:'600'}}},tooltip:TOOLTIP},scales:{x:{grid:{color:'rgba(212,175,55,0.05)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:10}},y:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}}}}});})();
+    (function(){
+      var el=document.getElementById('chart-trends'); if(!el) return;
+      var x=D.trends; if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-line','No data yet.');return;}
+      var c=el.getContext('2d');
+      new Chart(c,{type:'line',data:{labels:x.labels,datasets:[
+        {label:'Total',data:x.total,borderColor:'#D4AF37',backgroundColor:gr(c,'rgba(212,175,55,0.30)','rgba(212,175,55,0.01)'),fill:true,tension:0.4,borderWidth:2.5,pointRadius:0},
+        {label:'Completed',data:x.completed,borderColor:'#22C55E',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
+        {label:'Pending',data:x.pending,borderColor:'#EC4899',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
+        {label:'In Progress',data:x.in_progress,borderColor:'#38BDF8',fill:false,tension:0.4,borderWidth:2,pointRadius:0}
+      ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',align:'end',labels:{boxWidth:7,boxHeight:7,usePointStyle:true,pointStyle:'circle'}},tooltip:TT},scales:{x:{grid:{color:'rgba(212,175,55,0.05)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:10}},y:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}}}}});
+    })();
 
-    (function(){var el=document.getElementById('chart-status');if(!el)return;var s=DATA.statuses;if(!s||!s.labels||!s.labels.length){empty(el,'fa-circle-notch','No status data.');return;}var map={'Pending':'#F59E0B','Approved':'#3B82F6','In Progress':'#38BDF8','Completed':'#22C55E','Closed':'#16A34A','Rejected':'#EF4444'};var colors=s.labels.map(function(l){return map[l]||'#9CA3AF';});new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:s.labels,datasets:[{data:s.values,backgroundColor:colors,borderColor:'#15152A',borderWidth:2,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TOOLTIP}}});})();
+    (function(){
+      var el=document.getElementById('chart-status'); if(!el) return;
+      var x=D.statuses; if(!x||!x.labels||!x.labels.length){em(el,'fa-circle-notch','No status data.');return;}
+      var m={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#D4AF37','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#15152A',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,usePointStyle:true,pointStyle:'circle',font:{size:10}}},tooltip:TT}}});
+    })();
 
-    (function(){var el=document.getElementById('chart-floors');if(!el)return;var f=DATA.floors;if(!f||!f.labels||!f.labels.length){empty(el,'fa-building','No floor data.');return;}var ctx=el.getContext('2d');new Chart(ctx,{type:'bar',data:{labels:f.labels,datasets:[{label:'Requests',data:f.values,backgroundColor:grad(ctx,'rgba(212,175,55,0.9)','rgba(212,175,55,0.25)'),borderRadius:6,borderSkipped:false,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TOOLTIP},scales:{x:{grid:{display:false},ticks:{font:{size:10,weight:'600'}}},y:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}}}}});})();
+    (function(){
+      var el=document.getElementById('chart-categories'); if(!el) return;
+      var x=D.categories; if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-pie','No category data.');return;}
+      var p=['#D4AF37','#E6C65C','#38BDF8','#22C55E','#F59E0B','#EC4899','#8B5CF6','#06B6D4','#F472B6','#10B981'];
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:p,borderColor:'#15152A',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,usePointStyle:true,pointStyle:'circle',font:{size:10}}},tooltip:TT}}});
+    })();
 
-    (function(){var el=document.getElementById('chart-categories');if(!el)return;var c=DATA.categories;if(!c||!c.labels||!c.labels.length){empty(el,'fa-chart-pie','No category data.');return;}var palette=['#D4AF37','#E6C65C','#38BDF8','#22C55E','#F59E0B','#EC4899','#8B5CF6','#06B6D4','#F472B6','#10B981'];new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:c.labels,datasets:[{data:c.values,backgroundColor:palette,borderColor:'#15152A',borderWidth:2,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TOOLTIP}}});})();
-
-    (function(){var el=document.getElementById('chart-priorities');if(!el)return;var p=DATA.priorities;if(!p||!p.labels||!p.labels.length){empty(el,'fa-fire','No priority data.');return;}var map={'URGENT':'#EF4444','HIGH':'#F59E0B','MEDIUM':'#38BDF8','LOW':'#22C55E'};var colors=p.labels.map(function(l){return map[l]||'#9CA3AF';});new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:p.labels,datasets:[{data:p.values,backgroundColor:colors,borderColor:'#15152A',borderWidth:2,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TOOLTIP}}});})();
+    (function(){
+      var el=document.getElementById('chart-departments'); if(!el) return;
+      var x=D.departments; if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-bar','No department data.');return;}
+      var c=el.getContext('2d');
+      new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(212,175,55,0.9)','rgba(212,175,55,0.25)'),borderRadius:6,maxBarThickness:34}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}},y:{grid:{display:false}}}}});
+    })();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
