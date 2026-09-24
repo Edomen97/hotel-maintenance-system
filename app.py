@@ -844,6 +844,394 @@ def profile():
 
 
 # ══════════════════════════════════════════════════════════════
+# REQUESTS — CREATE / LIST / DETAIL  (MISSING ROUTES ADDED)
+# ══════════════════════════════════════════════════════════════
+@app.route("/requests")
+@login_required
+def requests_list():
+    q = MaintenanceRequest.query.filter_by(is_deleted=False)
+
+    if current_user.role in ["MANAGER", "ADMIN"]:
+        # Managers see requests that are past HK approval (or don't need it)
+        q = q.filter(db.or_(
+            MaintenanceRequest.awaiting_hk_approval == False,
+            MaintenanceRequest.awaiting_hk_approval.is_(None),
+        ))
+    elif current_user.role == "DEPARTMENT":
+        if current_user.department_id:
+            q = q.filter(db.or_(
+                MaintenanceRequest.department_id == current_user.department_id,
+                MaintenanceRequest.requested_by_id == current_user.id,
+            ))
+        else:
+            q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role == "EMPLOYEE":
+        q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role in STAFF_ROLES:
+        q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
+
+    # Optional filters
+    status_filter = request.args.get("status")
+    if status_filter:
+        q = q.filter(MaintenanceRequest.status == status_filter)
+    priority_filter = request.args.get("priority")
+    if priority_filter:
+        q = q.filter(MaintenanceRequest.priority == priority_filter)
+
+    requests = q.order_by(MaintenanceRequest.created_at.desc()).all()
+
+    def badge(st):
+        return {
+            "Pending": "warning", "Approved": "primary", "Assigned": "info",
+            "In Progress": "info", "Completed": "success", "Verified": "success",
+            "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
+        }.get(st, "secondary")
+
+    rows_parts = []
+    for r in requests:
+        rows_parts.append(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
+            '<td>' + str(r.department.name if r.department else "—") + '</td>'
+            '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
+            '<td><span class="badge bg-' + badge(r.status) + '">' + str(r.status) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '</tr>'
+        )
+    rows = "".join(rows_parts)
+
+    content = (
+        '<div class="d-flex justify-content-between mb-3">'
+        '<h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>'
+        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>'
+        '</div>'
+        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>'
+        '<tbody>' + (rows if rows else '<tr><td colspan="7" class="text-center">No requests found</td></tr>') + '</tbody>'
+        '</table></div></div>'
+    )
+    return page("Requests", content)
+
+
+@app.route("/requests/new", methods=["GET", "POST"])
+@login_required
+def request_create():
+    departments = Department.query.order_by(Department.name).all()
+    categories = Category.query.order_by(Category.name).all()
+    working_items = WorkingItem.query.order_by(WorkingItem.name).all()
+    rooms = Room.query.order_by(Room.room_number).all()
+    areas = Area.query.order_by(Area.name).all()
+    floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
+    if not floors:
+        floors = sorted({r.floor for r in Room.query.all()})
+
+    if request.method == "POST":
+        try:
+            location_type = request.form.get("location_type", "Room").strip() or "Room"
+            room_id = request.form.get("room_id", type=int)
+            area_id = request.form.get("area_id", type=int)
+            working_item_id = request.form.get("working_item_id", type=int)
+            category_id = request.form.get("category_id", type=int)
+            description = request.form.get("description", "").strip()
+            priority = request.form.get("priority", "MEDIUM")
+            floor = request.form.get("floor", type=int)
+            dept_id = request.form.get("department_id", type=int)
+
+            if current_user.role == "DEPARTMENT" and current_user.department_id:
+                dept_id = current_user.department_id
+            if current_user.role == "EMPLOYEE" and not dept_id and current_user.department_id:
+                dept_id = current_user.department_id
+
+            if location_type == "Room" and room_id:
+                room_obj = get_one(Room, room_id)
+                if room_obj:
+                    floor = room_obj.floor
+            elif location_type == "Area":
+                room_id = None
+            else:
+                room_id = None
+                area_id = None
+
+            if not description:
+                flash("Description is required", "danger")
+                return redirect(url_for("request_create"))
+
+            is_hk = is_housekeeping_request(current_user)
+
+            req = MaintenanceRequest(
+                request_no=request_no_generator(),
+                location_type=location_type,
+                floor=floor,
+                room_id=room_id,
+                area_id=area_id,
+                working_item_id=working_item_id,
+                category_id=category_id,
+                description=description,
+                priority=priority,
+                status="Pending",
+                requested_by_id=current_user.id,
+                department_id=dept_id,
+                awaiting_hk_approval=is_hk,
+            )
+            hours = PRIORITIES.get(priority, 24)
+            req.due_date = datetime.utcnow() + timedelta(hours=hours)
+
+            db.session.add(req)
+            db.session.flush()
+
+            log_audit("Create Request", "MaintenanceRequest", req.id, new_value=req.request_no)
+            log_status_change(req.id, "Pending HK Approval" if is_hk else "Pending",
+                              notes="Created by " + str(current_user.full_name))
+
+            if is_hk:
+                approvers = User.query.filter(User.role.in_(HK_APPROVER_ROLES), User.active == True).all()
+                notify_users(
+                    [u.id for u in approvers], req.id,
+                    "🏠 New Housekeeping Request",
+                    "Request " + str(req.request_no) + " needs Housekeeping approval",
+                    "HK Approval",
+                    link=url_for("hk_approve_request", req_id=req.id),
+                )
+            else:
+                managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"]), User.active == True).all()
+                notify_users(
+                    [u.id for u in managers], req.id,
+                    "📝 New Request",
+                    "Request " + str(req.request_no) + " is pending approval",
+                    "New Request",
+                    link=url_for("request_detail", req_id=req.id),
+                )
+
+            db.session.commit()
+            flash("✅ Request created successfully!", "success")
+            return redirect(url_for("request_detail", req_id=req.id))
+
+        except Exception as e:
+            db.session.rollback()
+            print("Create request error: " + traceback.format_exc())
+            flash("Error: " + str(e), "danger")
+            return redirect(url_for("request_create"))
+
+    # Build form options
+    floor_opts = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
+    room_opts = "".join('<option value="' + str(r.id) + '" data-floor="' + str(r.floor) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
+    area_opts = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
+    item_opts = "".join('<option value="' + str(i.id) + '">' + str(i.name) + '</option>' for i in working_items)
+    cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in categories)
+    prio_opts = "".join('<option value="' + p + '"' + (' selected' if p == "MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT", "HIGH", "MEDIUM", "LOW"])
+
+    show_dept_select = current_user.role not in ["DEPARTMENT"] and not (current_user.role == "EMPLOYEE" and current_user.department_id)
+    dept_select_html = ""
+    if show_dept_select:
+        dept_opts = "".join('<option value="' + str(d.id) + '">' + str(d.name) + '</option>' for d in departments)
+        dept_select_html = (
+            '<div class="col-md-6 mb-3"><label class="form-label">Department</label>'
+            '<select class="form-select" name="department_id"><option value="">-- Select --</option>'
+            + dept_opts + '</select></div>'
+        )
+
+    content = (
+        '<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>'
+        '<div class="card"><form method="post" id="reqForm">'
+        '<div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
+        '<select class="form-select" name="location_type" id="locationType" required>'
+        '<option value="Room" selected>Room</option>'
+        '<option value="Area">Area</option>'
+        '</select></div>'
+        + dept_select_html +
+        '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label>'
+        '<select class="form-select" name="room_id" id="roomSelect">'
+        '<option value="">-- Select Room --</option>' + room_opts + '</select></div>'
+        '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label>'
+        '<select class="form-select" name="floor">'
+        '<option value="">-- Floor --</option>' + floor_opts + '</select></div>'
+        '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area</label>'
+        '<select class="form-select" name="area_id"><option value="">-- Select Area --</option>' + area_opts + '</select></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Working Item</label>'
+        '<select class="form-select" name="working_item_id"><option value="">-- Select Item --</option>' + item_opts + '</select></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Category</label>'
+        '<select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + cat_opts + '</select></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label>'
+        '<select class="form-select" name="priority">' + prio_opts + '</select></div>'
+        '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
+        '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
+        '<div class="col-12 d-flex gap-2">'
+        '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+        '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
+        '</div></div></form></div>'
+        '<script>'
+        '(function(){'
+        'var lt=document.getElementById("locationType");'
+        'var rw=document.getElementById("roomWrap");'
+        'var aw=document.getElementById("areaWrap");'
+        'var fw=document.getElementById("floorWrap");'
+        'function upd(){var v=lt.value;'
+        'if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}'
+        'else{rw.style.display="none";aw.style.display="";fw.style.display="";}}'
+        'lt.addEventListener("change",upd);upd();'
+        '})();'
+        '</script>'
+    )
+    return page("New Request", content)
+
+
+@app.route("/requests/<int:req_id>")
+@login_required
+def request_detail(req_id):
+    req = get_or_404(MaintenanceRequest, req_id)
+
+    if req.is_deleted and current_user.role != "ADMIN":
+        flash("This request has been archived.", "warning")
+        return redirect(url_for("requests_list"))
+
+    # Access control
+    if current_user.role == "DEPARTMENT":
+        same_dept = (current_user.department_id and req.department_id == current_user.department_id)
+        if not same_dept and req.requested_by_id != current_user.id and not is_housekeeping_approver(current_user):
+            abort(403)
+    if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id and not is_housekeeping_approver(current_user):
+        abort(403)
+    if current_user.role in STAFF_ROLES and req.assigned_to_id != current_user.id:
+        # staff can still view unassigned requests in their queue
+        pass
+
+    history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
+    work_orders = WorkOrder.query.filter_by(request_id=req.id).all()
+
+    def badge(st):
+        return {
+            "Pending": "warning", "Approved": "primary", "Assigned": "info",
+            "In Progress": "info", "Completed": "success", "Verified": "success",
+            "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
+        }.get(st, "secondary")
+
+    # Build history HTML
+    hist_html = ""
+    for h in history:
+        who = h.user.full_name if h.user else "System"
+        when = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
+        note = (" — " + str(h.notes)) if h.notes else ""
+        hist_html += (
+            '<div style="padding:.5rem .75rem;border-left:3px solid #f59e0b;background:rgba(30,41,59,0.5);border-radius:10px;margin-bottom:.4rem">'
+            '<strong style="color:#f59e0b">' + str(h.status) + '</strong> '
+            '<span style="color:#94a3b8;font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span>'
+            '</div>'
+        )
+    if not hist_html:
+        hist_html = '<p style="color:#94a3b8">No status history yet.</p>'
+
+    # Work orders HTML
+    wo_html = ""
+    for wo in work_orders:
+        wo_html += (
+            '<div style="padding:.5rem .75rem;background:rgba(30,41,59,0.5);border-radius:10px;margin-bottom:.4rem">'
+            '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#f59e0b;font-weight:600">' + str(wo.work_order_no) + '</a> '
+            '<span class="badge bg-info">' + str(wo.status) + '</span> '
+            '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span>'
+            '</div>'
+        )
+    if not wo_html:
+        wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
+
+    # Action buttons
+    actions = []
+    # HK approval button (for approvers, while awaiting)
+    if req.awaiting_hk_approval and is_housekeeping_approver(current_user):
+        actions.append(
+            '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" class="btn btn-info">'
+            '<i class="fas fa-pen-nib"></i> Housekeeping Approval</a>'
+        )
+    # Manager approve (only if not awaiting HK, not rejected, status pending)
+    if (not req.awaiting_hk_approval
+            and req.hk_approval_status != "Rejected"
+            and req.status == "Pending"
+            and current_user.role in ["MANAGER", "ADMIN"]):
+        actions.append(
+            '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline">'
+            '<button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button></form>'
+        )
+    # Assign staff
+    if (req.status in ["Approved", "Assigned"]
+            and current_user.role in ["MANAGER", "ADMIN"]):
+        actions.append(
+            '<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary">'
+            '<i class="fas fa-user-plus"></i> Assign Staff</a>'
+        )
+    # Verify
+    if req.status == "Completed" and current_user.role in ["MANAGER", "ADMIN"]:
+        actions.append(
+            '<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline">'
+            '<button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify</button></form>'
+        )
+    # Close
+    if req.status == "Verified" and current_user.role in ["MANAGER", "ADMIN"]:
+        actions.append(
+            '<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline">'
+            '<button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>'
+        )
+    # Admin delete
+    if current_user.role == "ADMIN" and not req.is_deleted:
+        actions.append(
+            '<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')">'
+            '<input type="hidden" name="reason" value="Archived by admin">'
+            '<button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Archive</button></form>'
+        )
+
+    actions_html = " ".join(actions) if actions else '<p style="color:#94a3b8">No actions available.</p>'
+
+    hk_block = ""
+    if req.hk_approval_status or req.awaiting_hk_approval:
+        hk_status = req.hk_approval_status or ("Pending" if req.awaiting_hk_approval else "—")
+        hk_block = (
+            '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-broom"></i> Housekeeping Approval</h5>'
+            '<p><strong>Status:</strong> ' + str(hk_status) + '</p>'
+            '<p><strong>Approved by:</strong> ' + str(req.hk_approved_by.full_name if req.hk_approved_by else "—") + '</p>'
+            '<p><strong>Approved at:</strong> ' + (req.hk_approved_at.strftime("%Y-%m-%d %H:%M") if req.hk_approved_at else "—") + '</p>'
+            '<p><strong>Notes:</strong> ' + str(req.hk_approval_notes or "—") + '</p>'
+            '</div>'
+        )
+
+    content = (
+        '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
+        '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
+        '<div>' + actions_html + '</div>'
+        '</div>'
+        '<div class="row">'
+        '<div class="col-md-8">'
+        '<div class="card"><h5 style="color:#f59e0b">Request Details</h5>'
+        '<table class="table"><tbody>'
+        '<tr><th style="width:180px;color:#94a3b8">Status</th><td><span class="badge bg-' + badge(req.status) + '">' + str(req.status) + '</span>'
+        + (' <span class="badge bg-info">Awaiting HK Approval</span>' if req.awaiting_hk_approval else '') + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Priority</th><td>' + str(req.priority) + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Location Type</th><td>' + str(req.location_type) + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Location</th><td>' + str(req.location_name) + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Floor</th><td>' + str(req.floor if req.floor else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Requested By</th><td>' + str(req.requested_by.full_name if req.requested_by else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Description</th><td>' + str(req.description or "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
+        '</tbody></table></div>'
+        + hk_block +
+        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
+        '</div>'
+        '<div class="col-md-4">'
+        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div>'
+        '</div>'
+        '</div>'
+    )
+    return page("Request " + str(req.request_no), content)
+
+
+# ══════════════════════════════════════════════════════════════
 # DASHBOARD ANALYTICS HELPERS
 # ══════════════════════════════════════════════════════════════
 COMPLETED_STATES = ["Completed", "Verified", "Closed"]
@@ -1350,27 +1738,124 @@ def dashboard():
         "departments": departments,
     }
 
-    return render_template(
-        "dashboard.html",
-        title="Rori Hotel Maintenance Dashboard",
-        kpis=kpis,
-        work_orders=work_orders,
-        top_locations=top_locations,
-        staff_stats=staff_stats,
-        inventory=inventory,
-        recent_activity=recent_activity,
-        recent_requests=recent_requests,
-        all_departments=all_departments,
-        all_categories=all_categories,
-        all_rooms=all_rooms,
-        all_areas=all_areas,
-        all_floors=all_floors,
-        nav_items=build_dashboard_nav(),
-        chart_data=chart_data,
-        filters={k: v for k, v in args.items()},
-        status_badge_class=status_badge_class,
-        priority_badge_class=priority_badge_class,
+    try:
+        return render_template(
+            "dashboard.html",
+            title="Rori Hotel Maintenance Dashboard",
+            kpis=kpis,
+            work_orders=work_orders,
+            top_locations=top_locations,
+            staff_stats=staff_stats,
+            inventory=inventory,
+            recent_activity=recent_activity,
+            recent_requests=recent_requests,
+            all_departments=all_departments,
+            all_categories=all_categories,
+            all_rooms=all_rooms,
+            all_areas=all_areas,
+            all_floors=all_floors,
+            nav_items=build_dashboard_nav(),
+            chart_data=chart_data,
+            filters={k: v for k, v in args.items()},
+            status_badge_class=status_badge_class,
+            priority_badge_class=priority_badge_class,
+        )
+    except Exception as e:
+        print("Dashboard render failed, falling back: " + str(e))
+        # Fallback: simple dashboard if template missing
+        fallback = (
+            '<h3 style="color:#f59e0b">Dashboard</h3>'
+            '<div class="row g-3 mb-4">'
+            '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["total"]) + '</div><div class="metric-label">Total</div></div></div>'
+            '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["pending"]) + '</div><div class="metric-label">Pending</div></div></div>'
+            '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["completed"]) + '</div><div class="metric-label">Completed</div></div></div>'
+            '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["completion_rate"]) + '%</div><div class="metric-label">Rate</div></div></div>'
+            '</div>'
+            '<div class="card"><a class="btn btn-primary" href="' + url_for("requests_list") + '">View Requests</a></div>'
+        )
+        return page("Dashboard", fallback)
+
+
+# ══════════════════════════════════════════════════════════════
+# EMPLOYEE DASHBOARD
+# ══════════════════════════════════════════════════════════════
+@app.route("/employee/dashboard")
+@login_required
+@role_required("EMPLOYEE")
+def employee_dashboard():
+    requests = MaintenanceRequest.query.filter_by(
+        is_deleted=False,
+        requested_by_id=current_user.id,
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    total = len(requests)
+    pending = sum(1 for r in requests if r.status == "Pending")
+    in_progress = sum(1 for r in requests if r.status in ["Assigned", "In Progress"])
+    completed = sum(1 for r in requests if r.status in ["Completed", "Verified", "Closed"])
+    rejected = sum(1 for r in requests if r.status == "Rejected")
+    overdue = sum(1 for r in requests if r.is_overdue)
+
+    notifications_list = Notification.query.filter_by(
+        user_id=current_user.id
+    ).order_by(Notification.created_at.desc()).limit(5).all()
+
+    def badge(st):
+        return {
+            "Pending": "warning", "Approved": "primary", "Assigned": "info",
+            "In Progress": "info", "Completed": "success", "Verified": "success",
+            "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
+        }.get(st, "secondary")
+
+    rows_parts = []
+    for r in requests[:20]:
+        rows_parts.append(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
+            '<td><span class="badge bg-' + badge(r.status) + '">' + str(r.status) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '</tr>'
+        )
+    rows = "".join(rows_parts)
+
+    notif_html = ""
+    for n in notifications_list:
+        notif_html += (
+            '<div style="padding:.6rem .8rem;background:rgba(30,41,59,0.5);border-left:3px solid #f59e0b;border-radius:10px;margin-bottom:.4rem">'
+            '<strong style="color:#f59e0b">' + str(n.title) + '</strong>'
+            '<div style="font-size:.85rem;color:#cbd5e1;margin-top:.2rem">' + str(n.message) + '</div>'
+            '</div>'
+        )
+    if not notif_html:
+        notif_html = '<p style="color:#94a3b8">No notifications yet.</p>'
+
+    content = (
+        '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
+        '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-home"></i> My Dashboard</h3>'
+        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>'
+        '</div>'
+        '<div class="row g-3 mb-4">'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(rejected) + '</div><div class="metric-label">Rejected</div></div></div>'
+        '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(overdue) + '</div><div class="metric-label">Overdue</div></div></div>'
+        '</div>'
+        '<div class="row">'
+        '<div class="col-md-8"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
+        '<div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>'
+        '<tbody>' + (rows if rows else '<tr><td colspan="5" class="text-center">No requests yet. <a href="' + url_for("request_create") + '">Create one</a>.</td></tr>') + '</tbody>'
+        '</table></div></div></div>'
+        '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h5>'
+        + notif_html +
+        '<a href="' + url_for("notifications") + '" class="btn btn-sm btn-secondary mt-2">View all</a>'
+        '</div></div>'
+        '</div>'
     )
+    return page("My Dashboard", content)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3285,7 +3770,7 @@ def debug():
 def debug_routes():
     routes = []
     for r in app.url_map.iter_rules():
-        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve"]):
+        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve", "requests", "employee", "department"]):
             routes.append({"rule": r.rule, "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]), "endpoint": r.endpoint})
     return jsonify(routes)
 
