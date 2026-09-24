@@ -816,7 +816,7 @@ def profile():
 
 
 # ══════════════════════════════════════════════════════════════
-# DASHBOARD ANALYTICS HELPERS  (all data comes from DB)
+# DASHBOARD ANALYTICS HELPERS
 # ══════════════════════════════════════════════════════════════
 COMPLETED_STATES = ["Completed", "Verified", "Closed"]
 PENDING_STATES = ["Pending", "Approved"]
@@ -833,7 +833,6 @@ def _parse_date(value):
 
 
 def build_filtered_query(args):
-    """Filtered MaintenanceRequest query honouring GET params."""
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
 
     d_from = _parse_date(args.get("date_from"))
@@ -881,7 +880,6 @@ def build_filtered_query(args):
 
 
 def format_duration(seconds):
-    """Human-friendly duration: 45m, 1.8 hrs, 1d 3h, N/A."""
     if seconds is None:
         return "N/A"
     if seconds < 60:
@@ -912,7 +910,6 @@ def humanize_ago(dt):
 
 
 def _avg_resolution_seconds(reqs):
-    """Average seconds from created_at to completed_date on completed reqs."""
     completed = [r for r in reqs if r.completed_date and r.created_at]
     if not completed:
         return None
@@ -940,7 +937,6 @@ def get_dashboard_kpis(args):
     completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
     avg_seconds = _avg_resolution_seconds([r for r in reqs if r.status in COMPLETED_STATES])
 
-    # Previous period (only when both dates present)
     prev_total = prev_completed = None
     prev_avg_seconds = None
     prev_from, prev_to = _previous_period(args.get("date_from"), args.get("date_to"))
@@ -975,7 +971,7 @@ def get_dashboard_kpis(args):
 
     avg_delta = None
     if prev_avg_seconds is not None and avg_seconds is not None:
-        avg_delta = prev_avg_seconds - avg_seconds  # + = faster than before
+        avg_delta = prev_avg_seconds - avg_seconds
 
     return {
         "total": total,
@@ -1257,6 +1253,16 @@ def build_dashboard_nav():
     return items
 
 
+def build_department_nav():
+    return [
+        {"label": "Dashboard",     "icon": "fa-home",         "url": url_for("department_dashboard"), "active": True},
+        {"label": "New Request",   "icon": "fa-plus-circle",  "url": url_for("request_create"),       "active": False},
+        {"label": "Notifications", "icon": "fa-bell",         "url": url_for("notifications"),        "active": False},
+        {"label": "Profile",       "icon": "fa-user-circle",  "url": url_for("profile"),              "active": False},
+        {"label": "Logout",        "icon": "fa-sign-out-alt", "url": url_for("logout"),               "active": False},
+    ]
+
+
 def status_badge_class(status):
     return {
         "Pending": "b-pending",
@@ -1280,24 +1286,12 @@ def priority_badge_class(priority):
     }.get(priority, "b-default")
 
 
-def build_department_nav():
-    """Sidebar navigation for DEPARTMENT (Housekeeping) users."""
-    return [
-        {"label": "Dashboard",     "icon": "fa-home",         "url": url_for("department_dashboard"), "active": True},
-        {"label": "New Request",   "icon": "fa-plus-circle",  "url": url_for("request_create"),       "active": False},
-        {"label": "Notifications", "icon": "fa-bell",         "url": url_for("notifications"),        "active": False},
-        {"label": "Profile",       "icon": "fa-user-circle",  "url": url_for("profile"),              "active": False},
-        {"label": "Logout",        "icon": "fa-sign-out-alt", "url": url_for("logout"),               "active": False},
-    ]
-
-
 # ══════════════════════════════════════════════════════════════
 # DASHBOARDS
 # ══════════════════════════════════════════════════════════════
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Preserve existing redirect behaviour for staff / departments / employees
     if current_user.role in STAFF_ROLES:
         return redirect(url_for("workorders_list"))
     if current_user.role == "DEPARTMENT":
@@ -1319,7 +1313,6 @@ def dashboard():
     recent_activity = get_recent_activity(10)
     recent_requests = get_recent_requests(args, 10)
 
-    # Filter dropdown data
     all_departments = Department.query.order_by(Department.name).all()
     all_categories = Category.query.order_by(Category.name).all()
     all_rooms = Room.query.order_by(Room.room_number).all()
@@ -1408,6 +1401,22 @@ def department_dashboard():
     category_labels = [k for k, _ in cat_sorted]
     category_values = [v for _, v in cat_sorted]
 
+    # ─── Floor breakdown ───
+    floor_counts = defaultdict(int)
+    for r in requests:
+        floor_counts[r.floor if r.floor else 0] += 1
+    floor_sorted = sorted(floor_counts.items())
+    floor_labels = [f"Floor {f}" if f else "Unassigned" for f, _ in floor_sorted]
+    floor_values = [v for _, v in floor_sorted]
+
+    # ─── Priority breakdown ───
+    prio_counts = defaultdict(int)
+    for r in requests:
+        prio_counts[r.priority or "MEDIUM"] += 1
+    prio_order = ["URGENT", "HIGH", "MEDIUM", "LOW"]
+    priority_labels = [p for p in prio_order if prio_counts.get(p, 0) > 0]
+    priority_values = [prio_counts[p] for p in priority_labels]
+
     # ─── Top locations ───
     loc_counts = defaultdict(int)
     for r in requests:
@@ -1427,7 +1436,7 @@ def department_dashboard():
         trend_pending.append(sum(1 for r in day_reqs if r.status == "Pending"))
         trend_inprogress.append(sum(1 for r in day_reqs if r.status == "In Progress"))
 
-    # ─── Recent activity from StatusHistory ───
+    # ─── Activity from StatusHistory ───
     req_ids = [r.id for r in requests]
     activity = []
     if req_ids:
@@ -1443,6 +1452,21 @@ def department_dashboard():
                 "req_id": h.request_id,
             })
 
+    # ─── Work orders for follow-up ───
+    work_orders = []
+    if req_ids:
+        work_orders = WorkOrder.query.filter(
+            WorkOrder.request_id.in_(req_ids)
+        ).order_by(WorkOrder.created_at.desc()).limit(5).all()
+
+    # ─── Notifications ───
+    notifications_list = Notification.query.filter_by(
+        user_id=current_user.id
+    ).order_by(Notification.created_at.desc()).limit(5).all()
+    unread_count = Notification.query.filter_by(
+        user_id=current_user.id, is_read=False
+    ).count()
+
     dept_name = current_user.department.name if current_user.department else "Housekeeping"
 
     chart_data = {
@@ -1455,6 +1479,8 @@ def department_dashboard():
         },
         "statuses":   {"labels": status_labels, "values": status_values},
         "categories": {"labels": category_labels, "values": category_values},
+        "floors":     {"labels": floor_labels, "values": floor_values},
+        "priorities": {"labels": priority_labels, "values": priority_values},
     }
 
     return render_template(
@@ -1467,8 +1493,12 @@ def department_dashboard():
             "closed": closed, "rejected": rejected, "overdue": overdue,
         },
         recent_requests=requests[:6],
+        my_requests=requests[:5],
         top_locations=top_locations,
         activity=activity,
+        work_orders=work_orders,
+        notifications_list=notifications_list,
+        unread_count=unread_count,
         chart_data=chart_data,
         nav_items=build_department_nav(),
         status_badge_class=status_badge_class,
@@ -2360,7 +2390,7 @@ def supplier_deactivate(supplier_id):
 
 
 # ══════════════════════════════════════════════════════════════
-# INVENTORY PARTS (Add / Edit)
+# INVENTORY PARTS
 # ══════════════════════════════════════════════════════════════
 def part_form_html(part, action_url):
     def v(field, d=""):
@@ -2459,7 +2489,7 @@ def inventory_edit(part_id):
 
 
 # ══════════════════════════════════════════════════════════════
-# WORK ORDER PARTS (stock deduction / restore)
+# WORK ORDER PARTS
 # ══════════════════════════════════════════════════════════════
 def can_manage_wo_parts(wo):
     return (current_user.role in ["MANAGER", "ADMIN"] or
