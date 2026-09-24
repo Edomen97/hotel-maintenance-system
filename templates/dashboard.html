@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0a0a1a;--bg-2:#0f0f22;--card:#14142a;--border:rgba(139,92,246,0.15);--purple:#8B5CF6;--purple-2:#A855F7;--blue:#38BDF8;--blue-2:#3B82F6;--pink:#EC4899;--green:#22C55E;--orange:#F59E0B;--red:#EF4444;--text:#fff;--muted:#9CA3AF;--muted-2:#6B7280;--sw:230px;--radius:18px}
+:root{--bg:#0a0a1a;--bg-2:#0f0f22;--card:#14142a;--border:rgba(139,92,246,0.15);--purple:#8B5CF6;--purple-2:#A855F7;--blue:#38BDF8;--blue-2:#3B82F6;--pink:#EC4899;--green:#22C55E;--orange:#F59E0B;--red:#EF4444;--text:#fff;--muted:#9CA3AF;--sw:230px;--radius:18px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45;overflow-x:hidden}
 a{color:inherit;text-decoration:none}
@@ -42,14 +42,18 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .hk-user-info strong{font-size:.72rem;font-weight:600;color:#fff;white-space:nowrap}
 .hk-user-info small{font-size:.58rem;color:var(--purple-2);font-weight:700;text-transform:uppercase}
 .hk-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:.9rem;margin-bottom:.9rem}
-.hk-c2{grid-column:span 2}.hk-c4{grid-column:span 4}.hk-c6{grid-column:span 6}.hk-c8{grid-column:span 8}.hk-c12{grid-column:span 12}
+.hk-c2{grid-column:span 2}
+.hk-c4{grid-column:span 4}
+.hk-c6{grid-column:span 6}
+.hk-c8{grid-column:span 8}
+.hk-c12{grid-column:span 12}
 .hk-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.1rem}
 .hk-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap}
 .hk-card-head h3{font-size:.82rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:.45rem}
 .hk-card-head h3 i{color:var(--purple-2);font-size:.78rem}
-.hk-hint{font-size:.58rem;color:var(--muted);background:rgba(139,92,246,0.1);padding:.18rem .5rem;border-radius:20px;font-weight:700}
+.hk-hint{font-size:.58rem;color:var(--muted);background:rgba(139,92,246,0.1);padding:.18rem .5rem;border-radius:20px;font-weight:700;text-transform:uppercase}
 .hk-card-link{font-size:.66rem;color:var(--purple-2);font-weight:700}
-.hk-kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:.95rem 1rem;position:relative;overflow:hidden;min-height:112px;display:flex;flex-direction:column;justify-content:space-between}
+.hk-kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:.95rem 1rem;position:relative;overflow:hidden;min-height:110px;display:flex;flex-direction:column;justify-content:space-between}
 .hk-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--purple),var(--purple-2))}
 .hk-kpi.b::before{background:linear-gradient(90deg,var(--blue),var(--blue-2))}
 .hk-kpi.g::before{background:linear-gradient(90deg,var(--green),#10B981)}
@@ -105,7 +109,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .hk-table th{text-align:left;padding:.55rem .45rem;color:var(--muted);font-size:.58rem;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:700;white-space:nowrap}
 .hk-table td{padding:.6rem .45rem;border-bottom:1px solid rgba(139,92,246,0.05);color:#e5e7eb;vertical-align:middle}
 .hk-table tr:last-child td{border-bottom:none}
-.hk-table tr:hover{background:rgba(139,92,246,0.03)}
 .hk-table a{color:var(--purple-2);font-weight:600}
 .hk-twrap{overflow-x:auto}
 .hk-feed{display:flex;flex-direction:column;gap:.4rem}
@@ -115,12 +118,12 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .hk-feed-b{flex:1;min-width:0}
 .hk-feed-b .tx{color:#e5e7eb;line-height:1.35}
 .hk-feed-b .tx strong{color:#fff}
-.hk-feed-b .tm{font-size:.58rem;color:var(--muted-2);margin-top:2px}
+.hk-feed-b .tm{font-size:.58rem;color:#6B7280;margin-top:2px}
 .hk-empty{text-align:center;padding:1.6rem 1rem;color:var(--muted);font-size:.74rem}
 .hk-empty i{font-size:1.5rem;color:var(--purple-2);opacity:.4;display:block;margin-bottom:.4rem}
 .hk-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999}
 .hk-backdrop.show{display:block}
-.hk-flash{background:var(--card);border:1px solid var(--border);color:#fff;font-size:.78rem;border-radius:12px}
+.hk-flash{background:var(--card);border:1px solid var(--border);color:#fff;font-size:.78rem;border-radius:12px;padding:.7rem 1rem;margin-bottom:1rem}
 @media (max-width:1200px){.hk-c2{grid-column:span 4}.hk-c4{grid-column:span 6}}
 @media (max-width:1024px){.hk-sidebar{transform:translateX(-100%);transition:transform .3s}.hk-sidebar.open{transform:translateX(0)}.hk-main{margin-left:0;max-width:100vw;padding:1rem}.hk-mob{display:flex}.hk-c2,.hk-c4,.hk-c6,.hk-c8{grid-column:span 12}}
 @media (max-width:768px){.hk-c2{grid-column:span 6}.hk-title h1{font-size:.95rem}.hk-user-info{display:none}.hk-chart{height:200px}.hk-chart.tall{height:230px}.hk-kpi-val{font-size:1.4rem}}
@@ -136,7 +139,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   <aside class="hk-sidebar" id="hk-sidebar">
     <div class="hk-brand">
       <div class="hk-brand-logo"><i class="fas fa-broom"></i></div>
-      <div class="hk-brand-text"><h2>Rori Hotel</h2><p>{{ dept_name|default('Housekeeping') }}</p></div>
+      <div class="hk-brand-text">
+        <h2>Rori Hotel</h2>
+        <p>{{ dept_name|default('Housekeeping') }}</p>
+      </div>
     </div>
     <nav class="hk-nav">
       {% for item in nav_items %}
@@ -174,7 +180,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}{% for cat, msg in messages %}
-        <div class="alert alert-{{ cat }} alert-dismissible fade show hk-flash">{{ msg }}<button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div>
+        <div class="hk-flash"><strong>{{ cat|upper }}:</strong> {{ msg }}</div>
       {% endfor %}{% endif %}
     {% endwith %}
 
@@ -435,57 +441,56 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>window.HK_DATA = {{ chart_data|tojson }};</script>
 <script>
-(function(){'use strict';
-function init(){
-  var t=document.getElementById('hk-toggle'),s=document.getElementById('hk-sidebar'),b=document.getElementById('hk-backdrop');
-  if(t&&s)t.addEventListener('click',function(){s.classList.toggle('open');if(b)b.classList.toggle('show');});
-  if(b&&s)b.addEventListener('click',function(){s.classList.remove('open');b.classList.remove('show');});
-  if(typeof Chart==='undefined')return;
-  var D=window.HK_DATA||{};
-  Chart.defaults.color='#9CA3AF';
-  Chart.defaults.borderColor='rgba(139,92,246,0.1)';
-  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
-  Chart.defaults.font.size=10;
-  var TT={backgroundColor:'rgba(10,10,26,0.97)',borderColor:'rgba(139,92,246,0.5)',borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:11,cornerRadius:10};
-  var P2='#A855F7',B='#38BDF8',PK='#EC4899',G='#22C55E';
-  function gr(c,a,b){var g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,a);g.addColorStop(1,b);return g;}
-  function em(el,i,m){if(!el||!el.parentElement)return;el.parentElement.innerHTML='<div class="hk-empty"><i class="fas '+i+'"></i>'+m+'</div>';}
+(function(){
+  'use strict';
+  function init(){
+    var t=document.getElementById('hk-toggle'),s=document.getElementById('hk-sidebar'),b=document.getElementById('hk-backdrop');
+    if(t&&s)t.addEventListener('click',function(){s.classList.toggle('open');if(b)b.classList.toggle('show');});
+    if(b&&s)b.addEventListener('click',function(){s.classList.remove('open');b.classList.remove('show');});
+    if(typeof Chart==='undefined')return;
+    var D=window.HK_DATA||{};
+    Chart.defaults.color='#9CA3AF';
+    Chart.defaults.borderColor='rgba(139,92,246,0.1)';
+    Chart.defaults.font.family="'Inter', system-ui, sans-serif";
+    Chart.defaults.font.size=10;
+    var TT={backgroundColor:'rgba(10,10,26,0.97)',borderColor:'rgba(139,92,246,0.5)',borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:11,cornerRadius:10};
+    var P2='#A855F7',B='#38BDF8',PK='#EC4899',G='#22C55E';
+    function gr(c,a,b){var g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,a);g.addColorStop(1,b);return g;}
+    function em(el,i,m){if(!el||!el.parentElement)return;el.parentElement.innerHTML='<div class="hk-empty"><i class="fas '+i+'"></i>'+m+'</div>';}
 
-  (function(){var el=document.getElementById('chart-trends');if(!el)return;var x=D.trends;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-area','No data yet.');return;}
-    var c=el.getContext('2d');
-    new Chart(c,{type:'line',data:{labels:x.labels,datasets:[
-      {label:'Total',data:x.total,borderColor:P2,borderWidth:2.5,fill:true,backgroundColor:gr(c,'rgba(139,92,246,0.35)','rgba(139,92,246,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:6},
-      {label:'Completed',data:x.completed,borderColor:B,borderWidth:2.2,fill:true,backgroundColor:gr(c,'rgba(56,189,248,0.22)','rgba(56,189,248,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:5},
-      {label:'Pending',data:x.pending,borderColor:PK,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5},
-      {label:'In Progress',data:x.in_progress,borderColor:G,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5}
-    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
-      plugins:{legend:{position:'top',align:'end',labels:{boxWidth:8,boxHeight:8,padding:14,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT},
-      scales:{x:{grid:{color:'rgba(139,92,246,0.06)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:8}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
-  })();
+    (function(){var el=document.getElementById('chart-trends');if(!el)return;var x=D.trends;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-area','No data yet.');return;}
+      var c=el.getContext('2d');
+      new Chart(c,{type:'line',data:{labels:x.labels,datasets:[
+        {label:'Total',data:x.total,borderColor:P2,borderWidth:2.5,fill:true,backgroundColor:gr(c,'rgba(139,92,246,0.35)','rgba(139,92,246,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:6},
+        {label:'Completed',data:x.completed,borderColor:B,borderWidth:2.2,fill:true,backgroundColor:gr(c,'rgba(56,189,248,0.22)','rgba(56,189,248,0.01)'),tension:0.45,pointRadius:0,pointHoverRadius:5},
+        {label:'Pending',data:x.pending,borderColor:PK,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5},
+        {label:'In Progress',data:x.in_progress,borderColor:G,borderWidth:2,fill:false,tension:0.45,pointRadius:0,pointHoverRadius:5}
+      ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
+        plugins:{legend:{position:'top',align:'end',labels:{boxWidth:8,boxHeight:8,padding:14,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT},
+        scales:{x:{grid:{color:'rgba(139,92,246,0.06)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:8}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+    })();
 
-  (function(){var el=document.getElementById('chart-status');if(!el)return;var x=D.statuses;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-pie','No status data.');return;}
-    var m={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#8B5CF6','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
-    var total=x.values.reduce(function(a,b){return a+b;},0);
-    var ct={id:'ct',beforeDraw:function(ch){var w=ch.width,hh=ch.height,ctx=ch.ctx;ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#9CA3AF';ctx.font='700 10px Inter';ctx.fillText('Total',w/2,hh/2-14);ctx.fillStyle='#fff';ctx.font='800 22px Inter';ctx.fillText(total,w/2,hh/2+8);ctx.restore();}};
-    new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}},plugins:[ct]});
-  })();
+    (function(){var el=document.getElementById('chart-status');if(!el)return;var x=D.statuses;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-pie','No status data.');return;}
+      var m={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#8B5CF6','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}}});
+    })();
 
-  (function(){var el=document.getElementById('chart-floors');if(!el)return;var x=D.floors;if(!x||!x.labels||!x.labels.length){em(el,'fa-building','No floor data.');return;}
-    var c=el.getContext('2d');
-    new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.35)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
-  })();
+    (function(){var el=document.getElementById('chart-floors');if(!el)return;var x=D.floors;if(!x||!x.labels||!x.labels.length){em(el,'fa-building','No floor data.');return;}
+      var c=el.getContext('2d');
+      new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.35)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+    })();
 
-  (function(){var el=document.getElementById('chart-categories');if(!el)return;var x=D.categories;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-bar','No category data.');return;}
-    var c=el.getContext('2d');
-    new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
-  })();
+    (function(){var el=document.getElementById('chart-categories');if(!el)return;var x=D.categories;if(!x||!x.labels||!x.labels.length){em(el,'fa-chart-bar','No category data.');return;}
+      var c=el.getContext('2d');
+      new Chart(c,{type:'bar',data:{labels:x.labels,datasets:[{label:'Requests',data:x.values,backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'),borderRadius:8,borderSkipped:false,maxBarThickness:32}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:TT},scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},y:{beginAtZero:true,grid:{color:'rgba(139,92,246,0.07)'},ticks:{precision:0}}}}});
+    })();
 
-  (function(){var el=document.getElementById('chart-priorities');if(!el)return;var x=D.priorities;if(!x||!x.labels||!x.labels.length){em(el,'fa-fire','No priority data.');return;}
-    var m={'URGENT':'#EF4444','HIGH':'#F59E0B','MEDIUM':'#38BDF8','LOW':'#22C55E'};
-    new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}}});
-  })();
-}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+    (function(){var el=document.getElementById('chart-priorities');if(!el)return;var x=D.priorities;if(!x||!x.labels||!x.labels.length){em(el,'fa-fire','No priority data.');return;}
+      var m={'URGENT':'#EF4444','HIGH':'#F59E0B','MEDIUM':'#38BDF8','LOW':'#22C55E'};
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:x.labels,datasets:[{data:x.values,backgroundColor:x.labels.map(function(l){return m[l]||'#9CA3AF';}),borderColor:'#14142a',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,padding:8,usePointStyle:true,pointStyle:'circle',font:{size:10,weight:'600'}}},tooltip:TT}}});
+    })();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
 </script>
 </body>
