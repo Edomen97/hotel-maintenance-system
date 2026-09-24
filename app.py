@@ -1374,7 +1374,7 @@ def dashboard():
 
 
 # ══════════════════════════════════════════════════════════════
-# HOUSEKEEPING DASHBOARD — embedded template (no external file)
+# HOUSEKEEPING DASHBOARD — embedded template
 # ══════════════════════════════════════════════════════════════
 HK_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -1955,391 +1955,218 @@ def department_dashboard():
     )
 
 
-@app.route("/employee/dashboard")
-@login_required
-@role_required("EMPLOYEE")
-def employee_dashboard():
-    requests = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
-    rows_parts = []
-    for r in requests:
-        rows_parts.append(
-            '<tr><td><a href="/requests/' + str(r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td>'
-            '<td>' + str(r.status) + '</td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "") + '</td></tr>'
-        )
-    rows = "".join(rows_parts)
-    content = ('<h3 style="color:#f59e0b">My Dashboard</h3>'
-        '<a class="btn btn-primary mb-3" href="' + url_for('request_create') + '"><i class="fas fa-plus-circle"></i> New Request</a>'
-        '<div class="card"><table class="table table-hover">'
-        '<thead><tr><th>Request</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="5" class="text-center">No requests</td></tr>') + '</tbody>'
-        '</table></div>')
-    return page("My Dashboard", content)
-
-
 # ══════════════════════════════════════════════════════════════
-# REQUESTS
+# HOUSEKEEPING APPROVAL — embedded template
 # ══════════════════════════════════════════════════════════════
-@app.route("/requests")
-@login_required
-def requests_list():
-    if current_user.role == "DEPARTMENT":
-        return redirect(url_for("department_dashboard"))
-    if current_user.role == "EMPLOYEE":
-        return redirect(url_for("employee_dashboard"))
+HK_APPROVE_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Housekeeping Approval | Rori Hotel</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0a1a;color:#fff;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5;min-height:100vh;padding:1.25rem}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+.wrap{max-width:1100px;margin:0 auto}
+.top{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}
+.top h1{font-size:1.25rem;font-weight:800;color:#fff}
+.top h1 span{background:linear-gradient(135deg,#A855F7,#38BDF8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.top p{font-size:.75rem;color:#9CA3AF;margin-top:.2rem}
+.btn-back{padding:.5rem 1rem;border-radius:10px;background:transparent;border:1px solid rgba(139,92,246,0.2);color:#9CA3AF;font-size:.78rem;font-weight:600;display:inline-flex;align-items:center;gap:.4rem}
+.btn-back:hover{color:#fff;border-color:#A855F7}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:#14142a;border:1px solid rgba(139,92,246,0.15);border-radius:18px;padding:1.25rem}
+.card h3{font-size:.9rem;font-weight:700;color:#fff;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+.card h3 i{color:#A855F7}
+.card table{width:100%;font-size:.82rem;border-collapse:collapse}
+.card table th{text-align:left;color:#9CA3AF;font-weight:600;padding:.45rem .25rem;width:140px;vertical-align:top}
+.card table td{padding:.45rem .25rem;color:#e5e7eb;border-bottom:1px solid rgba(139,92,246,0.06)}
+.card table tr:last-child td{border-bottom:none}
+.alert{padding:.75rem 1rem;border-radius:12px;font-size:.8rem;margin-bottom:1rem;border:1px solid}
+.alert-danger{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.4);color:#fca5a5}
+.alert-info{background:rgba(56,189,248,0.08);border-color:rgba(56,189,248,0.4);color:#7dd3fc}
+.signer{background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.35);border-radius:12px;padding:.85rem 1rem;margin-bottom:1rem}
+.signer .lbl{font-size:.6rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.7px;font-weight:700}
+.signer .val{font-size:.95rem;font-weight:700;color:#fff;margin-top:.2rem}
+.signer .role{font-size:.72rem;color:#A855F7;font-weight:600;margin-top:.15rem}
+.sig-wrap{position:relative;background:#fff;border-radius:12px;overflow:hidden;margin-bottom:.5rem;border:2px dashed rgba(139,92,246,0.4)}
+canvas#signature-pad{display:block;width:100%;height:200px;touch-action:none;background:#fff;cursor:crosshair}
+.sig-hint{font-size:.7rem;color:#9CA3AF;text-align:center;margin-bottom:1rem}
+textarea{width:100%;background:#0f0f22;border:1px solid rgba(139,92,246,0.2);color:#fff;border-radius:10px;padding:.65rem .85rem;font-size:.82rem;font-family:inherit;resize:vertical;min-height:70px;outline:none}
+textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
+.actions{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem}
+.btn{flex:1;padding:.75rem 1.25rem;border-radius:12px;font-size:.85rem;font-weight:700;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;font-family:inherit}
+.btn-approve{background:linear-gradient(135deg,#8B5CF6,#A855F7);color:#fff;box-shadow:0 4px 20px rgba(139,92,246,0.4)}
+.btn-approve:hover{box-shadow:0 6px 28px rgba(139,92,246,0.6)}
+.btn-reject{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.4)}
+.btn-reject:hover{background:rgba(239,68,68,0.25)}
+.btn-clear{padding:.5rem .9rem;border-radius:9px;background:transparent;border:1px solid rgba(139,92,246,0.2);color:#9CA3AF;font-size:.75rem;font-weight:600;cursor:pointer}
+.btn-clear:hover{color:#fff;border-color:#A855F7}
+</style>
+</head>
+<body>
+<div class="wrap">
 
-    q = MaintenanceRequest.query.filter_by(is_deleted=False)
+  <div class="top">
+    <div>
+      <h1>Housekeeping <span>Approval</span></h1>
+      <p>Review and sign the maintenance request before submitting to Maintenance Manager.</p>
+    </div>
+    <a href="{{ url_for('request_detail', req_id=req.id) }}" class="btn-back">
+      <i class="fas fa-arrow-left"></i> Back to Request
+    </a>
+  </div>
 
-    if current_user.role in ["MANAGER", "ADMIN"]:
-        q = q.filter(db.or_(
-            MaintenanceRequest.awaiting_hk_approval == False,
-            MaintenanceRequest.awaiting_hk_approval.is_(None),
-        ))
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'danger' if cat == 'danger' else 'info' }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
-    if current_user.role in STAFF_ROLES:
-        q = q.filter_by(assigned_to_id=current_user.id)
+  <div class="grid">
 
-    reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
+    <div class="card">
+      <h3><i class="fas fa-clipboard-list"></i> Request Details</h3>
+      <table>
+        <tr><th>Request No.</th><td><strong style="color:#A855F7">{{ req.request_no }}</strong></td></tr>
+        <tr><th>Department</th><td>{{ req.department.name if req.department else '—' }}</td></tr>
+        <tr><th>Location</th><td>{{ req.location_name }}</td></tr>
+        <tr><th>Item</th><td>{{ req.working_item.name if req.working_item else '—' }}</td></tr>
+        <tr><th>Category</th><td>{{ req.category.name if req.category else '—' }}</td></tr>
+        <tr><th>Priority</th><td>{{ req.priority }}</td></tr>
+        <tr><th>Requested by</th><td>{{ req.requested_by.full_name if req.requested_by else '—' }}</td></tr>
+        <tr><th>Created</th><td>{{ req.created_at.strftime('%b %d, %Y · %H:%M') if req.created_at else '—' }}</td></tr>
+        <tr><th>Description</th><td>{{ req.description or '—' }}</td></tr>
+      </table>
+    </div>
 
-    rows_parts = []
-    for r in reqs:
-        if r.priority == "URGENT":
-            badge = "danger"
-        elif r.priority == "HIGH":
-            badge = "warning"
-        else:
-            badge = "info"
-        hk_badge = ""
-        if r.awaiting_hk_approval:
-            hk_badge = ' <span class="badge bg-warning text-dark" style="font-size:.65rem">HK Pending</span>'
-        rows_parts.append(
-            '<tr><td><a href="/requests/' + str(r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a>' + hk_badge + '</td>'
-            '<td>' + str(r.location_name) + '</td>'
-            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
-            '<td><span class="badge bg-' + badge + '">' + str(r.priority) + '</span></td>'
-            '<td>' + str(r.status) + '</td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "") + '</td></tr>'
-        )
-    rows = "".join(rows_parts)
+    <div class="card">
+      <h3><i class="fas fa-pen-nib"></i> Approval &amp; Signature</h3>
 
-    content = ('<h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>'
-        '<a class="btn btn-primary mb-3" href="' + url_for('request_create') + '"><i class="fas fa-plus-circle"></i> New Request</a>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="6" class="text-center">No requests</td></tr>') + '</tbody>'
-        '</table></div></div>')
-    return page("Requests", content)
+      <div class="signer">
+        <div class="lbl">Approver (you)</div>
+        <div class="val">{{ current_user.full_name or current_user.username }}</div>
+        <div class="role">{{ current_user.role }} · {{ current_user.department.name if current_user.department else 'Housekeeping' }}</div>
+      </div>
 
+      <div class="alert alert-info" style="font-size:.75rem">
+        <i class="fas fa-info-circle"></i>
+        Sign below using your mouse, touchscreen or stylus. Your signature will be attached to this request.
+      </div>
 
-@app.route("/requests/new", methods=["GET", "POST"])
-@login_required
-def request_create():
-    rooms = Room.query.order_by(Room.room_number).all()
-    areas = Area.query.order_by(Area.name).all()
-    items = WorkingItem.query.order_by(WorkingItem.name).all()
-    categories = Category.query.order_by(Category.name).all()
-    departments = Department.query.order_by(Department.name).all()
+      <form method="post" id="approve-form">
+        <input type="hidden" name="signature_data" id="signature_data">
+        <input type="hidden" name="action" id="action_field" value="approve">
 
-    if request.method == "POST":
-        loc = request.form.get("location_type")
-        room_id = request.form.get("room_id", type=int)
-        area_id = request.form.get("area_id", type=int)
-        item_id = request.form.get("working_item_id", type=int)
-        cat_id = request.form.get("category_id", type=int)
-        dept_id = request.form.get("department_id", type=int)
-        desc = request.form.get("description", "").strip()
-        prio = request.form.get("priority", "MEDIUM")
+        <label style="font-size:.75rem;color:#9CA3AF;font-weight:600;display:block;margin-bottom:.35rem">
+          Digital Signature <span style="color:#EF4444">*</span>
+        </label>
+        <div class="sig-wrap">
+          <canvas id="signature-pad"></canvas>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+          <span class="sig-hint">Sign inside the box above.</span>
+          <button type="button" class="btn-clear" id="clear-sig"><i class="fas fa-eraser"></i> Clear</button>
+        </div>
 
-        if current_user.role == "DEPARTMENT" and current_user.department_id:
-            dept_id = current_user.department_id
+        <label style="font-size:.75rem;color:#9CA3AF;font-weight:600;display:block;margin-bottom:.35rem">
+          Notes (optional)
+        </label>
+        <textarea name="notes" placeholder="Optional remarks…"></textarea>
 
-        if loc == "Room":
-            room = get_one(Room, room_id)
-            try:
-                room_num = int(room.room_number) if room else 0
-            except (TypeError, ValueError):
-                room_num = 0
-            if not room or not (201 <= room_num <= 300):
-                flash("ልክ ያልሆነ ክፍል", "danger")
-                return redirect(url_for("request_create"))
-            floor = room.floor
-            area_id = None
-        else:
-            area = get_one(Area, area_id)
-            if not area:
-                flash("ልክ ያልሆነ ቦታ", "danger")
-                return redirect(url_for("request_create"))
-            floor = None
-            room_id = None
+        <div class="actions">
+          <button type="submit" class="btn btn-approve" id="btn-approve">
+            <i class="fas fa-check-circle"></i> Approve &amp; Submit
+          </button>
+          <button type="submit" class="btn btn-reject" id="btn-reject">
+            <i class="fas fa-times-circle"></i> Reject
+          </button>
+        </div>
+      </form>
+    </div>
 
-        if not desc:
-            flash("መግለጫ ያስፈልጋል", "danger")
-            return redirect(url_for("request_create"))
+  </div>
+</div>
 
-        due = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio, 24))
-        req = MaintenanceRequest(
-            request_no=request_no_generator(),
-            location_type=loc, floor=floor, room_id=room_id, area_id=area_id,
-            working_item_id=item_id, category_id=cat_id, department_id=dept_id,
-            description=desc, priority=prio, status="Pending",
-            requested_by_id=current_user.id, due_date=due
-        )
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  var canvas = document.getElementById('signature-pad');
+  if (!canvas || typeof SignaturePad === 'undefined') return;
 
-        hk_request = is_housekeeping_request(current_user)
-        if hk_request:
-            req.awaiting_hk_approval = True
-            req.hk_approval_status = "Pending"
+  var signaturePad = new SignaturePad(canvas, {
+    backgroundColor: 'rgb(255,255,255)',
+    penColor: 'rgb(0,0,0)',
+    minWidth: 1,
+    maxWidth: 3
+  });
 
-        db.session.add(req)
-        db.session.flush()
-        log_status_change(req.id, "Pending", notes="Submitted")
-        log_audit("Create", "MaintenanceRequest", req.id, new_value=req.request_no)
+  function resizeCanvas() {
+    var ratio = Math.max(window.devicePixelRatio || 1, 1);
+    var data = signaturePad.toData();
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+    signaturePad.clear();
+    if (data && data.length) signaturePad.fromData(data);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
 
-        if hk_request:
-            approvers = User.query.filter(
-                User.role.in_(HK_APPROVER_ROLES),
-                User.active == True
-            ).all()
-            notify_users(
-                [u.id for u in approvers], req.id,
-                "📋 HK Approval Required",
-                "Request " + str(req.request_no) + " from Housekeeping needs your signature",
-                "HK Approval Required",
-                link=url_for("request_detail", req_id=req.id)
-            )
-            log_audit("HK Approval Requested", "MaintenanceRequest", req.id, new_value=req.request_no)
-        else:
-            managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-            notify_users(
-                [u.id for u in managers], req.id,
-                "📬 New Request",
-                "Request " + str(req.request_no) + " at " + str(req.location_name),
-                "New Request",
-                link=url_for("request_detail", req_id=req.id)
-            )
+  document.getElementById('clear-sig').addEventListener('click', function(){
+    signaturePad.clear();
+  });
 
-        notify_users(
-            [current_user.id], req.id,
-            "✅ Request Submitted",
-            "Request " + str(req.request_no) + " submitted",
-            "Request Submitted",
-            link=url_for("request_detail", req_id=req.id)
-        )
+  var form = document.getElementById('approve-form');
+  var sigField = document.getElementById('signature_data');
+  var actionField = document.getElementById('action_field');
 
-        db.session.commit()
-        flash("✅ ጥያቄዎ ተልኳል!", "success")
-        if current_user.role == "DEPARTMENT":
-            return redirect(url_for("department_dashboard"))
-        return redirect(url_for("requests_list"))
+  document.getElementById('btn-approve').addEventListener('click', function(e){
+    actionField.value = 'approve';
+    if (signaturePad.isEmpty()) {
+      e.preventDefault();
+      alert('Please sign before approving.');
+      return;
+    }
+    sigField.value = signaturePad.toDataURL('image/png');
+  });
 
-    room_opts = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + '</option>' for r in rooms)
-    area_opts = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
-    item_opts = "".join('<option value="' + str(i.id) + '">' + str(i.name) + '</option>' for i in items)
-    cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in categories)
-    dept_opts = "".join('<option value="' + str(d.id) + '"' + (' selected' if current_user.department_id == d.id else '') + '>' + str(d.name) + '</option>' for d in departments)
+  document.getElementById('btn-reject').addEventListener('click', function(e){
+    actionField.value = 'reject';
+    var notes = form.querySelector('textarea[name="notes"]').value.trim();
+    if (!notes) {
+      e.preventDefault();
+      alert('Please write a reason for rejection.');
+      return;
+    }
+    sigField.value = signaturePad.isEmpty() ? '' : signaturePad.toDataURL('image/png');
+  });
 
-    content = ('<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Request</h3>'
-        '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
-        '<select class="form-select" name="location_type" id="loc" onchange="tog()" required><option value="Room">Room</option><option value="Hotel Area">Hotel Area</option></select></div>'
-        '<div class="col-md-6 mb-3" id="roomD"><label class="form-label">Room *</label><select class="form-select" name="room_id">' + room_opts + '</select></div>'
-        '<div class="col-md-6 mb-3" id="areaD" style="display:none"><label class="form-label">Area *</label><select class="form-select" name="area_id"><option value="">-- Select --</option>' + area_opts + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Item *</label><select class="form-select" name="working_item_id" required><option value="">-- Select --</option>' + item_opts + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category_id" required><option value="">-- Select --</option>' + cat_opts + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required><option value="">-- Select --</option>' + dept_opts + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority"><option value="LOW">🟢 Low (72h)</option><option value="MEDIUM" selected>🟡 Medium (24h)</option><option value="HIGH">🟠 High (4h)</option><option value="URGENT">🔴 Urgent (1h)</option></select></div>'
-        '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required></textarea></div>'
-        '<div class="col-12"><button class="btn btn-primary w-100 py-3"><i class="fas fa-paper-plane"></i> Submit</button></div>'
-        '</div></form></div>'
-        '<script>function tog(){var t=document.getElementById(\'loc\').value;document.getElementById(\'roomD\').style.display=t===\'Room\'?\'block\':\'none\';document.getElementById(\'areaD\').style.display=t===\'Hotel Area\'?\'block\':\'none\';}</script>')
-    return page("New Request", content)
-
-
-@app.route("/requests/<int:req_id>")
-@login_required
-def request_detail(req_id):
-    req = get_or_404(MaintenanceRequest, req_id)
-    history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.desc()).all()
-
-    timeline_parts = []
-    for h in history:
-        ts = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
-        user_html = ""
-        if h.user:
-            user_html = ' — <small style="color:#64748b">by ' + str(h.user.full_name) + '</small>'
-        notes_part = ""
-        if h.notes:
-            notes_part = "<br><small style='color:#cbd5e1'>" + str(h.notes) + "</small>"
-        timeline_parts.append(
-            '<div class="mb-2"><b style="color:#f59e0b">' + str(h.status) + '</b> — '
-            '<small style="color:#94a3b8">' + ts + '</small>'
-            + user_html + notes_part +
-            '</div>'
-        )
-    timeline = "".join(timeline_parts)
-
-    hk_html = ""
-    if req.awaiting_hk_approval:
-        if is_housekeeping_approver(current_user):
-            hk_html = (
-                '<div class="card" style="border-color:rgba(212,175,55,0.5);background:rgba(212,175,55,0.05)">'
-                '<h5 style="color:#D4AF37"><i class="fas fa-stamp"></i> Housekeeping Approval Required</h5>'
-                '<p style="color:#cbd5e1;font-size:.88rem;margin-bottom:.75rem">'
-                'This request is waiting for a Housekeeping Supervisor or Manager to review and sign.'
-                '</p>'
-                '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" class="btn btn-warning w-100">'
-                '<i class="fas fa-pen-nib"></i> Review &amp; Sign'
-                '</a></div>'
-            )
-        else:
-            hk_html = (
-                '<div class="card" style="border-color:rgba(245,158,11,0.35)">'
-                '<h5 style="color:#F59E0B"><i class="fas fa-hourglass-half"></i> Awaiting Housekeeping Approval</h5>'
-                '<p style="color:#94a3b8;font-size:.85rem">Pending review by Housekeeping Supervisor / Manager.</p>'
-                '</div>'
-            )
-    elif req.hk_approval_status == "Approved":
-        sig_html = ""
-        if req.hk_signature_data:
-            sig_html = (
-                '<div style="margin-top:.5rem;padding:.6rem;background:#fff;border-radius:10px;text-align:center">'
-                '<img src="' + str(req.hk_signature_data) + '" alt="Signature" style="max-height:90px;max-width:100%">'
-                '</div>'
-            )
-        approver_name = req.hk_approved_by.full_name if req.hk_approved_by else "—"
-        approver_role = ""
-        if req.hk_approved_by and req.hk_approved_by.role:
-            approver_role = "Housekeeping " + str(req.hk_approved_by.role).title()
-        hk_html = (
-            '<div class="card" style="border-color:rgba(34,197,94,0.4);background:rgba(34,197,94,0.05)">'
-            '<h5 style="color:#22c55e"><i class="fas fa-stamp"></i> Housekeeping Approval</h5>'
-            '<table class="table" style="margin-bottom:0"><tbody>'
-            '<tr><th style="width:180px;color:#94a3b8">Approved by</th><td>' + str(approver_name) + '</td></tr>'
-            '<tr><th style="color:#94a3b8">Position</th><td>' + str(approver_role or "—") + '</td></tr>'
-            '<tr><th style="color:#94a3b8">Approved at</th><td>' + (req.hk_approved_at.strftime("%Y-%m-%d %H:%M") if req.hk_approved_at else "—") + '</td></tr>'
-            '<tr><th style="color:#94a3b8">Notes</th><td>' + str(req.hk_approval_notes or "—") + '</td></tr>'
-            '</tbody></table>'
-            '<p style="color:#94a3b8;margin:.75rem 0 .25rem;font-weight:600">Signature:</p>'
-            + sig_html +
-            '<p style="color:#22c55e;font-size:.82rem;margin-top:.75rem">✅ Submitted to Maintenance Manager</p>'
-            '</div>'
-        )
-    elif req.hk_approval_status == "Rejected":
-        hk_html = (
-            '<div class="card" style="border-color:rgba(239,68,68,0.4);background:rgba(239,68,68,0.05)">'
-            '<h5 style="color:#EF4444"><i class="fas fa-times-circle"></i> Rejected by Housekeeping</h5>'
-            '<p><b>Rejected by:</b> ' + (req.hk_approved_by.full_name if req.hk_approved_by else "—") + '</p>'
-            '<p><b>Reason:</b> ' + str(req.hk_approval_notes or "—") + '</p>'
-            '</div>'
-        )
-
-    wo = WorkOrder.query.filter_by(request_id=req.id).first()
-    wo_html = ""
-    if wo:
-        completed_html = ""
-        if wo.completed_date:
-            completed_html = "<p><b>Completed:</b> " + wo.completed_date.strftime("%Y-%m-%d %H:%M") + "</p>"
-        notes_html = ""
-        if wo.completion_notes:
-            notes_html = "<p><b>Notes:</b> " + str(wo.completion_notes) + "</p>"
-        assigned_name = wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"
-        wo_url = url_for("workorder_detail", wo_id=wo.id)
-        wo_html = (
-            '<div class="card" style="border-color:rgba(34,197,94,0.3)">'
-            '<h5 style="color:#22c55e"><i class="fas fa-clipboard-check"></i> Work Order</h5>'
-            '<p><b>WO:</b> <a href="' + wo_url + '" style="color:#f59e0b">' + str(wo.work_order_no) + '</a></p>'
-            '<p><b>Status:</b> <span class="badge bg-info">' + str(wo.status) + '</span></p>'
-            '<p><b>Assigned:</b> ' + str(assigned_name) + '</p>'
-            + completed_html + notes_html +
-            '</div>'
-        )
-
-    actions = ""
-    if current_user.role in ["MANAGER", "ADMIN"]:
-        hk_cleared = (not req.awaiting_hk_approval and req.hk_approval_status != "Rejected")
-        if req.status == "Pending" and hk_cleared:
-            approve_url = url_for("request_approve", req_id=req.id)
-            actions += (
-                '<form method="post" action="' + approve_url + '">'
-                '<button type="submit" class="btn btn-success mb-2 w-100">'
-                '<i class="fas fa-check"></i> Approve &amp; Create WO'
-                '</button></form>'
-            )
-        if req.status == "Pending" and req.awaiting_hk_approval:
-            actions += (
-                '<div class="alert alert-warning" style="font-size:.82rem;margin-bottom:.5rem">'
-                '<i class="fas fa-hourglass-half"></i> Awaiting Housekeeping approval.'
-                '</div>'
-            )
-        if req.status in ["Approved", "Assigned"] and (not wo or wo.status == "Pending"):
-            assign_url = url_for("workorder_create") + "?request_id=" + str(req.id)
-            actions += (
-                '<a href="' + assign_url + '" class="btn btn-warning mb-2 w-100">'
-                '<i class="fas fa-user-plus"></i> Assign Staff'
-                '</a>'
-            )
-        if req.status == "Completed":
-            verify_url = url_for("request_verify", req_id=req.id)
-            actions += (
-                '<form method="post" action="' + verify_url + '">'
-                '<button type="submit" class="btn btn-info mb-2 w-100">'
-                '<i class="fas fa-check-double"></i> ✅ Verify Work'
-                '</button></form>'
-            )
-        if req.status == "Verified":
-            close_url = url_for("request_close", req_id=req.id)
-            actions += (
-                '<form method="post" action="' + close_url + '">'
-                '<button type="submit" class="btn btn-secondary mb-2 w-100">'
-                '<i class="fas fa-archive"></i> Close Request'
-                '</button></form>'
-            )
-
-    if current_user.role == "ADMIN" and not req.is_deleted:
-        delete_url = url_for("request_delete", req_id=req.id)
-        actions += (
-            '<form method="post" action="' + delete_url + '" onsubmit="return confirm(&#39;Archive?&#39;);">'
-            '<input type="hidden" name="reason" value="Deleted by admin">'
-            '<button type="submit" class="btn btn-danger mb-2 w-100">'
-            '<i class="fas fa-trash"></i> Archive'
-            '</button></form>'
-        )
-
-    back_url = url_for("requests_list")
-    content = (
-        '<div class="d-flex justify-content-between mb-3">'
-        '<h3 style="color:#f59e0b">📄 Request ' + str(req.request_no) + '</h3>'
-        '<a href="' + back_url + '" class="btn btn-secondary btn-sm">'
-        '<i class="fas fa-arrow-left"></i> Back</a></div>'
-        '<div class="row"><div class="col-md-8">'
-        '<div class="card"><table class="table">'
-        '<tr><th style="width:150px;color:#94a3b8">Status</th><td><span class="badge bg-info">' + str(req.status) + '</span></td></tr>'
-        '<tr><th style="color:#94a3b8">Location</th><td>' + str(req.location_name) + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Priority</th><td>' + str(req.priority) + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Requester</th><td>' + str(req.requested_by.full_name if req.requested_by else "Guest") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not assigned") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Description</th><td>' + str(req.description or "") + '</td></tr>'
-        '</table></div>'
-        + hk_html + wo_html +
-        '<div class="card"><h5 style="color:#f59e0b">📜 Timeline</h5>'
-        + (timeline if timeline else "<p style='color:#94a3b8'>No activity</p>") +
-        '</div></div>'
-        '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>'
-        + (actions if actions else "<p style='color:#94a3b8'>No actions</p>") +
-        '</div></div></div>'
-    )
-    return page("Request Detail", content)
+  form.addEventListener('submit', function(e){
+    if (actionField.value === 'approve') {
+      if (signaturePad.isEmpty()) {
+        e.preventDefault();
+        alert('Please sign before approving.');
+        return false;
+      }
+      sigField.value = signaturePad.toDataURL('image/png');
+    }
+  });
+})();
+</script>
+</body>
+</html>"""
 
 
-# ══════════════════════════════════════════════════════════════
-# HOUSEKEEPING APPROVAL ROUTES
-# ══════════════════════════════════════════════════════════════
 @app.route("/requests/<int:req_id>/hk-approve", methods=["GET", "POST"])
 @login_required
 def hk_approve_request(req_id):
@@ -2417,7 +2244,11 @@ def hk_approve_request(req_id):
             flash("Request rejected.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
 
-    return render_template("hk_approve.html", req=req, title="Housekeeping Approval")
+    return render_template_string(
+        HK_APPROVE_TEMPLATE,
+        req=req,
+        title="Housekeeping Approval",
+    )
 
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
@@ -3515,4 +3346,4 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000) 
+    app.run(debug=True, host="0.0.0.0", port=5000)
