@@ -627,7 +627,6 @@ def page(title, content):
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
             ]
         else:
-            # MANAGER / ADMIN — HK Manager gets extra first-approval queue link
             nav_items = []
             if is_housekeeping_approver(current_user):
                 nav_items.append(
@@ -1192,29 +1191,9 @@ def request_detail(req_id):
     if not wo_html:
         wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
 
+    # ── Top action row (admin-level workflow controls) ─────────
     actions = []
 
-    # HK approval button (Kasahun only, while awaiting)
-    if req.awaiting_hk_approval and is_housekeeping_approver(current_user) and req.requested_by_id != current_user.id:
-        actions.append(
-            '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" class="btn btn-info">'
-            '<i class="fas fa-pen-nib"></i> Housekeeping Approval</a>'
-        )
-
-    # Maintenance Manager second approval
-    can_second_approve = (
-        not req.awaiting_hk_approval
-        and req.hk_approval_status != "Rejected"
-        and req.status == "Pending"
-        and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))
-    )
-    if can_second_approve:
-        actions.append(
-            '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline">'
-            '<button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve (Maintenance Manager)</button></form>'
-        )
-
-    # Assign staff (Maintenance Manager / ADMIN only)
     if (req.status in ["Approved", "Assigned"]
             and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))):
         actions.append(
@@ -1241,24 +1220,127 @@ def request_detail(req_id):
             '<button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Archive</button></form>'
         )
 
-    actions_html = " ".join(actions) if actions else '<p style="color:#94a3b8">No actions available.</p>'
+    actions_html = " ".join(actions) if actions else ""
 
+    # ── Housekeeping Manager Approval card ─────────────────────
     hk_block = ""
-    if req.hk_approval_status or req.awaiting_hk_approval:
-        hk_status = req.hk_approval_status or ("Pending" if req.awaiting_hk_approval else "—")
+    if req.awaiting_hk_approval or req.hk_approval_status:
+        hk_status = req.hk_approval_status or "Pending"
+        if req.hk_approved_by:
+            hk_approver_name = req.hk_approved_by.full_name
+        else:
+            hk_managers = get_housekeeping_manager_users()
+            hk_approver_name = hk_managers[0].full_name if hk_managers else "Housekeeping Manager"
+
+        hk_status_color = {"Approved": "success", "Rejected": "danger", "Pending": "warning"}.get(hk_status, "secondary")
+
+        hk_buttons = ""
+        if (req.awaiting_hk_approval
+                and is_housekeeping_approver(current_user)
+                and req.requested_by_id != current_user.id):
+            hk_buttons = (
+                '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
+                '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" '
+                'class="btn btn-success" style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem">'
+                '<i class="fas fa-check-circle"></i> ✅ Approve Request</a>'
+                '<button type="button" class="btn btn-danger" '
+                'style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem" '
+                'onclick="hkQuickReject()">'
+                '<i class="fas fa-times-circle"></i> ❌ Reject Request</button>'
+                '</div>'
+                '<form method="post" action="' + url_for("hk_approve_request", req_id=req.id) + '" id="hk-quick-reject-form" style="display:none">'
+                '<input type="hidden" name="action" value="reject">'
+                '<input type="hidden" name="notes" id="hk-reject-notes" value="">'
+                '<input type="hidden" name="signature_data" value="">'
+                '</form>'
+                '<script>'
+                'function hkQuickReject(){'
+                'var n=prompt("Reason for rejection (required):","");'
+                'if(n===null)return;'
+                'if(!n.trim()){alert("Please provide a rejection reason.");return;}'
+                'document.getElementById("hk-reject-notes").value=n.trim();'
+                'document.getElementById("hk-quick-reject-form").submit();'
+                '}'
+                '</script>'
+            )
+        elif req.awaiting_hk_approval and req.requested_by_id == current_user.id:
+            hk_buttons = '<div class="alert alert-warning" style="margin-top:.75rem">You cannot approve your own request.</div>'
+        elif req.awaiting_hk_approval:
+            hk_buttons = '<div class="alert alert-info" style="margin-top:.75rem">Awaiting Housekeeping Manager approval.</div>'
+
         hk_block = (
-            '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-broom"></i> Housekeeping Approval</h5>'
-            '<p><strong>Status:</strong> ' + str(hk_status) + '</p>'
-            '<p><strong>Approved by:</strong> ' + str(req.hk_approved_by.full_name if req.hk_approved_by else "—") + '</p>'
-            '<p><strong>Approved at:</strong> ' + (req.hk_approved_at.strftime("%Y-%m-%d %H:%M") if req.hk_approved_at else "—") + '</p>'
-            '<p><strong>Notes:</strong> ' + str(req.hk_approval_notes or "—") + '</p>'
-            '</div>'
+            '<div class="card" style="border-left:4px solid #06b6d4">'
+            '<h5 style="color:#f59e0b"><i class="fas fa-broom"></i> Housekeeping Manager Approval</h5>'
+            '<table class="table"><tbody>'
+            '<tr><th style="width:180px;color:#94a3b8">Approver</th><td><strong>' + str(hk_approver_name) + '</strong></td></tr>'
+            '<tr><th style="color:#94a3b8">Role</th><td>Housekeeping Manager</td></tr>'
+            '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-' + hk_status_color + '">' + str(hk_status) + '</span></td></tr>'
         )
+        if req.hk_approved_by:
+            hk_block += '<tr><th style="color:#94a3b8">Approved by</th><td>' + str(req.hk_approved_by.full_name) + '</td></tr>'
+        if req.hk_approved_at:
+            hk_block += '<tr><th style="color:#94a3b8">Approved at</th><td>' + req.hk_approved_at.strftime("%Y-%m-%d %H:%M") + '</td></tr>'
+        if req.hk_approval_notes:
+            hk_block += '<tr><th style="color:#94a3b8">Notes</th><td>' + str(req.hk_approval_notes) + '</td></tr>'
+
+        if req.hk_approval_status == "Approved" and req.status == "Pending":
+            mm_users = get_maintenance_manager_users()
+            next_mm_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
+            hk_block += '<tr><th style="color:#94a3b8">Next Approval</th><td>🛠️ <strong>' + str(next_mm_name) + '</strong> — Maintenance / Engineering Manager</td></tr>'
+
+        hk_block += '</tbody></table>' + hk_buttons + '</div>'
+
+    # ── Maintenance / Engineering Manager Approval card ────────
+    mm_block = ""
+    if (not req.awaiting_hk_approval) and req.status != "Rejected":
+        mm_users = get_maintenance_manager_users()
+        if req.manager:
+            mm_approver_name = req.manager.full_name
+        else:
+            mm_approver_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
+
+        if req.manager_id:
+            mm_status = "Approved"
+        elif req.status == "Pending":
+            mm_status = "Pending"
+        else:
+            mm_status = req.status
+
+        mm_status_color = {"Approved": "success", "Pending": "warning"}.get(mm_status, "secondary")
+
+        mm_buttons = ""
+        can_mm_approve = (
+            mm_status == "Pending"
+            and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))
+        )
+        if can_mm_approve:
+            mm_buttons = (
+                '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
+                '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="flex:1;min-width:180px">'
+                '<button type="submit" class="btn btn-success w-100" style="padding:.85rem 1.1rem;font-weight:700;font-size:1rem">'
+                '<i class="fas fa-check-circle"></i> ✅ Approve (Maintenance Manager)</button>'
+                '</form>'
+                '</div>'
+            )
+        elif mm_status == "Pending":
+            mm_buttons = '<div class="alert alert-info" style="margin-top:.75rem">Awaiting Maintenance Manager approval.</div>'
+
+        mm_block = (
+            '<div class="card" style="border-left:4px solid #f59e0b">'
+            '<h5 style="color:#f59e0b"><i class="fas fa-wrench"></i> Maintenance / Engineering Manager Approval</h5>'
+            '<table class="table"><tbody>'
+            '<tr><th style="width:180px;color:#94a3b8">Approver</th><td><strong>' + str(mm_approver_name) + '</strong></td></tr>'
+            '<tr><th style="color:#94a3b8">Role</th><td>Maintenance / Engineering Manager</td></tr>'
+            '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-' + mm_status_color + '">' + str(mm_status) + '</span></td></tr>'
+        )
+        if req.manager:
+            mm_block += '<tr><th style="color:#94a3b8">Approved by</th><td>' + str(req.manager.full_name) + '</td></tr>'
+        mm_block += '</tbody></table>' + mm_buttons + '</div>'
 
     content = (
         '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
-        '<div>' + actions_html + '</div>'
+        + ('<div>' + actions_html + '</div>' if actions_html else '') +
         '</div>'
         '<div class="row">'
         '<div class="col-md-8">'
@@ -1281,8 +1363,9 @@ def request_detail(req_id):
         '<tr><th style="color:#94a3b8">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
         '</tbody></table></div>'
-        + hk_block +
-        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
+        + hk_block
+        + mm_block
+        + '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
         '</div>'
         '<div class="col-md-4">'
         '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div>'
