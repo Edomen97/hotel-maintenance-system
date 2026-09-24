@@ -9,157 +9,589 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+/* ══════════════════════════════════════════════════════
+   RORI HOTEL — PREMIUM MAINTENANCE ANALYTICS DASHBOARD
+   ══════════════════════════════════════════════════════ */
 :root{
-  --rori-bg:#080812;--rori-bg-2:#111020;--rori-card:#15152A;
-  --rori-border:rgba(212,175,55,0.18);--rori-gold:#D4AF37;--rori-gold-light:#E6C65C;
-  --rori-text:#FFFFFF;--rori-text-2:#9CA3AF;--rori-success:#22C55E;
-  --rori-warning:#F59E0B;--rori-danger:#EF4444;--rori-info:#38BDF8;
-  --rori-sidebar-w:250px;
+  --bg:#080812;
+  --bg-2:#0D0D1A;
+  --card:#15152A;
+  --card-hover:#1A1A32;
+  --border:rgba(212,175,55,0.15);
+  --border-strong:rgba(212,175,55,0.30);
+  --gold:#D4AF37;
+  --gold-light:#E6C65C;
+  --text:#FFFFFF;
+  --muted:#9CA3AF;
+  --muted-2:#6B7280;
+  --blue:#38BDF8;
+  --green:#22C55E;
+  --orange:#F59E0B;
+  --red:#EF4444;
+  --purple:#8B5CF6;
+  --sidebar-w:240px;
+  --radius:16px;
+  --radius-sm:12px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body.rori-dashboard{font-family:'Inter',system-ui,sans-serif;background:var(--rori-bg);color:var(--rori-text);min-height:100vh;-webkit-font-smoothing:antialiased}
-a{color:inherit;text-decoration:none}
-.rori-layout{display:flex;min-height:100vh}
-.rori-sidebar{width:var(--rori-sidebar-w);background:var(--rori-bg-2);border-right:1px solid var(--rori-border);padding:1.5rem 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}
-.rori-sidebar-brand{display:flex;align-items:center;gap:.75rem;padding:0 1.5rem 1.5rem;border-bottom:1px solid var(--rori-border);margin-bottom:1rem}
-.rori-sidebar-brand .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#080812;box-shadow:0 0 20px rgba(212,175,55,0.4)}
-.rori-sidebar-brand h2{font-size:1rem;font-weight:800;color:#fff}
-.rori-sidebar-brand p{font-size:.65rem;color:var(--rori-text-2);letter-spacing:.5px;text-transform:uppercase}
-.rori-nav{display:flex;flex-direction:column;padding:0 .75rem;gap:.15rem}
-.rori-nav a{display:flex;align-items:center;gap:.75rem;padding:.7rem 1rem;color:var(--rori-text-2);border-radius:12px;font-size:.85rem;font-weight:500;transition:all .18s ease;border:1px solid transparent}
-.rori-nav a i{font-size:.9rem;width:18px;text-align:center}
-.rori-nav a:hover{background:rgba(212,175,55,0.08);color:#fff;border-color:rgba(212,175,55,0.25)}
-.rori-nav a.active{background:rgba(212,175,55,0.12);color:#fff;border-color:rgba(212,175,55,0.4)}
-.rori-nav a.active i{color:var(--rori-gold)}
-.rori-main{flex:1;margin-left:var(--rori-sidebar-w);padding:1.5rem 2rem 3rem;max-width:calc(100vw - var(--rori-sidebar-w));min-width:0}
-.rori-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem}
-.rori-header h1{font-size:1.5rem;font-weight:800;color:#fff}
-.rori-header .subtitle{color:var(--rori-text-2);font-size:.8rem;margin-top:.25rem}
-.rori-user{display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;background:var(--rori-card);border:1px solid var(--rori-border);border-radius:40px}
-.rori-user .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;color:#080812}
-.rori-user .info{display:flex;flex-direction:column;line-height:1.2}
-.rori-user .info strong{font-size:.85rem;color:#fff}
-.rori-user .info small{font-size:.65rem;color:var(--rori-text-2)}
-.rori-filters{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1rem 1.25rem;margin-bottom:1.5rem}
-.rori-filters-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;align-items:end}
-.rori-filters label{display:block;font-size:.65rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem;font-weight:600}
-.rori-filters select,.rori-filters input{width:100%;background:var(--rori-bg);border:1px solid rgba(212,175,55,0.2);color:#fff;padding:.55rem .75rem;border-radius:10px;font-size:.82rem;outline:none;font-family:inherit}
-.rori-filters select:focus,.rori-filters input:focus{border-color:var(--rori-gold);box-shadow:0 0 0 3px rgba(212,175,55,0.15)}
-.rori-filters select option{background:#111020;color:#fff}
-.rori-filters-buttons{display:flex;gap:.5rem;flex-wrap:wrap}
-.rori-btn{padding:.6rem 1.15rem;border-radius:10px;border:none;font-size:.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;font-family:inherit;transition:all .2s;white-space:nowrap}
-.rori-btn-primary{background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));color:#080812}
-.rori-btn-primary:hover{box-shadow:0 4px 20px rgba(212,175,55,0.4);transform:translateY(-1px)}
-.rori-btn-ghost{background:transparent;color:var(--rori-text-2);border:1px solid var(--rori-border)}
-.rori-btn-ghost:hover{color:#fff;border-color:var(--rori-gold)}
-.rori-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem}
-.rori-kpi{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1.25rem;position:relative;overflow:hidden;min-height:120px;transition:all .2s}
-.rori-kpi:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,0.4)}
-.rori-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--rori-gold),var(--rori-gold-light))}
-.rori-kpi.blue::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
-.rori-kpi.green::before{background:linear-gradient(90deg,#22C55E,#10B981)}
-.rori-kpi.red::before{background:linear-gradient(90deg,#EF4444,#DC2626)}
-.rori-kpi.warning::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
-.rori-kpi-label{font-size:.65rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:.5rem}
-.rori-kpi-value{font-size:1.9rem;font-weight:800;color:#fff;line-height:1;margin-bottom:.5rem}
-.rori-kpi-sub{font-size:.72rem;color:var(--rori-text-2);display:flex;align-items:center;gap:.35rem}
-.rori-kpi-sub.up{color:var(--rori-success)}
-.rori-kpi-sub.down{color:var(--rori-danger)}
-.rori-kpi-sub.neutral{color:var(--rori-text-2)}
-.rori-kpi-icon{position:absolute;top:1rem;right:1rem;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--rori-gold);background:rgba(212,175,55,0.12)}
-.rori-kpi.blue .rori-kpi-icon{color:var(--rori-info);background:rgba(56,189,248,0.12)}
-.rori-kpi.green .rori-kpi-icon{color:var(--rori-success);background:rgba(34,197,94,0.12)}
-.rori-kpi.red .rori-kpi-icon{color:var(--rori-danger);background:rgba(239,68,68,0.12)}
-.rori-kpi.warning .rori-kpi-icon{color:var(--rori-warning);background:rgba(245,158,11,0.12)}
-.rori-card{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1.25rem 1.5rem}
-.rori-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
-.rori-card-header h3{font-size:1rem;font-weight:600;color:#fff}
-.rori-card-header h3 i{color:var(--rori-gold);margin-right:.5rem}
-.rori-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-bottom:1.5rem}
-.rori-section{margin-bottom:1.5rem}
-.rori-chart-wrap{position:relative;height:300px;width:100%}
-.rori-chart-wrap.tall{height:340px}
-.rori-chart-wrap.donut{height:280px}
-.rori-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.rori-table{width:100%;border-collapse:collapse;font-size:.82rem}
-.rori-table th{text-align:left;padding:.75rem;color:var(--rori-gold);font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--rori-border);font-weight:600;white-space:nowrap}
-.rori-table td{padding:.75rem;border-bottom:1px solid rgba(212,175,55,0.06);color:#e5e7eb;vertical-align:middle}
-.rori-table tr:last-child td{border-bottom:none}
-.rori-table tbody tr:hover{background:rgba(212,175,55,0.04)}
-.rori-table a{color:var(--rori-gold);font-weight:600}
-.rori-table a:hover{text-decoration:underline}
-.rori-badge{display:inline-block;padding:.25rem .65rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-.rori-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
-.rori-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
-.rori-badge.b-assigned{background:rgba(212,175,55,0.15);color:#D4AF37;border:1px solid rgba(212,175,55,0.3)}
-.rori-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
-.rori-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
-.rori-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
-.rori-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
-.rori-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
-.rori-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
-.rori-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
-.rori-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
-.rori-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
-.rori-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
-.rori-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
-.rori-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:.75rem}
-.rori-stat{padding:.85rem .6rem;background:var(--rori-bg);border:1px solid var(--rori-border);border-radius:12px;text-align:center;display:block;transition:all .2s}
-.rori-stat:hover{border-color:var(--rori-gold);transform:translateY(-2px)}
-.rori-stat .val{font-size:1.4rem;font-weight:800;color:#fff;line-height:1}
-.rori-stat .lbl{font-size:.6rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:.3px;margin-top:.35rem;font-weight:600}
-.rori-list{display:flex;flex-direction:column;gap:.5rem}
-.rori-list-item{display:flex;align-items:center;gap:.75rem;padding:.65rem .85rem;background:var(--rori-bg);border:1px solid var(--rori-border);border-radius:10px;font-size:.85rem}
-.rori-list-item .rank{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,0.15);color:var(--rori-gold);font-weight:700;font-size:.72rem}
-.rori-list-item .name{flex:1;color:#e5e7eb}
-.rori-list-item .count{font-weight:800;color:var(--rori-gold);font-size:.95rem}
-.rori-activity{display:flex;flex-direction:column;gap:.6rem}
-.rori-activity-item{display:flex;gap:.75rem;padding:.7rem .85rem;background:var(--rori-bg);border-left:3px solid var(--rori-gold);border-radius:8px;font-size:.85rem}
-.rori-activity-item .icon{width:32px;height:32px;border-radius:8px;background:rgba(212,175,55,0.15);color:var(--rori-gold);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0}
-.rori-activity-item .txt{flex:1;color:#e5e7eb;min-width:0}
-.rori-activity-item .txt strong{color:#fff}
-.rori-activity-item .time{font-size:.68rem;color:#6B7280;margin-top:.2rem}
-.rori-empty{text-align:center;padding:2rem 1rem;color:var(--rori-text-2);font-size:.85rem}
-.rori-empty i{font-size:2rem;color:var(--rori-gold);opacity:.5;display:block;margin-bottom:.5rem}
-.rori-mobile-toggle{display:none;width:40px;height:40px;border-radius:10px;background:var(--rori-card);border:1px solid var(--rori-border);color:#fff;align-items:center;justify-content:center;cursor:pointer;font-size:1rem}
-.rori-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99}
-.rori-backdrop.show{display:block}
-@media (max-width:992px){
-  .rori-sidebar{transform:translateX(-100%);transition:transform .3s ease}
-  .rori-sidebar.open{transform:translateX(0)}
-  .rori-main{margin-left:0;max-width:100vw;padding:1rem}
-  .rori-mobile-toggle{display:flex}
-  .rori-header h1{font-size:1.2rem}
-  .rori-chart-wrap{height:260px}
-  .rori-chart-wrap.tall{height:280px}
-  .rori-chart-wrap.donut{height:240px}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  font-size:14px;
+  line-height:1.45;
+  overflow-x:hidden;
 }
-@media (max-width:576px){
-  .rori-user .info{display:none}
-  .rori-kpis{grid-template-columns:1fr 1fr}
-  .rori-kpi{padding:1rem;min-height:100px}
-  .rori-kpi-value{font-size:1.4rem}
-  .rori-card{padding:1rem}
-  .rori-filters-form{grid-template-columns:1fr 1fr}
-  .rori-filters-buttons{grid-column:1/-1}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit}
+
+/* ─────── LAYOUT ─────── */
+.rh-layout{display:flex;min-height:100vh}
+
+/* ─────── SIDEBAR ─────── */
+.rh-sidebar{
+  width:var(--sidebar-w);
+  background:var(--bg-2);
+  border-right:1px solid var(--border);
+  padding:1.25rem 0;
+  position:fixed;top:0;left:0;bottom:0;
+  overflow-y:auto;z-index:1000;
+  display:flex;flex-direction:column;
+}
+.rh-sidebar::-webkit-scrollbar{width:4px}
+.rh-sidebar::-webkit-scrollbar-thumb{background:rgba(212,175,55,0.3);border-radius:4px}
+
+.rh-brand{
+  display:flex;align-items:center;gap:.7rem;
+  padding:0 1.25rem 1.25rem;
+  border-bottom:1px solid var(--border);
+  margin-bottom:1rem;
+}
+.rh-brand-logo{
+  width:38px;height:38px;border-radius:10px;
+  background:linear-gradient(135deg,var(--gold),var(--gold-light));
+  display:flex;align-items:center;justify-content:center;
+  font-size:1rem;color:#080812;flex-shrink:0;
+  box-shadow:0 4px 14px rgba(212,175,55,0.35);
+}
+.rh-brand-text h2{font-size:.9rem;font-weight:800;color:#fff;letter-spacing:.2px}
+.rh-brand-text p{font-size:.6rem;color:var(--muted);letter-spacing:.7px;text-transform:uppercase;margin-top:1px}
+
+.rh-nav{display:flex;flex-direction:column;padding:0 .65rem;gap:2px;flex:1}
+.rh-nav a{
+  display:flex;align-items:center;gap:.7rem;
+  padding:.6rem .85rem;
+  color:var(--muted);
+  border-radius:10px;
+  font-size:.8rem;font-weight:500;
+  transition:all .15s ease;
+  border:1px solid transparent;
+}
+.rh-nav a i{font-size:.85rem;width:16px;text-align:center;opacity:.9}
+.rh-nav a:hover{
+  background:rgba(212,175,55,0.06);
+  color:#fff;
+  border-color:rgba(212,175,55,0.18);
+}
+.rh-nav a.active{
+  background:linear-gradient(90deg,rgba(212,175,55,0.15),rgba(212,175,55,0.02));
+  color:#fff;
+  border-color:rgba(212,175,55,0.35);
+  box-shadow:inset 2px 0 0 var(--gold);
+}
+.rh-nav a.active i{color:var(--gold)}
+
+/* ─────── MAIN ─────── */
+.rh-main{
+  flex:1;
+  margin-left:var(--sidebar-w);
+  padding:1.25rem 1.5rem 2rem;
+  min-width:0;
+  max-width:calc(100vw - var(--sidebar-w));
+}
+
+/* ─────── HEADER ─────── */
+.rh-header{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap;
+}
+.rh-header-left{display:flex;align-items:center;gap:.75rem;min-width:0}
+.rh-mobile-toggle{
+  display:none;
+  width:38px;height:38px;border-radius:10px;
+  background:var(--card);border:1px solid var(--border);
+  color:#fff;align-items:center;justify-content:center;
+  font-size:.9rem;flex-shrink:0;
+}
+.rh-title h1{
+  font-size:1.15rem;font-weight:800;color:#fff;
+  letter-spacing:-.01em;line-height:1.2;
+}
+.rh-title h1 span{color:var(--gold)}
+.rh-title p{font-size:.7rem;color:var(--muted);margin-top:2px;letter-spacing:.3px}
+.rh-header-right{display:flex;align-items:center;gap:.6rem}
+.rh-icon-btn{
+  width:38px;height:38px;border-radius:10px;
+  background:var(--card);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:.85rem;position:relative;
+  transition:all .2s;
+}
+.rh-icon-btn:hover{color:var(--gold);border-color:var(--border-strong)}
+.rh-user{
+  display:flex;align-items:center;gap:.6rem;
+  padding:.35rem .8rem .35rem .35rem;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:40px;
+}
+.rh-user-avatar{
+  width:30px;height:30px;border-radius:50%;
+  background:linear-gradient(135deg,var(--gold),var(--gold-light));
+  display:flex;align-items:center;justify-content:center;
+  font-size:.75rem;font-weight:800;color:#080812;
+  flex-shrink:0;
+}
+.rh-user-info{display:flex;flex-direction:column;line-height:1.1}
+.rh-user-info strong{font-size:.75rem;font-weight:600;color:#fff;white-space:nowrap}
+.rh-user-info small{font-size:.6rem;color:var(--gold);font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+
+/* ─────── FILTER BAR ─────── */
+.rh-filters{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:.9rem 1rem;
+  margin-bottom:1.25rem;
+}
+.rh-filters-form{
+  display:grid;
+  grid-template-columns:repeat(8,minmax(0,1fr)) auto auto;
+  gap:.6rem;align-items:end;
+}
+.rh-field label{
+  display:block;font-size:.6rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.7px;
+  margin-bottom:.3rem;font-weight:700;
+}
+.rh-field select,
+.rh-field input{
+  width:100%;
+  background:var(--bg);
+  border:1px solid rgba(212,175,55,0.18);
+  color:#fff;
+  padding:.5rem .7rem;
+  border-radius:9px;
+  font-size:.75rem;
+  outline:none;
+  transition:border .15s,box-shadow .15s;
+  appearance:none;
+  background-image:url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%239CA3AF' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right .65rem center;
+  padding-right:1.7rem;
+}
+.rh-field input[type="date"]{background-image:none;padding-right:.7rem}
+.rh-field select:focus,.rh-field input:focus{
+  border-color:var(--gold);
+  box-shadow:0 0 0 3px rgba(212,175,55,0.12);
+}
+.rh-field select option{background:#0D0D1A;color:#fff}
+.rh-actions{display:flex;gap:.4rem;flex-wrap:nowrap}
+
+/* ─────── BUTTONS ─────── */
+.rh-btn{
+  padding:.5rem 1rem;
+  border-radius:9px;
+  font-size:.75rem;font-weight:700;
+  display:inline-flex;align-items:center;gap:.4rem;
+  white-space:nowrap;
+  transition:all .2s;
+  letter-spacing:.2px;
+}
+.rh-btn-primary{
+  background:linear-gradient(135deg,var(--gold),var(--gold-light));
+  color:#080812;
+}
+.rh-btn-primary:hover{box-shadow:0 4px 16px rgba(212,175,55,0.4);transform:translateY(-1px)}
+.rh-btn-ghost{
+  background:rgba(212,175,55,0.06);
+  color:var(--muted);
+  border:1px solid var(--border);
+}
+.rh-btn-ghost:hover{color:#fff;border-color:var(--border-strong)}
+
+/* ─────── GRID SYSTEM ─────── */
+.rh-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-bottom:1rem}
+.rh-col-3{grid-column:span 3}
+.rh-col-4{grid-column:span 4}
+.rh-col-6{grid-column:span 6}
+.rh-col-8{grid-column:span 8}
+.rh-col-9{grid-column:span 9}
+.rh-col-12{grid-column:span 12}
+
+/* ─────── CARDS ─────── */
+.rh-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:1.1rem 1.2rem;
+  transition:all .2s ease;
+  position:relative;
+  overflow:hidden;
+}
+.rh-card:hover{border-color:var(--border-strong);background:var(--card-hover)}
+.rh-card-head{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap;
+}
+.rh-card-head h3{
+  font-size:.85rem;font-weight:700;color:#fff;
+  display:flex;align-items:center;gap:.5rem;
+  letter-spacing:.1px;
+}
+.rh-card-head h3 i{color:var(--gold);font-size:.8rem}
+.rh-card-head .rh-hint{
+  font-size:.6rem;color:var(--muted);
+  background:rgba(212,175,55,0.08);
+  padding:.2rem .55rem;
+  border-radius:20px;
+  letter-spacing:.6px;text-transform:uppercase;
+  font-weight:700;
+}
+.rh-card-link{
+  font-size:.68rem;color:var(--gold);
+  font-weight:700;letter-spacing:.3px;
+  display:inline-flex;align-items:center;gap:.3rem;
+}
+.rh-card-link:hover{color:var(--gold-light)}
+
+/* ─────── KPI CARDS ─────── */
+.rh-kpi{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:1rem 1.05rem;
+  position:relative;
+  overflow:hidden;
+  transition:all .25s ease;
+  min-height:108px;
+  display:flex;flex-direction:column;justify-content:space-between;
+}
+.rh-kpi::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--gold),var(--gold-light));
+  opacity:.95;
+}
+.rh-kpi.blue::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
+.rh-kpi.green::before{background:linear-gradient(90deg,#22C55E,#10B981)}
+.rh-kpi.purple::before{background:linear-gradient(90deg,#8B5CF6,#A855F7)}
+.rh-kpi.red::before{background:linear-gradient(90deg,#EF4444,#DC2626)}
+.rh-kpi.orange::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
+
+.rh-kpi:hover{
+  transform:translateY(-2px);
+  border-color:var(--border-strong);
+  background:var(--card-hover);
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+.rh-kpi-head{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  margin-bottom:.55rem;
+}
+.rh-kpi-label{
+  font-size:.6rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.9px;
+  font-weight:700;
+}
+.rh-kpi-icon{
+  width:30px;height:30px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.8rem;
+  background:rgba(212,175,55,0.12);
+  color:var(--gold);
+  flex-shrink:0;
+}
+.rh-kpi.blue .rh-kpi-icon{background:rgba(56,189,248,0.12);color:var(--blue)}
+.rh-kpi.green .rh-kpi-icon{background:rgba(34,197,94,0.12);color:var(--green)}
+.rh-kpi.purple .rh-kpi-icon{background:rgba(139,92,246,0.12);color:var(--purple)}
+.rh-kpi.red .rh-kpi-icon{background:rgba(239,68,68,0.12);color:var(--red)}
+.rh-kpi.orange .rh-kpi-icon{background:rgba(245,158,11,0.12);color:var(--orange)}
+
+.rh-kpi-value{
+  font-size:1.65rem;font-weight:800;color:#fff;
+  line-height:1;letter-spacing:-.02em;
+  margin-bottom:.35rem;
+}
+.rh-kpi-sub{
+  font-size:.66rem;color:var(--muted);
+  display:flex;align-items:center;gap:.3rem;
+  font-weight:500;
+}
+.rh-kpi-sub.up{color:var(--green)}
+.rh-kpi-sub.down{color:var(--red)}
+.rh-kpi-sub.gold{color:var(--gold)}
+.rh-kpi-sub i{font-size:.6rem}
+
+/* ─────── CHART CONTAINERS ─────── */
+.rh-chart{position:relative;width:100%;height:260px}
+.rh-chart.tall{height:300px}
+.rh-chart.donut{height:250px}
+.rh-chart.small{height:220px}
+
+/* ─────── RANKED LIST (AREAS) ─────── */
+.rh-rank-list{display:flex;flex-direction:column;gap:.5rem}
+.rh-rank-item{
+  display:flex;align-items:center;gap:.65rem;
+  padding:.55rem .7rem;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:10px;
+  transition:all .15s;
+}
+.rh-rank-item:hover{border-color:var(--border-strong);background:rgba(212,175,55,0.03)}
+.rh-rank-num{
+  width:22px;height:22px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(212,175,55,0.12);
+  color:var(--gold);
+  font-size:.65rem;font-weight:800;
+  flex-shrink:0;
+}
+.rh-rank-body{flex:1;min-width:0}
+.rh-rank-top{
+  display:flex;justify-content:space-between;
+  font-size:.78rem;margin-bottom:3px;gap:.5rem;
+}
+.rh-rank-top .name{color:#e5e7eb;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rh-rank-top .count{color:var(--gold);font-weight:800;flex-shrink:0}
+.rh-rank-bar{
+  height:4px;background:rgba(212,175,55,0.08);
+  border-radius:4px;overflow:hidden;
+}
+.rh-rank-bar span{
+  display:block;height:100%;
+  background:linear-gradient(90deg,var(--gold),var(--gold-light));
+  border-radius:4px;
+}
+
+/* ─────── STATS MINI GRID ─────── */
+.rh-stats{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(80px,1fr));
+  gap:.5rem;
+}
+.rh-stat{
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:.7rem .5rem;
+  text-align:center;
+  transition:all .15s;
+  display:block;
+}
+.rh-stat:hover{border-color:var(--border-strong);transform:translateY(-1px)}
+.rh-stat .v{
+  font-size:1.15rem;font-weight:800;color:#fff;
+  line-height:1;letter-spacing:-.01em;
+}
+.rh-stat .v.gold{color:var(--gold)}
+.rh-stat .v.red{color:var(--red)}
+.rh-stat .v.green{color:var(--green)}
+.rh-stat .v.blue{color:var(--blue)}
+.rh-stat .v.orange{color:var(--orange)}
+.rh-stat .l{
+  font-size:.55rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.5px;
+  margin-top:.35rem;font-weight:700;
+}
+
+/* ─────── TABLES ─────── */
+.rh-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.rh-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.rh-table th{
+  text-align:left;padding:.6rem .5rem;
+  color:var(--muted);
+  font-size:.6rem;text-transform:uppercase;letter-spacing:.6px;
+  border-bottom:1px solid var(--border);
+  font-weight:700;white-space:nowrap;
+}
+.rh-table td{
+  padding:.65rem .5rem;
+  border-bottom:1px solid rgba(212,175,55,0.05);
+  color:#e5e7eb;vertical-align:middle;
+}
+.rh-table tr:last-child td{border-bottom:none}
+.rh-table tbody tr:hover{background:rgba(212,175,55,0.03)}
+.rh-table a{color:var(--gold);font-weight:600}
+.rh-table a:hover{color:var(--gold-light)}
+
+/* ─────── BADGES ─────── */
+.rh-badge{
+  display:inline-flex;align-items:center;gap:.25rem;
+  padding:.22rem .55rem;
+  border-radius:20px;
+  font-size:.6rem;font-weight:800;
+  letter-spacing:.4px;text-transform:uppercase;
+  white-space:nowrap;
+}
+.rh-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rh-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rh-badge.b-assigned{background:rgba(212,175,55,0.15);color:#D4AF37;border:1px solid rgba(212,175,55,0.3)}
+.rh-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
+.rh-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.rh-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
+.rh-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
+.rh-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rh-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.rh-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
+.rh-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rh-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rh-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rh-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+
+/* ─────── ACTIVITY FEED ─────── */
+.rh-feed{display:flex;flex-direction:column;gap:.4rem}
+.rh-feed-item{
+  display:flex;gap:.6rem;padding:.55rem .7rem;
+  background:var(--bg);
+  border-left:2px solid var(--gold);
+  border-radius:8px;
+  font-size:.75rem;
+  transition:all .15s;
+}
+.rh-feed-item:hover{background:rgba(212,175,55,0.03)}
+.rh-feed-icon{
+  width:26px;height:26px;border-radius:7px;
+  background:rgba(212,175,55,0.1);
+  color:var(--gold);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.65rem;flex-shrink:0;
+}
+.rh-feed-body{flex:1;min-width:0}
+.rh-feed-body .txt{color:#e5e7eb;line-height:1.35}
+.rh-feed-body .txt strong{color:#fff;font-weight:700}
+.rh-feed-body .time{
+  font-size:.6rem;color:var(--muted-2);
+  margin-top:2px;
+}
+
+/* ─────── RECENT REQUESTS (compact list) ─────── */
+.rh-recent-list{display:flex;flex-direction:column;gap:.5rem}
+.rh-recent-item{
+  display:flex;align-items:center;gap:.7rem;
+  padding:.65rem .75rem;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:10px;
+  transition:all .15s;
+}
+.rh-recent-item:hover{border-color:var(--border-strong);background:rgba(212,175,55,0.03);transform:translateX(2px)}
+.rh-recent-marker{
+  width:4px;height:32px;border-radius:4px;
+  background:var(--gold);flex-shrink:0;
+}
+.rh-recent-marker.b-pending{background:#F59E0B}
+.rh-recent-marker.b-approved{background:#3B82F6}
+.rh-recent-marker.b-assigned{background:#D4AF37}
+.rh-recent-marker.b-inprogress{background:#38BDF8}
+.rh-recent-marker.b-completed{background:#22C55E}
+.rh-recent-marker.b-verified{background:#10B981}
+.rh-recent-marker.b-closed{background:#16A34A}
+.rh-recent-marker.b-rejected{background:#EF4444}
+.rh-recent-marker.b-overdue{background:#DC2626}
+.rh-recent-main{flex:1;min-width:0}
+.rh-recent-line1{
+  display:flex;align-items:center;gap:.5rem;
+  font-size:.78rem;font-weight:700;color:#fff;margin-bottom:2px;
+  flex-wrap:wrap;
+}
+.rh-recent-line1 a{color:var(--gold)}
+.rh-recent-line2{
+  display:flex;align-items:center;gap:.5rem;
+  font-size:.68rem;color:var(--muted);
+  flex-wrap:wrap;
+}
+.rh-recent-line2 i{font-size:.6rem}
+
+/* ─────── EMPTY STATE ─────── */
+.rh-empty{
+  text-align:center;
+  padding:1.75rem 1rem;
+  color:var(--muted);
+  font-size:.78rem;
+}
+.rh-empty i{
+  font-size:1.6rem;
+  color:var(--gold);
+  opacity:.4;
+  display:block;margin-bottom:.4rem;
+}
+
+/* ─────── MOBILE BACKDROP ─────── */
+.rh-backdrop{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.65);
+  backdrop-filter:blur(2px);
+  z-index:999;
+}
+.rh-backdrop.show{display:block}
+
+/* ─────── RESPONSIVE ─────── */
+@media (max-width:1280px){
+  .rh-filters-form{grid-template-columns:repeat(4,1fr) auto auto}
+}
+@media (max-width:1024px){
+  .rh-sidebar{transform:translateX(-100%);transition:transform .3s ease}
+  .rh-sidebar.open{transform:translateX(0)}
+  .rh-main{margin-left:0;max-width:100vw;padding:1rem}
+  .rh-mobile-toggle{display:flex}
+  .rh-col-3{grid-column:span 4}
+  .rh-col-4{grid-column:span 6}
+  .rh-col-6{grid-column:span 12}
+  .rh-col-8{grid-column:span 12}
+  .rh-col-9{grid-column:span 12}
+}
+@media (max-width:768px){
+  .rh-filters-form{grid-template-columns:repeat(2,1fr)}
+  .rh-filters-form .rh-actions{grid-column:1/-1;justify-content:flex-end}
+  .rh-col-3,.rh-col-4,.rh-col-6,.rh-col-8,.rh-col-9{grid-column:span 12}
+  .rh-title h1{font-size:1rem}
+  .rh-user-info{display:none}
+  .rh-user{padding:.35rem}
+  .rh-chart{height:220px}
+  .rh-chart.tall{height:260px}
+  .rh-chart.donut{height:230px}
+}
+@media (max-width:520px){
+  .rh-main{padding:.75rem}
+  .rh-kpi-value{font-size:1.4rem}
+  .rh-card{padding:.9rem}
+  .rh-filters{padding:.75rem}
+  .rh-card-head h3{font-size:.8rem}
+  .rh-recent-line1{font-size:.72rem}
+  .rh-recent-line2{font-size:.62rem}
 }
 </style>
 </head>
-<body class="rori-dashboard">
+<body>
 
-<div class="rori-backdrop" id="sidebar-backdrop"></div>
+<div class="rh-backdrop" id="rh-backdrop"></div>
 
-<div class="rori-layout">
+<div class="rh-layout">
 
-  <aside class="rori-sidebar" id="rori-sidebar">
-    <div class="rori-sidebar-brand">
-      <div class="logo"><i class="fas fa-hotel"></i></div>
-      <div>
+  <!-- ══════════════════ SIDEBAR ══════════════════ -->
+  <aside class="rh-sidebar" id="rh-sidebar">
+    <div class="rh-brand">
+      <div class="rh-brand-logo"><i class="fas fa-hotel"></i></div>
+      <div class="rh-brand-text">
         <h2>Rori Hotel</h2>
-        <p>Maintenance System</p>
+        <p>Maintenance</p>
       </div>
     </div>
-    <nav class="rori-nav">
+    <nav class="rh-nav">
       {% for item in nav_items %}
         <a href="{{ item.url }}" class="{{ 'active' if item.active else '' }}">
           <i class="fas {{ item.icon }}"></i>
@@ -169,29 +601,42 @@ a{color:inherit;text-decoration:none}
     </nav>
   </aside>
 
-  <main class="rori-main">
+  <!-- ══════════════════ MAIN ══════════════════ -->
+  <main class="rh-main">
 
-    <div class="rori-header">
-      <div style="display:flex;align-items:center;gap:1rem">
-        <button class="rori-mobile-toggle" id="sidebar-toggle"><i class="fas fa-bars"></i></button>
-        <div>
-          <h1>{{ title }}</h1>
-          <div class="subtitle">Welcome back, {{ current_user.full_name or current_user.username }} — {{ current_user.role }}</div>
+    <!-- ─────── HEADER ─────── -->
+    <header class="rh-header">
+      <div class="rh-header-left">
+        <button class="rh-mobile-toggle" id="rh-toggle" aria-label="Menu">
+          <i class="fas fa-bars"></i>
+        </button>
+        <div class="rh-title">
+          <h1>Rori Hotel <span>Maintenance Analytics</span></h1>
+          <p>Engineering &amp; Maintenance Management</p>
         </div>
       </div>
-      <div class="rori-user">
-        <div class="avatar">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
-        <div class="info">
-          <strong>{{ current_user.full_name or current_user.username }}</strong>
-          <small>{{ current_user.role }}</small>
+      <div class="rh-header-right">
+        <a href="{{ url_for('notifications') }}" class="rh-icon-btn" title="Notifications">
+          <i class="fas fa-bell"></i>
+        </a>
+        <div class="rh-user">
+          <div class="rh-user-avatar">
+            {{ (current_user.full_name or current_user.username or 'U')[0]|upper }}
+          </div>
+          <div class="rh-user-info">
+            <strong>{{ current_user.full_name or current_user.username }}</strong>
+            <small>{{ current_user.role }}</small>
+          </div>
         </div>
       </div>
-    </div>
+    </header>
 
+    <!-- ─────── FLASH MESSAGES ─────── -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert" style="background:#15152A;border:1px solid rgba(212,175,55,0.3);color:#fff">
+          <div class="alert alert-{{ cat }} alert-dismissible fade show"
+               style="background:#15152A;border:1px solid rgba(212,175,55,0.3);color:#fff;font-size:.8rem;border-radius:12px">
             {{ msg }}
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
           </div>
@@ -199,23 +644,37 @@ a{color:inherit;text-decoration:none}
       {% endif %}
     {% endwith %}
 
-    <section class="rori-filters">
-      <form method="get" action="{{ url_for('dashboard') }}" class="rori-filters-form">
-        <div><label>Date From</label><input type="date" name="date_from" value="{{ filters.get('date_from','') }}"></div>
-        <div><label>Date To</label><input type="date" name="date_to" value="{{ filters.get('date_to','') }}"></div>
-        <div><label>Department</label>
+    <!-- ─────── FILTER BAR ─────── -->
+    <section class="rh-filters">
+      <form method="get" action="{{ url_for('dashboard') }}" class="rh-filters-form">
+        <div class="rh-field">
+          <label>Date From</label>
+          <input type="date" name="date_from" value="{{ filters.get('date_from','') }}">
+        </div>
+        <div class="rh-field">
+          <label>Date To</label>
+          <input type="date" name="date_to" value="{{ filters.get('date_to','') }}">
+        </div>
+        <div class="rh-field">
+          <label>Department</label>
           <select name="department">
             <option value="">All</option>
-            {% for d in all_departments %}<option value="{{ d.id }}" {{ 'selected' if filters.get('department')|string == d.id|string else '' }}>{{ d.name }}</option>{% endfor %}
+            {% for d in all_departments %}
+              <option value="{{ d.id }}" {{ 'selected' if filters.get('department')|string == d.id|string else '' }}>{{ d.name }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div><label>Category</label>
+        <div class="rh-field">
+          <label>Category</label>
           <select name="category">
             <option value="">All</option>
-            {% for c in all_categories %}<option value="{{ c.id }}" {{ 'selected' if filters.get('category')|string == c.id|string else '' }}>{{ c.name }}</option>{% endfor %}
+            {% for c in all_categories %}
+              <option value="{{ c.id }}" {{ 'selected' if filters.get('category')|string == c.id|string else '' }}>{{ c.name }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div><label>Status</label>
+        <div class="rh-field">
+          <label>Status</label>
           <select name="status">
             <option value="">All</option>
             {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected','Overdue'] %}
@@ -223,302 +682,782 @@ a{color:inherit;text-decoration:none}
             {% endfor %}
           </select>
         </div>
-        <div><label>Floor</label>
+        <div class="rh-field">
+          <label>Floor</label>
           <select name="floor">
             <option value="">All</option>
-            {% for f in all_floors %}<option value="{{ f }}" {{ 'selected' if filters.get('floor')|string == f|string else '' }}>Floor {{ f }}</option>{% endfor %}
+            {% for f in all_floors %}
+              <option value="{{ f }}" {{ 'selected' if filters.get('floor')|string == f|string else '' }}>Floor {{ f }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div><label>Room</label>
+        <div class="rh-field">
+          <label>Room</label>
           <select name="room_id">
             <option value="">All</option>
-            {% for r in all_rooms %}<option value="{{ r.id }}" {{ 'selected' if filters.get('room_id')|string == r.id|string else '' }}>Room {{ r.room_number }}</option>{% endfor %}
+            {% for r in all_rooms %}
+              <option value="{{ r.id }}" {{ 'selected' if filters.get('room_id')|string == r.id|string else '' }}>Room {{ r.room_number }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div><label>Area</label>
+        <div class="rh-field">
+          <label>Area</label>
           <select name="area_id">
             <option value="">All</option>
-            {% for a in all_areas %}<option value="{{ a.id }}" {{ 'selected' if filters.get('area_id')|string == a.id|string else '' }}>{{ a.name }}</option>{% endfor %}
+            {% for a in all_areas %}
+              <option value="{{ a.id }}" {{ 'selected' if filters.get('area_id')|string == a.id|string else '' }}>{{ a.name }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div class="rori-filters-buttons">
-          <button type="submit" class="rori-btn rori-btn-primary"><i class="fas fa-filter"></i> Apply</button>
-          <a href="{{ url_for('dashboard') }}" class="rori-btn rori-btn-ghost"><i class="fas fa-rotate-left"></i> Reset</a>
+        <div class="rh-actions">
+          <button type="submit" class="rh-btn rh-btn-primary">
+            <i class="fas fa-filter"></i> Apply
+          </button>
+        </div>
+        <div class="rh-actions">
+          <a href="{{ url_for('dashboard') }}" class="rh-btn rh-btn-ghost">
+            <i class="fas fa-rotate-left"></i> Reset
+          </a>
         </div>
       </form>
     </section>
 
-    <section class="rori-kpis">
-      <div class="rori-kpi purple">
-        <div class="rori-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
-        <div class="rori-kpi-label">Total Requests</div>
-        <div class="rori-kpi-value">{{ kpis.total }}</div>
-        <div class="rori-kpi-sub {{ 'up' if kpis.total_delta and kpis.total_delta > 0 else 'down' if kpis.total_delta and kpis.total_delta < 0 else 'neutral' }}">
-          {% if kpis.has_prev and kpis.total_delta is not none %}
-            <i class="fas {{ 'fa-arrow-trend-up' if kpis.total_delta > 0 else 'fa-arrow-trend-down' if kpis.total_delta < 0 else 'fa-minus' }}"></i>
-            {{ kpis.total_delta }}% vs previous period
-          {% else %}<i class="fas fa-minus"></i> No comparison data{% endif %}
+    <!-- ─────── KPI ROW (6 cards) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-3">
+        <div class="rh-kpi">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Total Requests</div>
+              <div class="rh-kpi-value">{{ kpis.total }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
+          </div>
+          <div class="rh-kpi-sub {{ 'up' if kpis.total_delta and kpis.total_delta > 0 else 'down' if kpis.total_delta and kpis.total_delta < 0 else '' }}">
+            {% if kpis.has_prev and kpis.total_delta is not none %}
+              <i class="fas {{ 'fa-arrow-trend-up' if kpis.total_delta > 0 else 'fa-arrow-trend-down' if kpis.total_delta < 0 else 'fa-minus' }}"></i>
+              {{ kpis.total_delta }}% vs previous
+            {% else %}
+              <i class="fas fa-minus"></i> All-time total
+            {% endif %}
+          </div>
         </div>
       </div>
-      <div class="rori-kpi warning">
-        <div class="rori-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
-        <div class="rori-kpi-label">Pending Requests</div>
-        <div class="rori-kpi-value">{{ kpis.pending }}</div>
-        <div class="rori-kpi-sub neutral">
-          {% if kpis.pending > 0 %}<i class="fas fa-circle-exclamation"></i> Requires action{% else %}<i class="fas fa-check"></i> All clear{% endif %}
+
+      <div class="rh-col-3">
+        <div class="rh-kpi orange">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Pending</div>
+              <div class="rh-kpi-value">{{ kpis.pending }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
+          </div>
+          <div class="rh-kpi-sub">
+            {% if kpis.pending > 0 %}
+              <i class="fas fa-circle-exclamation" style="color:#F59E0B"></i> Requires attention
+            {% else %}
+              <i class="fas fa-check" style="color:#22C55E"></i> All clear
+            {% endif %}
+          </div>
         </div>
       </div>
-      <div class="rori-kpi green">
-        <div class="rori-kpi-icon"><i class="fas fa-circle-check"></i></div>
-        <div class="rori-kpi-label">Completed Requests</div>
-        <div class="rori-kpi-value">{{ kpis.completed }}</div>
-        <div class="rori-kpi-sub up"><i class="fas fa-percent"></i> {{ kpis.completion_rate }}% completion rate</div>
-      </div>
-      <div class="rori-kpi blue">
-        <div class="rori-kpi-icon"><i class="fas fa-stopwatch"></i></div>
-        <div class="rori-kpi-label">Avg Resolution Time</div>
-        <div class="rori-kpi-value">{{ kpis.avg_resolution }}</div>
-        <div class="rori-kpi-sub neutral">
-          {% if kpis.avg_delta_seconds is not none %}
-            {% if kpis.avg_delta_seconds > 0 %}<i class="fas fa-arrow-down"></i> {{ (kpis.avg_delta_seconds/60)|round|int }} min faster
-            {% elif kpis.avg_delta_seconds < 0 %}<i class="fas fa-arrow-up"></i> {{ ((-kpis.avg_delta_seconds)/60)|round|int }} min slower
-            {% else %}<i class="fas fa-minus"></i> No change{% endif %}
-          {% else %}<i class="fas fa-stopwatch"></i> Across completed work{% endif %}
+
+      <div class="rh-col-3">
+        <div class="rh-kpi blue">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">In Progress</div>
+              <div class="rh-kpi-value">{{ work_orders.in_progress }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-spinner"></i></div>
+          </div>
+          <div class="rh-kpi-sub">
+            <i class="fas fa-wrench"></i> Active work orders
+          </div>
         </div>
       </div>
-    </section>
 
-    <section class="rori-section">
-      <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-chart-line"></i> Maintenance Request Trends</h3>
-          <span style="font-size:.7rem;color:#9CA3AF;background:rgba(212,175,55,0.1);padding:.2rem .65rem;border-radius:20px;text-transform:uppercase;font-weight:600">
-            {% if chart_data.trends.granularity == 'day' %}Daily{% elif chart_data.trends.granularity == 'week' %}Weekly{% else %}Monthly{% endif %}
-          </span>
+      <div class="rh-col-3">
+        <div class="rh-kpi green">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Completed</div>
+              <div class="rh-kpi-value">{{ kpis.completed }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-circle-check"></i></div>
+          </div>
+          <div class="rh-kpi-sub up">
+            <i class="fas fa-percent"></i> {{ kpis.completion_rate }}% completion rate
+          </div>
         </div>
-        <div class="rori-chart-wrap tall"><canvas id="chart-trends"></canvas></div>
       </div>
-    </section>
 
-    <div class="rori-grid-2">
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-chart-pie"></i> Requests by Category</h3></div>
-        <div class="rori-chart-wrap donut"><canvas id="chart-categories"></canvas></div>
-      </div>
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-circle-notch"></i> Requests by Status</h3></div>
-        <div class="rori-chart-wrap donut"><canvas id="chart-status"></canvas></div>
-      </div>
-    </div>
-
-    <section class="rori-section">
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-chart-bar"></i> Requests by Department</h3></div>
-        <div class="rori-chart-wrap"><canvas id="chart-departments"></canvas></div>
-      </div>
-    </section>
-
-    <div class="rori-grid-2">
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3></div>
-        {% if top_locations %}
-          <div class="rori-list">
-            {% for name, count in top_locations %}
-              <div class="rori-list-item">
-                <span class="rank">{{ loop.index }}</span>
-                <span class="name">{{ name }}</span>
-                <span class="count">{{ count }}</span>
+      <div class="rh-col-3">
+        <div class="rh-kpi red">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Overdue</div>
+              <div class="rh-kpi-value">
+                {% set overdue_count = 0 %}
+                {% if chart_data.statuses and chart_data.statuses.labels %}
+                  {% for label in chart_data.statuses.labels %}
+                    {% if label == 'Overdue' %}
+                      {{ chart_data.statuses.values[loop.index0] }}
+                      {% set overdue_count = 1 %}
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
+                {% if not overdue_count %}0{% endif %}
               </div>
-            {% endfor %}
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-triangle-exclamation"></i></div>
           </div>
-        {% else %}
-          <div class="rori-empty"><i class="fas fa-location-dot"></i>No maintenance requests found for the selected filters.</div>
-        {% endif %}
-      </div>
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3></div>
-        <div class="rori-stats-grid">
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.total }}</div><div class="lbl">Total</div></a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.pending }}</div><div class="lbl">Pending</div></a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.assigned }}</div><div class="lbl">Assigned</div></a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.in_progress }}</div><div class="lbl">In Progress</div></a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.completed }}</div><div class="lbl">Completed</div></a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.verified }}</div><div class="lbl">Verified</div></a>
+          <div class="rh-kpi-sub">
+            <i class="fas fa-clock"></i> Past due date
+          </div>
         </div>
       </div>
-    </div>
 
-    <section class="rori-section">
-      <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-list"></i> Recent Maintenance Requests</h3>
-          <a href="{{ url_for('requests_list') }}" class="rori-btn rori-btn-ghost" style="padding:.35rem .85rem;font-size:.75rem">View all <i class="fas fa-arrow-right"></i></a>
-        </div>
-        {% if recent_requests %}
-          <div class="rori-table-wrap">
-            <table class="rori-table">
-              <thead><tr><th>Request #</th><th>Room / Area</th><th>Department</th><th>Issue</th><th>Category</th><th>Priority</th><th>Assigned</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
-              <tbody>
-                {% for r in recent_requests %}
-                <tr>
-                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
-                  <td>{{ r.location_name }}</td>
-                  <td>{{ r.department.name if r.department else '—' }}</td>
-                  <td>{{ r.working_item.name if r.working_item else '—' }}</td>
-                  <td>{{ r.category.name if r.category else '—' }}</td>
-                  <td><span class="rori-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span></td>
-                  <td>{{ r.assigned_to.full_name if r.assigned_to else '—' }}</td>
-                  <td><span class="rori-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
-                  <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
-                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}"><i class="fas fa-eye"></i></a></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      <div class="rh-col-3">
+        <div class="rh-kpi purple">
+          <div class="rh-kpi-head">
+            <div>
+              <div class="rh-kpi-label">Avg Resolution</div>
+              <div class="rh-kpi-value" style="font-size:1.35rem">{{ kpis.avg_resolution }}</div>
+            </div>
+            <div class="rh-kpi-icon"><i class="fas fa-stopwatch"></i></div>
           </div>
-        {% else %}
-          <div class="rori-empty"><i class="fas fa-inbox"></i>No maintenance requests found for the selected filters.</div>
-        {% endif %}
+          <div class="rh-kpi-sub">
+            {% if kpis.avg_delta_seconds is not none %}
+              {% if kpis.avg_delta_seconds > 0 %}
+                <i class="fas fa-arrow-down" style="color:#22C55E"></i> {{ (kpis.avg_delta_seconds/60)|round|int }} min faster
+              {% elif kpis.avg_delta_seconds < 0 %}
+                <i class="fas fa-arrow-up" style="color:#EF4444"></i> {{ ((-kpis.avg_delta_seconds)/60)|round|int }} min slower
+              {% else %}
+                <i class="fas fa-minus"></i> No change
+              {% endif %}
+            {% else %}
+              <i class="fas fa-stopwatch"></i> Across completed
+            {% endif %}
+          </div>
+        </div>
       </div>
+
     </section>
 
-    <div class="rori-grid-2">
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3></div>
-        {% if staff_stats %}
-          <div class="rori-table-wrap">
-            <table class="rori-table">
-              <thead><tr><th>Staff</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg Resolution</th></tr></thead>
-              <tbody>
-                {% for s in staff_stats %}
-                <tr>
-                  <td><strong>{{ s.name }}</strong><br><small style="color:#6B7280">{{ s.role }}</small></td>
-                  <td>{{ s.assigned }}</td>
-                  <td>{{ s.in_progress }}</td>
-                  <td>{{ s.completed }}</td>
-                  <td>{{ s.avg_resolution }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+    <!-- ─────── ROW 1: TRENDS (8) + STATUS DONUT (4) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-8">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-chart-line"></i> Maintenance Request Trends</h3>
+            <span class="rh-hint">
+              {% if chart_data.trends.granularity == 'day' %}Daily
+              {% elif chart_data.trends.granularity == 'week' %}Weekly
+              {% else %}Monthly{% endif %}
+            </span>
           </div>
-        {% else %}
-          <div class="rori-empty"><i class="fas fa-user-gear"></i>No maintenance staff data.</div>
-        {% endif %}
-      </div>
-
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3></div>
-        <div class="rori-stats-grid">
-          <div class="rori-stat"><div class="val">{{ inventory.total_parts }}</div><div class="lbl">Total Parts</div></div>
-          <div class="rori-stat"><div class="val" style="color:#F59E0B">{{ inventory.low_stock }}</div><div class="lbl">Low Stock</div></div>
-          <div class="rori-stat"><div class="val" style="color:#EF4444">{{ inventory.out_of_stock }}</div><div class="lbl">Out of Stock</div></div>
-          <div class="rori-stat"><div class="val">{{ inventory.parts_used }}</div><div class="lbl">Parts Used</div></div>
-        </div>
-        <div style="margin-top:1rem;padding:.75rem 1rem;background:#111020;border:1px solid rgba(212,175,55,0.2);border-radius:12px;display:flex;justify-content:space-between;align-items:center">
-          <span style="color:#9CA3AF;font-size:.8rem">Estimated Inventory Value</span>
-          <span style="font-weight:700;color:#D4AF37">{{ inventory.total_value }}</span>
+          <div class="rh-chart tall"><canvas id="chart-trends"></canvas></div>
         </div>
       </div>
-    </div>
 
-    <section class="rori-section">
-      <div class="rori-card">
-        <div class="rori-card-header"><h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3></div>
-        {% if recent_activity %}
-          <div class="rori-activity">
-            {% for a in recent_activity %}
-              <div class="rori-activity-item">
-                <div class="icon"><i class="fas fa-bolt"></i></div>
-                <div class="txt">
-                  <strong>{{ a.user }}</strong> {{ a.action }}{% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
-                  <div class="time">{{ a.time }} · {{ a.raw_time }}</div>
+      <div class="rh-col-4">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-circle-notch"></i> Requests by Status</h3>
+          </div>
+          <div class="rh-chart donut"><canvas id="chart-status"></canvas></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────── ROW 2: DEPARTMENT (6) + CATEGORY (6) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-chart-bar"></i> Requests by Department</h3>
+          </div>
+          <div class="rh-chart"><canvas id="chart-departments"></canvas></div>
+        </div>
+      </div>
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-chart-pie"></i> Requests by Category</h3>
+          </div>
+          <div class="rh-chart"><canvas id="chart-categories"></canvas></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────── ROW 3: FLOOR OVERVIEW (6) + TOP AREAS (6) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-building"></i> Floor Overview</h3>
+            <span class="rh-hint">Floors 2 – 5</span>
+          </div>
+          <div class="rh-stats" style="grid-template-columns:repeat(4,1fr)">
+            <div class="rh-stat">
+              <div class="v gold">2</div>
+              <div class="l">Floor 2</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v gold">3</div>
+              <div class="l">Floor 3</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v gold">4</div>
+              <div class="l">Floor 4</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v gold">5</div>
+              <div class="l">Floor 5</div>
+            </div>
+          </div>
+          <p style="font-size:.68rem;color:var(--muted);margin-top:.85rem;line-height:1.5">
+            Guest rooms are located on floors 2–5 (Rooms 201–300).
+            Floor 1 has no guest rooms. Use the <strong style="color:var(--gold)">Floor</strong> filter above to view requests per floor.
+          </p>
+        </div>
+      </div>
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3>
+          </div>
+          {% if top_locations %}
+            {% set max_count = top_locations[0][1] if top_locations[0][1] > 0 else 1 %}
+            <div class="rh-rank-list">
+              {% for name, count in top_locations[:8] %}
+                <div class="rh-rank-item">
+                  <div class="rh-rank-num">{{ loop.index }}</div>
+                  <div class="rh-rank-body">
+                    <div class="rh-rank-top">
+                      <span class="name">{{ name }}</span>
+                      <span class="count">{{ count }}</span>
+                    </div>
+                    <div class="rh-rank-bar">
+                      <span style="width: {{ (count / max_count * 100)|round|int }}%"></span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            {% endfor %}
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="rh-empty">
+              <i class="fas fa-location-dot"></i>
+              No maintenance requests found.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────── ROW 4: WORK ORDERS (6) + RECENT REQUESTS (6) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3>
+            <a href="{{ url_for('workorders_list') }}" class="rh-card-link">View all <i class="fas fa-arrow-right"></i></a>
           </div>
-        {% else %}
-          <div class="rori-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
-        {% endif %}
+          <div class="rh-stats" style="grid-template-columns:repeat(3,1fr)">
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v gold">{{ work_orders.total }}</div>
+              <div class="l">Total</div>
+            </a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v orange">{{ work_orders.pending }}</div>
+              <div class="l">Pending</div>
+            </a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v gold">{{ work_orders.assigned }}</div>
+              <div class="l">Assigned</div>
+            </a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v blue">{{ work_orders.in_progress }}</div>
+              <div class="l">In Progress</div>
+            </a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v green">{{ work_orders.completed }}</div>
+              <div class="l">Completed</div>
+            </a>
+            <a class="rh-stat" href="{{ url_for('workorders_list') }}">
+              <div class="v green">{{ work_orders.verified }}</div>
+              <div class="l">Verified</div>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-list"></i> Recent Requests</h3>
+            <a href="{{ url_for('requests_list') }}" class="rh-card-link">View all <i class="fas fa-arrow-right"></i></a>
+          </div>
+          {% if recent_requests %}
+            <div class="rh-recent-list">
+              {% for r in recent_requests[:5] %}
+                {% set status_key = status_badge_class(r.status).replace('b-','') %}
+                <div class="rh-recent-item">
+                  <div class="rh-recent-marker b-{{ status_key }}"></div>
+                  <div class="rh-recent-main">
+                    <div class="rh-recent-line1">
+                      <a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a>
+                      <span class="rh-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
+                      <span class="rh-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
+                    </div>
+                    <div class="rh-recent-line2">
+                      <span><i class="fas fa-location-dot"></i> {{ r.location_name }}</span>
+                      <span><i class="fas fa-tag"></i> {{ r.category.name if r.category else '—' }}</span>
+                      <span><i class="fas fa-clock"></i> {{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</span>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="rh-empty">
+              <i class="fas fa-inbox"></i>
+              No maintenance requests found.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────── ROW 5: STAFF (6) + INVENTORY (6) ─────── -->
+    <section class="rh-grid">
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3>
+          </div>
+          {% if staff_stats %}
+            <div class="rh-table-wrap">
+              <table class="rh-table">
+                <thead>
+                  <tr>
+                    <th>Staff</th>
+                    <th>Assigned</th>
+                    <th>In Progress</th>
+                    <th>Completed</th>
+                    <th>Avg</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for s in staff_stats[:6] %}
+                    <tr>
+                      <td>
+                        <strong style="color:#fff">{{ s.name }}</strong><br>
+                        <small style="color:var(--muted);font-size:.6rem">{{ s.role }}</small>
+                      </td>
+                      <td><span class="rh-badge b-assigned">{{ s.assigned }}</span></td>
+                      <td><span class="rh-badge b-inprogress">{{ s.in_progress }}</span></td>
+                      <td><span class="rh-badge b-completed">{{ s.completed }}</span></td>
+                      <td style="color:var(--gold);font-weight:700;font-size:.72rem">{{ s.avg_resolution }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="rh-empty">
+              <i class="fas fa-user-gear"></i>
+              No maintenance staff data.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="rh-col-6">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3>
+            <a href="{{ url_for('inventory_list') }}" class="rh-card-link">Manage <i class="fas fa-arrow-right"></i></a>
+          </div>
+          <div class="rh-stats" style="grid-template-columns:repeat(4,1fr)">
+            <div class="rh-stat">
+              <div class="v gold">{{ inventory.total_parts }}</div>
+              <div class="l">Total</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v orange">{{ inventory.low_stock }}</div>
+              <div class="l">Low</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v red">{{ inventory.out_of_stock }}</div>
+              <div class="l">Out</div>
+            </div>
+            <div class="rh-stat">
+              <div class="v blue">{{ inventory.parts_used }}</div>
+              <div class="l">Used</div>
+            </div>
+          </div>
+          <div style="margin-top:.85rem;padding:.7rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+            <span style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700">Inventory Value</span>
+            <span style="font-weight:800;color:var(--gold);font-size:.95rem">{{ inventory.total_value }}</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─────── ROW 6: RECENT ACTIVITY ─────── -->
+    <section class="rh-grid">
+      <div class="rh-col-12">
+        <div class="rh-card">
+          <div class="rh-card-head">
+            <h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3>
+          </div>
+          {% if recent_activity %}
+            <div class="rh-feed">
+              {% for a in recent_activity[:6] %}
+                <div class="rh-feed-item">
+                  <div class="rh-feed-icon"><i class="fas fa-bolt"></i></div>
+                  <div class="rh-feed-body">
+                    <div class="txt">
+                      <strong>{{ a.user }}</strong> {{ a.action }}{% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
+                    </div>
+                    <div class="time">{{ a.time }} · {{ a.raw_time }}</div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="rh-empty">
+              <i class="fas fa-wave-square"></i>
+              No recent activity.
+            </div>
+          {% endif %}
+        </div>
       </div>
     </section>
 
   </main>
 </div>
 
+<!-- ══════════════════ SCRIPTS ══════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 window.RORI_DATA = {{ chart_data|tojson }};
 </script>
 <script>
-(function(){
+(function () {
   'use strict';
-  function init(){
-    if (typeof Chart === 'undefined') { console.warn('Chart.js not loaded'); return; }
+
+  function init() {
+    /* ─── SIDEBAR TOGGLE ─── */
+    var toggle   = document.getElementById('rh-toggle');
+    var sidebar  = document.getElementById('rh-sidebar');
+    var backdrop = document.getElementById('rh-backdrop');
+    if (toggle && sidebar) {
+      toggle.addEventListener('click', function () {
+        sidebar.classList.toggle('open');
+        if (backdrop) backdrop.classList.toggle('show');
+      });
+    }
+    if (backdrop && sidebar) {
+      backdrop.addEventListener('click', function () {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+      });
+    }
+
+    /* ─── CHARTS ─── */
+    if (typeof Chart === 'undefined') {
+      console.warn('Chart.js not loaded');
+      return;
+    }
+
     var DATA = window.RORI_DATA || {};
+
     Chart.defaults.color = '#9CA3AF';
-    Chart.defaults.borderColor = 'rgba(212,175,55,0.12)';
+    Chart.defaults.borderColor = 'rgba(212,175,55,0.10)';
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-    Chart.defaults.font.size = 11;
-    var tooltip = { backgroundColor:'rgba(8,8,18,0.96)', borderColor:'rgba(212,175,55,0.4)', borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:12, cornerRadius:10 };
-    var GOLD='#D4AF37', BLUE='#38BDF8', PINK='#EC4899', GREEN='#22C55E';
-    function grad(ctx,c1,c2){ var g=ctx.createLinearGradient(0,0,0,320); g.addColorStop(0,c1); g.addColorStop(1,c2); return g; }
-    function empty(el,icon,msg){ if(!el||!el.parentElement) return; el.parentElement.innerHTML='<div class="rori-empty"><i class="fas '+icon+'"></i>'+msg+'</div>'; }
+    Chart.defaults.font.size = 10;
 
-    (function(){
-      var el=document.getElementById('chart-trends'); if(!el) return;
-      var t=DATA.trends; if(!t||!t.labels||!t.labels.length){ empty(el,'fa-chart-line','No data for the selected filters.'); return; }
-      var ctx=el.getContext('2d');
-      new Chart(ctx,{type:'line',data:{labels:t.labels,datasets:[
-        {label:'Total',data:t.total,borderColor:GOLD,backgroundColor:grad(ctx,'rgba(212,175,55,0.35)','rgba(212,175,55,0.02)'),fill:true,tension:0.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5},
-        {label:'Completed',data:t.completed,borderColor:GREEN,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
-        {label:'Pending',data:t.pending,borderColor:PINK,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
-        {label:'In Progress',data:t.in_progress,borderColor:BLUE,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0}
-      ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
-        plugins:{legend:{position:'top',align:'end',labels:{boxWidth:8,boxHeight:8,padding:15,usePointStyle:true,pointStyle:'circle'}},tooltip:tooltip},
-        scales:{x:{grid:{color:'rgba(212,175,55,0.05)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:10}},y:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}}}
-      }});
+    var TOOLTIP = {
+      backgroundColor: 'rgba(8,8,18,0.97)',
+      borderColor: 'rgba(212,175,55,0.4)',
+      borderWidth: 1,
+      titleColor: '#fff',
+      bodyColor: '#e5e7eb',
+      padding: 10,
+      cornerRadius: 8,
+      titleFont: { size: 11, weight: '700' },
+      bodyFont: { size: 11 },
+      displayColors: true,
+      boxPadding: 4,
+    };
+
+    var GOLD   = '#D4AF37';
+    var GOLD2  = '#E6C65C';
+    var BLUE   = '#38BDF8';
+    var PINK   = '#EC4899';
+    var GREEN  = '#22C55E';
+
+    function grad(ctx, c1, c2) {
+      var g = ctx.createLinearGradient(0, 0, 0, 320);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c2);
+      return g;
+    }
+    function empty(el, icon, msg) {
+      if (!el || !el.parentElement) return;
+      el.parentElement.innerHTML =
+        '<div class="rh-empty"><i class="fas ' + icon + '"></i>' + msg + '</div>';
+    }
+
+    /* ─── TRENDS ─── */
+    (function () {
+      var el = document.getElementById('chart-trends');
+      if (!el) return;
+      var t = DATA.trends;
+      if (!t || !t.labels || !t.labels.length) {
+        empty(el, 'fa-chart-line', 'No data for the selected filters.');
+        return;
+      }
+      var ctx = el.getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: t.labels,
+          datasets: [
+            {
+              label: 'Total',
+              data: t.total,
+              borderColor: GOLD,
+              backgroundColor: grad(ctx, 'rgba(212,175,55,0.30)', 'rgba(212,175,55,0.01)'),
+              fill: true, tension: 0.4, borderWidth: 2.5,
+              pointRadius: 0, pointHoverRadius: 5,
+              pointHoverBackgroundColor: GOLD,
+              pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
+            },
+            {
+              label: 'Completed', data: t.completed,
+              borderColor: GREEN, backgroundColor: 'transparent',
+              fill: false, tension: 0.4, borderWidth: 2,
+              pointRadius: 0, pointHoverRadius: 4,
+            },
+            {
+              label: 'Pending', data: t.pending,
+              borderColor: PINK, backgroundColor: 'transparent',
+              fill: false, tension: 0.4, borderWidth: 2,
+              pointRadius: 0, pointHoverRadius: 4,
+            },
+            {
+              label: 'In Progress', data: t.in_progress,
+              borderColor: BLUE, backgroundColor: 'transparent',
+              fill: false, tension: 0.4, borderWidth: 2,
+              pointRadius: 0, pointHoverRadius: 4,
+            },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: {
+              position: 'top', align: 'end',
+              labels: {
+                boxWidth: 7, boxHeight: 7, padding: 14,
+                usePointStyle: true, pointStyle: 'circle',
+                font: { size: 11, weight: '600' },
+              },
+            },
+            tooltip: TOOLTIP,
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(212,175,55,0.05)', drawBorder: false },
+              ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 10 } },
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(212,175,55,0.06)', drawBorder: false },
+              ticks: { precision: 0, font: { size: 10 } },
+            },
+          },
+        },
+      });
     })();
 
-    (function(){
-      var el=document.getElementById('chart-categories'); if(!el) return;
-      var c=DATA.categories; if(!c||!c.labels||!c.labels.length){ empty(el,'fa-chart-pie','No category data available.'); return; }
-      var palette=['#D4AF37','#E6C65C','#38BDF8','#22C55E','#F59E0B','#EC4899','#8B5CF6','#06B6D4','#F472B6','#10B981'];
-      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:c.labels,datasets:[{data:c.values,backgroundColor:palette,borderColor:'#15152A',borderWidth:3,hoverOffset:10}]},
-        options:{responsive:true,maintainAspectRatio:false,cutout:'68%',
-          plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:10,usePointStyle:true,pointStyle:'circle',font:{size:10}}},
-            tooltip:{backgroundColor:tooltip.backgroundColor,borderColor:tooltip.borderColor,borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:12,cornerRadius:10,callbacks:{label:function(ctx){var p=c.percentages[ctx.dataIndex];return ' '+ctx.label+': '+ctx.parsed+' ('+p+'%)';}}}}}});
+    /* ─── STATUS DONUT ─── */
+    (function () {
+      var el = document.getElementById('chart-status');
+      if (!el) return;
+      var s = DATA.statuses;
+      if (!s || !s.labels || !s.labels.length) {
+        empty(el, 'fa-circle-notch', 'No status data available.');
+        return;
+      }
+      var colors_map = {
+        'Pending': '#F59E0B', 'Approved': '#3B82F6',
+        'Assigned': '#D4AF37', 'In Progress': '#38BDF8',
+        'Completed': '#22C55E', 'Verified': '#10B981',
+        'Closed': '#16A34A', 'Rejected': '#EF4444', 'Overdue': '#DC2626',
+      };
+      var colors = s.labels.map(function (l) { return colors_map[l] || '#9CA3AF'; });
+      new Chart(el.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: s.labels,
+          datasets: [{
+            data: s.values,
+            backgroundColor: colors,
+            borderColor: '#15152A',
+            borderWidth: 2,
+            hoverOffset: 8,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '66%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                boxWidth: 8, boxHeight: 8, padding: 8,
+                usePointStyle: true, pointStyle: 'circle',
+                font: { size: 10, weight: '600' },
+              },
+            },
+            tooltip: {
+              backgroundColor: TOOLTIP.backgroundColor,
+              borderColor: TOOLTIP.borderColor,
+              borderWidth: 1,
+              titleColor: '#fff', bodyColor: '#e5e7eb',
+              padding: 10, cornerRadius: 8,
+              callbacks: {
+                label: function (ctx) {
+                  var p = s.percentages[ctx.dataIndex];
+                  return ' ' + ctx.label + ': ' + ctx.parsed + ' (' + p + '%)';
+                },
+              },
+            },
+          },
+        },
+      });
     })();
 
-    (function(){
-      var el=document.getElementById('chart-status'); if(!el) return;
-      var s=DATA.statuses; if(!s||!s.labels||!s.labels.length){ empty(el,'fa-chart-pie','No status data available.'); return; }
-      var map={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#D4AF37','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
-      var colors=s.labels.map(function(l){return map[l]||'#9CA3AF';});
-      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:s.labels,datasets:[{data:s.values,backgroundColor:colors,borderColor:'#15152A',borderWidth:3,hoverOffset:10}]},
-        options:{responsive:true,maintainAspectRatio:false,cutout:'68%',
-          plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:10,usePointStyle:true,pointStyle:'circle',font:{size:10}}},
-            tooltip:{backgroundColor:tooltip.backgroundColor,borderColor:tooltip.borderColor,borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:12,cornerRadius:10,callbacks:{label:function(ctx){var p=s.percentages[ctx.dataIndex];return ' '+ctx.label+': '+ctx.parsed+' ('+p+'%)';}}}}}});
+    /* ─── DEPARTMENTS (horizontal bar) ─── */
+    (function () {
+      var el = document.getElementById('chart-departments');
+      if (!el) return;
+      var d = DATA.departments;
+      if (!d || !d.labels || !d.labels.length) {
+        empty(el, 'fa-chart-bar', 'No department data available.');
+        return;
+      }
+      var ctx = el.getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: d.labels,
+          datasets: [{
+            label: 'Requests',
+            data: d.values,
+            backgroundColor: grad(ctx, 'rgba(212,175,55,0.85)', 'rgba(212,175,55,0.25)'),
+            borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 26,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: TOOLTIP },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: 'rgba(212,175,55,0.06)', drawBorder: false },
+              ticks: { precision: 0, font: { size: 10 } },
+            },
+            y: {
+              grid: { display: false },
+              ticks: { font: { size: 10, weight: '600' } },
+            },
+          },
+        },
+      });
     })();
 
-    (function(){
-      var el=document.getElementById('chart-departments'); if(!el) return;
-      var d=DATA.departments; if(!d||!d.labels||!d.labels.length){ empty(el,'fa-chart-bar','No department data available.'); return; }
-      var ctx=el.getContext('2d');
-      new Chart(ctx,{type:'bar',data:{labels:d.labels,datasets:[{label:'Requests',data:d.values,backgroundColor:grad(ctx,'rgba(212,175,55,0.9)','rgba(212,175,55,0.3)'),borderRadius:8,borderSkipped:false,maxBarThickness:34}]},
-        options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false},tooltip:tooltip},
-          scales:{x:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}},y:{grid:{display:false},ticks:{font:{size:11}}}}}});
+    /* ─── CATEGORIES DONUT ─── */
+    (function () {
+      var el = document.getElementById('chart-categories');
+      if (!el) return;
+      var c = DATA.categories;
+      if (!c || !c.labels || !c.labels.length) {
+        empty(el, 'fa-chart-pie', 'No category data available.');
+        return;
+      }
+      var palette = ['#D4AF37', '#E6C65C', '#38BDF8', '#22C55E', '#F59E0B',
+                     '#EC4899', '#8B5CF6', '#06B6D4', '#F472B6', '#10B981'];
+      new Chart(el.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: c.labels,
+          datasets: [{
+            data: c.values,
+            backgroundColor: palette,
+            borderColor: '#15152A',
+            borderWidth: 2,
+            hoverOffset: 8,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '66%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                boxWidth: 8, boxHeight: 8, padding: 8,
+                usePointStyle: true, pointStyle: 'circle',
+                font: { size: 10, weight: '600' },
+              },
+            },
+            tooltip: {
+              backgroundColor: TOOLTIP.backgroundColor,
+              borderColor: TOOLTIP.borderColor,
+              borderWidth: 1,
+              titleColor: '#fff', bodyColor: '#e5e7eb',
+              padding: 10, cornerRadius: 8,
+              callbacks: {
+                label: function (ctx) {
+                  var p = c.percentages[ctx.dataIndex];
+                  return ' ' + ctx.label + ': ' + ctx.parsed + ' (' + p + '%)';
+                },
+              },
+            },
+          },
+        },
+      });
     })();
-
-    var toggle=document.getElementById('sidebar-toggle');
-    var sidebar=document.getElementById('rori-sidebar');
-    var backdrop=document.getElementById('sidebar-backdrop');
-    if(toggle&&sidebar){ toggle.addEventListener('click',function(){ sidebar.classList.toggle('open'); if(backdrop) backdrop.classList.toggle('show'); }); }
-    if(backdrop&&sidebar){ backdrop.addEventListener('click',function(){ sidebar.classList.remove('open'); backdrop.classList.remove('show'); }); }
   }
-  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); } else { init(); }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
