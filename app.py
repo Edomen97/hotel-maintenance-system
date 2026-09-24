@@ -1,3 +1,4 @@
+# app.py
 import csv
 import io
 import json
@@ -377,9 +378,56 @@ def role_required(*roles):
 
 
 def is_housekeeping_approver(user):
+    """Housekeeping FIRST approval — only a MANAGER whose department is
+    Housekeeping (or ADMIN). Amir Awel (MANAGER, dept=None) is excluded."""
     if not user or not user.is_authenticated:
         return False
-    return user.role in HK_APPROVER_ROLES
+    if user.role == "ADMIN":
+        return True
+    if user.role == "MANAGER":
+        dept = user.department
+        if not dept:
+            return False
+        return (dept.name or "").strip().lower() == "housekeeping"
+    return False
+
+
+def is_maintenance_manager(user):
+    """Maintenance/Engineering Manager — MANAGER whose dept is NOT
+    Housekeeping (or has no dept), plus ADMIN. Amir Awel qualifies."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.role == "ADMIN":
+        return True
+    if user.role == "MANAGER":
+        dept = user.department
+        if not dept:
+            return True
+        return (dept.name or "").strip().lower() != "housekeeping"
+    return False
+
+
+def get_housekeeping_manager_users():
+    """Active Users who are the Housekeeping Manager(s)."""
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    if not hk_dept:
+        return []
+    return User.query.filter(
+        User.role == "MANAGER",
+        User.department_id == hk_dept.id,
+        User.active == True,
+    ).all()
+
+
+def get_maintenance_manager_users():
+    """Active Users who are Maintenance/Engineering Manager(s)."""
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    hk_id = hk_dept.id if hk_dept else -1
+    return User.query.filter(
+        User.role == "MANAGER",
+        User.active == True,
+        db.or_(User.department_id.is_(None), User.department_id != hk_id),
+    ).all()
 
 
 def is_housekeeping_request(user):
@@ -579,7 +627,13 @@ def page(title, content):
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout')),
             ]
         else:
-            nav_items = [
+            # MANAGER / ADMIN — HK Manager gets extra first-approval queue link
+            nav_items = []
+            if is_housekeeping_approver(current_user):
+                nav_items.append(
+                    ('<i class="fas fa-broom"></i> HK Approvals', url_for('hk_approvals'))
+                )
+            nav_items += [
                 ('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')),
                 ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
                 ('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')),
@@ -740,15 +794,16 @@ def seed_data():
         db.session.add(u)
 
     for s in [
-        {"u": "amir", "n": "አሚር አወል", "r": "MANAGER", "d": None},
-        {"u": "abebayhu", "n": "አበባየሁ ክፍሌ", "r": "SUPERVISOR", "d": None},
-        {"u": "tesfahun", "n": "ተስፋሁን ነከረ", "r": "TECHNICIAN", "d": None},
-        {"u": "simon", "n": "ስምዖን ዮሐንስ", "r": "TECHNICIAN", "d": None},
-        {"u": "chernet", "n": "ቸርነት አሞና", "r": "TECHNICIAN", "d": None},
-        {"u": "wale", "n": "ዋሌ", "r": "TECHNICIAN", "d": None},
-        {"u": "tsadiku", "n": "ፃዲቁ", "r": "TECHNICIAN", "d": None},
+        {"u": "amir",     "n": "Amir Awel",     "r": "MANAGER",    "d": None},
+        {"u": "kasahun",  "n": "Kasahun Girma", "r": "MANAGER",    "d": hk_dept.id if hk_dept else None},
+        {"u": "abebayhu", "n": "አበባየሁ ክፍሌ",   "r": "SUPERVISOR", "d": None},
+        {"u": "tesfahun", "n": "ተስፋሁን ነከረ",   "r": "TECHNICIAN", "d": None},
+        {"u": "simon",    "n": "ስምዖን ዮሐንስ",   "r": "TECHNICIAN", "d": None},
+        {"u": "chernet",  "n": "ቸርነት አሞና",     "r": "TECHNICIAN", "d": None},
+        {"u": "wale",     "n": "ዋሌ",              "r": "TECHNICIAN", "d": None},
+        {"u": "tsadiku",  "n": "ፃዲቁ",             "r": "TECHNICIAN", "d": None},
         {"u": "housekeeping", "n": "Housekeeping Dept", "r": "DEPARTMENT", "d": hk_dept.id if hk_dept else None},
-        {"u": "employee1", "n": "Test Employee", "r": "EMPLOYEE", "d": None},
+        {"u": "employee1",    "n": "Test Employee",     "r": "EMPLOYEE",   "d": None},
     ]:
         existing = User.query.filter_by(username=s["u"]).first()
         if not existing:
@@ -844,7 +899,7 @@ def profile():
 
 
 # ══════════════════════════════════════════════════════════════
-# REQUESTS — CREATE / LIST / DETAIL  (MISSING ROUTES ADDED)
+# REQUESTS — CREATE / LIST / DETAIL
 # ══════════════════════════════════════════════════════════════
 @app.route("/requests")
 @login_required
@@ -852,11 +907,13 @@ def requests_list():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
 
     if current_user.role in ["MANAGER", "ADMIN"]:
-        # Managers see requests that are past HK approval (or don't need it)
-        q = q.filter(db.or_(
-            MaintenanceRequest.awaiting_hk_approval == False,
-            MaintenanceRequest.awaiting_hk_approval.is_(None),
-        ))
+        # Maintenance Manager: cannot see HK-pending requests
+        # HK Manager: must see HK-pending requests (his queue)
+        if not is_housekeeping_approver(current_user):
+            q = q.filter(db.or_(
+                MaintenanceRequest.awaiting_hk_approval == False,
+                MaintenanceRequest.awaiting_hk_approval.is_(None),
+            ))
     elif current_user.role == "DEPARTMENT":
         if current_user.department_id:
             q = q.filter(db.or_(
@@ -870,7 +927,6 @@ def requests_list():
     elif current_user.role in STAFF_ROLES:
         q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
 
-    # Optional filters
     status_filter = request.args.get("status")
     if status_filter:
         q = q.filter(MaintenanceRequest.status == status_filter)
@@ -986,18 +1042,25 @@ def request_create():
                               notes="Created by " + str(current_user.full_name))
 
             if is_hk:
-                approvers = User.query.filter(User.role.in_(HK_APPROVER_ROLES), User.active == True).all()
+                # FIRST approval → Housekeeping Manager only (Kasahun)
+                hk_managers = get_housekeeping_manager_users()
+                admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
+                recipients = [u.id for u in hk_managers] + [u.id for u in admins]
                 notify_users(
-                    [u.id for u in approvers], req.id,
-                    "🏠 New Housekeeping Request",
-                    "Request " + str(req.request_no) + " needs Housekeeping approval",
+                    recipients, req.id,
+                    "🏠 New Housekeeping Request — First Approval Required",
+                    "Request " + str(req.request_no) +
+                    " needs Housekeeping Manager approval before it goes to Maintenance Manager.",
                     "HK Approval",
                     link=url_for("hk_approve_request", req_id=req.id),
                 )
             else:
-                managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"]), User.active == True).all()
+                # Non-HK departments: Maintenance Manager is first approver
+                mm_users = get_maintenance_manager_users()
+                admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
+                recipients = [u.id for u in mm_users] + [u.id for u in admins]
                 notify_users(
-                    [u.id for u in managers], req.id,
+                    recipients, req.id,
                     "📝 New Request",
                     "Request " + str(req.request_no) + " is pending approval",
                     "New Request",
@@ -1014,7 +1077,6 @@ def request_create():
             flash("Error: " + str(e), "danger")
             return redirect(url_for("request_create"))
 
-    # Build form options
     floor_opts = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
     room_opts = "".join('<option value="' + str(r.id) + '" data-floor="' + str(r.floor) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
     area_opts = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
@@ -1087,16 +1149,12 @@ def request_detail(req_id):
         flash("This request has been archived.", "warning")
         return redirect(url_for("requests_list"))
 
-    # Access control
     if current_user.role == "DEPARTMENT":
         same_dept = (current_user.department_id and req.department_id == current_user.department_id)
         if not same_dept and req.requested_by_id != current_user.id and not is_housekeeping_approver(current_user):
             abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id and not is_housekeeping_approver(current_user):
         abort(403)
-    if current_user.role in STAFF_ROLES and req.assigned_to_id != current_user.id:
-        # staff can still view unassigned requests in their queue
-        pass
 
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     work_orders = WorkOrder.query.filter_by(request_id=req.id).all()
@@ -1108,7 +1166,6 @@ def request_detail(req_id):
             "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
         }.get(st, "secondary")
 
-    # Build history HTML
     hist_html = ""
     for h in history:
         who = h.user.full_name if h.user else "System"
@@ -1123,7 +1180,6 @@ def request_detail(req_id):
     if not hist_html:
         hist_html = '<p style="color:#94a3b8">No status history yet.</p>'
 
-    # Work orders HTML
     wo_html = ""
     for wo in work_orders:
         wo_html += (
@@ -1136,43 +1192,48 @@ def request_detail(req_id):
     if not wo_html:
         wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
 
-    # Action buttons
     actions = []
-    # HK approval button (for approvers, while awaiting)
-    if req.awaiting_hk_approval and is_housekeeping_approver(current_user):
+
+    # HK approval button (Kasahun only, while awaiting)
+    if req.awaiting_hk_approval and is_housekeeping_approver(current_user) and req.requested_by_id != current_user.id:
         actions.append(
             '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" class="btn btn-info">'
             '<i class="fas fa-pen-nib"></i> Housekeeping Approval</a>'
         )
-    # Manager approve (only if not awaiting HK, not rejected, status pending)
-    if (not req.awaiting_hk_approval
-            and req.hk_approval_status != "Rejected"
-            and req.status == "Pending"
-            and current_user.role in ["MANAGER", "ADMIN"]):
+
+    # Maintenance Manager second approval
+    can_second_approve = (
+        not req.awaiting_hk_approval
+        and req.hk_approval_status != "Rejected"
+        and req.status == "Pending"
+        and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))
+    )
+    if can_second_approve:
         actions.append(
             '<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline">'
-            '<button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button></form>'
+            '<button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve (Maintenance Manager)</button></form>'
         )
-    # Assign staff
+
+    # Assign staff (Maintenance Manager / ADMIN only)
     if (req.status in ["Approved", "Assigned"]
-            and current_user.role in ["MANAGER", "ADMIN"]):
+            and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))):
         actions.append(
             '<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary">'
             '<i class="fas fa-user-plus"></i> Assign Staff</a>'
         )
-    # Verify
-    if req.status == "Completed" and current_user.role in ["MANAGER", "ADMIN"]:
+
+    if req.status == "Completed" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline">'
             '<button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify</button></form>'
         )
-    # Close
-    if req.status == "Verified" and current_user.role in ["MANAGER", "ADMIN"]:
+
+    if req.status == "Verified" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline">'
             '<button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>'
         )
-    # Admin delete
+
     if current_user.role == "ADMIN" and not req.is_deleted:
         actions.append(
             '<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')">'
@@ -1231,6 +1292,50 @@ def request_detail(req_id):
     return page("Request " + str(req.request_no), content)
 
 
+@app.route("/hk/approvals")
+@login_required
+def hk_approvals():
+    """Housekeeping Manager's first-approval queue (Kasahun Girma)."""
+    if not is_housekeeping_approver(current_user):
+        abort(403)
+
+    pending = MaintenanceRequest.query.filter_by(
+        awaiting_hk_approval=True, is_deleted=False
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    rows_parts = []
+    for r in pending:
+        rows_parts.append(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) +
+            '" style="color:#f59e0b;font-weight:600">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
+            '<td>' + str(r.department.name if r.department else "—") + '</td>'
+            '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '<td><a class="btn btn-sm btn-info" href="' +
+            url_for("hk_approve_request", req_id=r.id) +
+            '"><i class="fas fa-pen-nib"></i> Review &amp; Approve</a></td>'
+            '</tr>'
+        )
+    rows = "".join(rows_parts)
+
+    content = (
+        '<h3 style="color:#f59e0b"><i class="fas fa-broom"></i> '
+        'Housekeeping Manager — Pending First Approval</h3>'
+        '<p style="color:#94a3b8">Requests created by Housekeeping staff awaiting your approval. '
+        'After you approve, they go to the Maintenance Manager (Amir Awel) for second approval.</p>'
+        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Item</th>'
+        '<th>Department</th><th>Priority</th><th>Created</th><th>Action</th></tr></thead>'
+        '<tbody>' + (rows if rows else
+                     '<tr><td colspan="7" class="text-center">No pending Housekeeping approvals</td></tr>')
+        + '</tbody></table></div></div>'
+    )
+    return page("HK Approvals", content)
+
+
 # ══════════════════════════════════════════════════════════════
 # DASHBOARD ANALYTICS HELPERS
 # ══════════════════════════════════════════════════════════════
@@ -1251,11 +1356,15 @@ def _parse_date(value):
 def build_filtered_query(args):
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     try:
-        if current_user.is_authenticated and current_user.role in ["MANAGER", "ADMIN"]:
-            q = q.filter(db.or_(
-                MaintenanceRequest.awaiting_hk_approval == False,
-                MaintenanceRequest.awaiting_hk_approval.is_(None),
-            ))
+        if current_user.is_authenticated:
+            # Maintenance Manager (and ADMIN without HK role) must NOT see HK-pending.
+            # HK Manager MUST see HK-pending (his own queue).
+            if current_user.role in ["MANAGER", "ADMIN"] \
+                    and not is_housekeeping_approver(current_user):
+                q = q.filter(db.or_(
+                    MaintenanceRequest.awaiting_hk_approval == False,
+                    MaintenanceRequest.awaiting_hk_approval.is_(None),
+                ))
     except Exception:
         pass
     d_from = _parse_date(args.get("date_from"))
@@ -1642,6 +1751,8 @@ def build_dashboard_nav():
         })
 
     if role in ["ADMIN", "MANAGER"]:
+        if is_housekeeping_approver(current_user):
+            add("HK Approvals", "fa-broom", "hk_approvals")
         add("Dashboard", "fa-home", "dashboard", active=True)
         add("New Request", "fa-plus-circle", "request_create")
         add("Requests", "fa-tasks", "requests_list")
@@ -1762,7 +1873,6 @@ def dashboard():
         )
     except Exception as e:
         print("Dashboard render failed, falling back: " + str(e))
-        # Fallback: simple dashboard if template missing
         fallback = (
             '<h3 style="color:#f59e0b">Dashboard</h3>'
             '<div class="row g-3 mb-4">'
@@ -2655,10 +2765,16 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
 @app.route("/requests/<int:req_id>/hk-approve", methods=["GET", "POST"])
 @login_required
 def hk_approve_request(req_id):
+    # FIRST approval — Housekeeping Manager only (Kasahun Girma)
     if not is_housekeeping_approver(current_user):
         abort(403)
 
     req = get_or_404(MaintenanceRequest, req_id)
+
+    # Housekeeping staff must not approve their own request
+    if req.requested_by_id == current_user.id:
+        flash("You cannot approve your own request.", "danger")
+        return redirect(url_for("request_detail", req_id=req_id))
 
     if not req.awaiting_hk_approval:
         flash("This request is not awaiting Housekeeping approval.", "warning")
@@ -2678,27 +2794,44 @@ def hk_approve_request(req_id):
             req.hk_approved_at = datetime.utcnow()
             req.hk_approval_status = "Approved"
             req.hk_signature_data = signature
-            req.hk_approval_notes = notes or "Approved by Housekeeping"
+            req.hk_approval_notes = notes or "Approved by Housekeeping Manager"
             req.awaiting_hk_approval = False
+            # Keep Pending so Maintenance Manager sees it as pending approval
+            req.status = "Pending"
 
-            log_status_change(req.id, "HK Approved", notes="Approved by " + str(current_user.full_name))
-            log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting", "approved")
-            log_audit("Submitted to Maintenance Manager", "MaintenanceRequest", req.id, new_value=req.request_no)
-
-            managers = User.query.filter(User.role.in_(["MANAGER", "ADMIN"])).all()
-            notify_users(
-                [u.id for u in managers], req.id,
-                "📬 HK Approved Request",
-                "Request " + str(req.request_no) + " approved by Housekeeping and sent to Maintenance Manager",
-                "New Request",
-                link=url_for("request_detail", req_id=req.id)
+            log_status_change(
+                req.id, "HK Approved",
+                notes="HK Approved by " + str(current_user.full_name)
             )
+            log_status_change(
+                req.id, "Pending Maintenance Manager Approval",
+                notes="Forwarded to Maintenance Manager"
+            )
+            log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting_hk", "hk_approved")
+
+            # Notify ONLY Maintenance Manager (Amir Awel) — not HK Manager
+            mm_users = get_maintenance_manager_users()
+            admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
+            recipients = [u.id for u in mm_users] + [u.id for u in admins]
+            notify_users(
+                recipients, req.id,
+                "📬 HK Approved — Pending Your Approval",
+                "Request " + str(req.request_no) +
+                " was approved by Housekeeping Manager " +
+                str(current_user.full_name) +
+                ". It now awaits Maintenance Manager approval.",
+                "Pending Maintenance Approval",
+                link=url_for("request_detail", req_id=req.id),
+            )
+
+            # Inform original requester
             notify_users(
                 [req.requested_by_id], req.id,
                 "✅ Approved by Housekeeping",
-                "Your request " + str(req.request_no) + " was approved by Housekeeping",
+                "Your request " + str(req.request_no) +
+                " was approved by Housekeeping Manager and sent to Maintenance Manager.",
                 "HK Approved",
-                link=url_for("request_detail", req_id=req.id)
+                link=url_for("request_detail", req_id=req.id),
             )
 
             db.session.commit()
@@ -2709,20 +2842,24 @@ def hk_approve_request(req_id):
             req.hk_approved_by_id = current_user.id
             req.hk_approved_at = datetime.utcnow()
             req.hk_approval_status = "Rejected"
-            req.hk_approval_notes = notes or "Rejected by Housekeeping"
+            req.hk_approval_notes = notes or "Rejected by Housekeeping Manager"
             req.awaiting_hk_approval = False
             req.status = "Rejected"
 
-            log_status_change(req.id, "HK Rejected",
-                              notes="Rejected by " + str(current_user.full_name) + ": " + req.hk_approval_notes)
-            log_audit("HK Reject", "MaintenanceRequest", req.id, "awaiting", "rejected")
+            log_status_change(
+                req.id, "HK Rejected",
+                notes="HK Rejected by " + str(current_user.full_name) +
+                      ": " + req.hk_approval_notes
+            )
+            log_audit("HK Reject", "MaintenanceRequest", req.id, "awaiting_hk", "hk_rejected")
 
             notify_users(
                 [req.requested_by_id], req.id,
                 "❌ Rejected by Housekeeping",
-                "Your request " + str(req.request_no) + " was rejected: " + req.hk_approval_notes,
+                "Your request " + str(req.request_no) +
+                " was rejected: " + req.hk_approval_notes,
                 "HK Rejected",
-                link=url_for("request_detail", req_id=req_id)
+                link=url_for("request_detail", req_id=req_id),
             )
 
             db.session.commit()
@@ -2741,28 +2878,60 @@ def hk_approve_request(req_id):
 def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
-        if req.awaiting_hk_approval:
-            flash("This request must be approved by Housekeeping first.", "warning")
+
+        # SECOND approval — Maintenance Manager only.
+        # HK Manager cannot perform the second approval.
+        if current_user.role != "ADMIN" and is_housekeeping_approver(current_user):
+            flash("Housekeeping Manager performs the FIRST approval only. "
+                  "The second approval is done by the Maintenance Manager.",
+                  "danger")
             return redirect(url_for("request_detail", req_id=req_id))
+
+        if req.awaiting_hk_approval:
+            flash("This request must be approved by Housekeeping Manager first.", "warning")
+            return redirect(url_for("request_detail", req_id=req_id))
+
         if req.hk_approval_status == "Rejected":
             flash("This request was rejected by Housekeeping.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
+
         if req.status != "Pending":
             flash("Not pending", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
+
         req.status = "Approved"
         req.manager_id = current_user.id
-        log_status_change(req.id, "Approved", notes="Approved by " + str(current_user.full_name))
+
+        log_status_change(
+            req.id, "Approved",
+            notes="Approved by " + str(current_user.full_name) +
+                  " (Maintenance Manager)"
+        )
         log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
+
+        # Work Order created only AFTER both approvals
         existing = WorkOrder.query.filter_by(request_id=req.id).first()
         if not existing:
-            wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=None, status="Pending")
+            wo = WorkOrder(
+                work_order_no=work_order_no_generator(),
+                request_id=req.id,
+                assigned_to_id=None,
+                status="Pending",
+            )
             db.session.add(wo)
             db.session.flush()
             log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
             log_status_change(req.id, "WO Created", notes="WO " + str(wo.work_order_no))
             notify_maintenance_staff(req, wo)
-        notify_users([req.requested_by_id], req.id, "Request Approved", "Request " + str(req.request_no) + " approved", "Approved", link=url_for("request_detail", req_id=req.id))
+
+        notify_users(
+            [req.requested_by_id], req.id,
+            "Request Approved",
+            "Request " + str(req.request_no) + " approved by Maintenance Manager",
+            "Approved",
+            link=url_for("request_detail", req_id=req.id),
+        )
+
         db.session.commit()
         flash("✅ Request approved!", "success")
     except Exception as e:
@@ -2935,6 +3104,12 @@ def workorders_list():
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = get_one(MaintenanceRequest, req_id) if req_id else None
+
+    # Only Maintenance Manager (or ADMIN) can assign staff
+    if current_user.role != "ADMIN" and not is_maintenance_manager(current_user):
+        flash("Only the Maintenance Manager can assign technical staff.", "danger")
+        return redirect(url_for("requests_list"))
+
     users = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     user_opts = "".join('<option value="' + str(u.id) + '">' + str(u.full_name) + ' (' + str(u.role) + ')</option>' for u in users)
 
@@ -2951,7 +3126,7 @@ def workorder_create():
                 flash("Awaiting Housekeeping approval first.", "warning")
                 return redirect(url_for("request_detail", req_id=request_id))
             if req.status not in ["Approved", "Assigned"]:
-                flash("Request must be approved", "danger")
+                flash("Request must be approved by Maintenance Manager first", "danger")
                 return redirect(url_for("request_detail", req_id=request_id))
             assigned_user = get_one(User, assigned_to_id)
             existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
@@ -3054,7 +3229,7 @@ def workorder_detail(wo_id):
             actions += ('<a href="' + complete_url + '" class="btn btn-success mb-2 w-100">'
                 '<i class="fas fa-check"></i> Complete Work</a>')
 
-    if current_user.role in ["MANAGER", "ADMIN"] and wo.status == "Completed":
+    if (current_user.role == "ADMIN" or is_maintenance_manager(current_user)) and wo.status == "Completed":
         verify_url = url_for("workorder_verify", wo_id=wo.id)
         actions += ('<form method="post" action="' + verify_url + '">'
             '<button type="submit" class="btn btn-info mb-2 w-100">'
@@ -3754,9 +3929,20 @@ def reports():
 # ══════════════════════════════════════════════════════════════
 @app.route("/debug")
 def debug():
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
     return jsonify({
         "users": User.query.count(),
         "dept_users": User.query.filter_by(role="DEPARTMENT").count(),
+        "housekeeping_managers": [
+            {"username": u.username, "full_name": u.full_name, "role": u.role,
+             "dept": u.department.name if u.department else None}
+            for u in (User.query.filter_by(role="MANAGER", department_id=hk_dept.id).all() if hk_dept else [])
+        ],
+        "maintenance_managers": [
+            {"username": u.username, "full_name": u.full_name, "role": u.role,
+             "dept": u.department.name if u.department else None}
+            for u in get_maintenance_manager_users()
+        ],
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "awaiting_hk": MaintenanceRequest.query.filter_by(awaiting_hk_approval=True).count(),
         "deleted_requests": MaintenanceRequest.query.filter_by(is_deleted=True).count(),
@@ -3770,7 +3956,7 @@ def debug():
 def debug_routes():
     routes = []
     for r in app.url_map.iter_rules():
-        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve", "requests", "employee", "department"]):
+        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve", "hk/approvals", "requests", "employee", "department"]):
             routes.append({"rule": r.rule, "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]), "endpoint": r.endpoint})
     return jsonify(routes)
 
