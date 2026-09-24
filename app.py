@@ -810,6 +810,10 @@ def seed_data():
             user.set_password("123456")
             db.session.add(user)
         else:
+            # ── FIX: keep role/name/department in sync with the seed definition.
+            # Never overwrite password (users may have changed it).
+            existing.full_name = s["n"]
+            existing.role = s["r"]
             existing.department_id = s["d"]
 
     db.session.commit()
@@ -906,8 +910,6 @@ def requests_list():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
 
     if current_user.role in ["MANAGER", "ADMIN"]:
-        # Maintenance Manager: cannot see HK-pending requests
-        # HK Manager: must see HK-pending requests (his queue)
         if not is_housekeeping_approver(current_user):
             q = q.filter(db.or_(
                 MaintenanceRequest.awaiting_hk_approval == False,
@@ -1041,7 +1043,6 @@ def request_create():
                               notes="Created by " + str(current_user.full_name))
 
             if is_hk:
-                # FIRST approval → Housekeeping Manager only (Kasahun)
                 hk_managers = get_housekeeping_manager_users()
                 admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
                 recipients = [u.id for u in hk_managers] + [u.id for u in admins]
@@ -1054,7 +1055,6 @@ def request_create():
                     link=url_for("hk_approve_request", req_id=req.id),
                 )
             else:
-                # Non-HK departments: Maintenance Manager is first approver
                 mm_users = get_maintenance_manager_users()
                 admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
                 recipients = [u.id for u in mm_users] + [u.id for u in admins]
@@ -1191,7 +1191,7 @@ def request_detail(req_id):
     if not wo_html:
         wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
 
-    # ── Top action row (admin-level workflow controls) ─────────
+    # Top action row — admin-level workflow only
     actions = []
 
     if (req.status in ["Approved", "Assigned"]
@@ -1222,10 +1222,11 @@ def request_detail(req_id):
 
     actions_html = " ".join(actions) if actions else ""
 
-    # ── Housekeeping Manager Approval card ─────────────────────
+    # ── Housekeeping Manager Approval card ──────────────────────
     hk_block = ""
     if req.awaiting_hk_approval or req.hk_approval_status:
         hk_status = req.hk_approval_status or "Pending"
+
         if req.hk_approved_by:
             hk_approver_name = req.hk_approved_by.full_name
         else:
@@ -1235,38 +1236,66 @@ def request_detail(req_id):
         hk_status_color = {"Approved": "success", "Rejected": "danger", "Pending": "warning"}.get(hk_status, "secondary")
 
         hk_buttons = ""
-        if (req.awaiting_hk_approval
-                and is_housekeeping_approver(current_user)
-                and req.requested_by_id != current_user.id):
+        if req.awaiting_hk_approval:
+            user_is_hk_approver = is_housekeeping_approver(current_user)
+            user_is_requester = (req.requested_by_id == current_user.id)
+
+            if user_is_hk_approver and not user_is_requester:
+                # ✅ The Housekeeping Manager themselves — show big action buttons
+                hk_buttons = (
+                    '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
+                    '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" '
+                    'class="btn btn-success" style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem">'
+                    '<i class="fas fa-check-circle"></i> ✅ Approve Request</a>'
+                    '<button type="button" class="btn btn-danger" '
+                    'style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem" '
+                    'onclick="hkQuickReject()">'
+                    '<i class="fas fa-times-circle"></i> ❌ Reject Request</button>'
+                    '</div>'
+                    '<form method="post" action="' + url_for("hk_approve_request", req_id=req.id) + '" id="hk-quick-reject-form" style="display:none">'
+                    '<input type="hidden" name="action" value="reject">'
+                    '<input type="hidden" name="notes" id="hk-reject-notes" value="">'
+                    '<input type="hidden" name="signature_data" value="">'
+                    '</form>'
+                    '<script>'
+                    'function hkQuickReject(){'
+                    'var n=prompt("Reason for rejection (required):","");'
+                    'if(n===null)return;'
+                    'if(!n.trim()){alert("Please provide a rejection reason.");return;}'
+                    'document.getElementById("hk-reject-notes").value=n.trim();'
+                    'document.getElementById("hk-quick-reject-form").submit();'
+                    '}'
+                    '</script>'
+                )
+            elif user_is_hk_approver and user_is_requester:
+                # HK approver viewing own request (rare)
+                hk_buttons = (
+                    '<div class="alert alert-warning" style="margin-top:.75rem">'
+                    '<i class="fas fa-exclamation-triangle"></i> '
+                    '<strong>You cannot approve your own request.</strong> '
+                    'Another Housekeeping Manager must review and approve it.'
+                    '</div>'
+                )
+            else:
+                # Non-approver (staff/requester) viewing — neutral informative message
+                hk_buttons = (
+                    '<div class="alert alert-info" style="margin-top:.75rem">'
+                    '<i class="fas fa-hourglass-half"></i> '
+                    'This request is waiting for <strong>' + str(hk_approver_name) +
+                    '</strong> (Housekeeping Manager) to review and approve it. '
+                    'You will be notified once a decision is made.'
+                    '</div>'
+                )
+        elif req.hk_approval_status == "Approved" and req.status == "Pending":
+            # After HK approval, show who is next
+            mm_users = get_maintenance_manager_users()
+            next_mm_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
             hk_buttons = (
-                '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
-                '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" '
-                'class="btn btn-success" style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem">'
-                '<i class="fas fa-check-circle"></i> ✅ Approve Request</a>'
-                '<button type="button" class="btn btn-danger" '
-                'style="flex:1;min-width:180px;padding:.85rem 1.1rem;font-weight:700;font-size:1rem" '
-                'onclick="hkQuickReject()">'
-                '<i class="fas fa-times-circle"></i> ❌ Reject Request</button>'
+                '<div class="alert alert-info" style="margin-top:.75rem">'
+                '🛠️ <strong>Next step:</strong> <strong>' + str(next_mm_name) +
+                '</strong> (Maintenance / Engineering Manager) must approve this request.'
                 '</div>'
-                '<form method="post" action="' + url_for("hk_approve_request", req_id=req.id) + '" id="hk-quick-reject-form" style="display:none">'
-                '<input type="hidden" name="action" value="reject">'
-                '<input type="hidden" name="notes" id="hk-reject-notes" value="">'
-                '<input type="hidden" name="signature_data" value="">'
-                '</form>'
-                '<script>'
-                'function hkQuickReject(){'
-                'var n=prompt("Reason for rejection (required):","");'
-                'if(n===null)return;'
-                'if(!n.trim()){alert("Please provide a rejection reason.");return;}'
-                'document.getElementById("hk-reject-notes").value=n.trim();'
-                'document.getElementById("hk-quick-reject-form").submit();'
-                '}'
-                '</script>'
             )
-        elif req.awaiting_hk_approval and req.requested_by_id == current_user.id:
-            hk_buttons = '<div class="alert alert-warning" style="margin-top:.75rem">You cannot approve your own request.</div>'
-        elif req.awaiting_hk_approval:
-            hk_buttons = '<div class="alert alert-info" style="margin-top:.75rem">Awaiting Housekeeping Manager approval.</div>'
 
         hk_block = (
             '<div class="card" style="border-left:4px solid #06b6d4">'
@@ -1290,7 +1319,7 @@ def request_detail(req_id):
 
         hk_block += '</tbody></table>' + hk_buttons + '</div>'
 
-    # ── Maintenance / Engineering Manager Approval card ────────
+    # ── Maintenance / Engineering Manager Approval card ─────────
     mm_block = ""
     if (not req.awaiting_hk_approval) and req.status != "Rejected":
         mm_users = get_maintenance_manager_users()
@@ -1323,7 +1352,12 @@ def request_detail(req_id):
                 '</div>'
             )
         elif mm_status == "Pending":
-            mm_buttons = '<div class="alert alert-info" style="margin-top:.75rem">Awaiting Maintenance Manager approval.</div>'
+            mm_buttons = (
+                '<div class="alert alert-info" style="margin-top:.75rem">'
+                '<i class="fas fa-hourglass-half"></i> '
+                'Waiting for <strong>' + str(mm_approver_name) +
+                '</strong> (Maintenance / Engineering Manager) to approve.</div>'
+            )
 
         mm_block = (
             '<div class="card" style="border-left:4px solid #f59e0b">'
@@ -1440,8 +1474,6 @@ def build_filtered_query(args):
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     try:
         if current_user.is_authenticated:
-            # Maintenance Manager (and ADMIN without HK role) must NOT see HK-pending.
-            # HK Manager MUST see HK-pending (his own queue).
             if current_user.role in ["MANAGER", "ADMIN"] \
                     and not is_housekeeping_approver(current_user):
                 q = q.filter(db.or_(
@@ -2879,7 +2911,6 @@ def hk_approve_request(req_id):
             req.hk_signature_data = signature
             req.hk_approval_notes = notes or "Approved by Housekeeping Manager"
             req.awaiting_hk_approval = False
-            # Keep Pending so Maintenance Manager sees it as pending approval
             req.status = "Pending"
 
             log_status_change(
@@ -2892,7 +2923,6 @@ def hk_approve_request(req_id):
             )
             log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting_hk", "hk_approved")
 
-            # Notify ONLY Maintenance Manager (Amir Awel) — not HK Manager
             mm_users = get_maintenance_manager_users()
             admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
             recipients = [u.id for u in mm_users] + [u.id for u in admins]
@@ -2907,7 +2937,6 @@ def hk_approve_request(req_id):
                 link=url_for("request_detail", req_id=req.id),
             )
 
-            # Inform original requester
             notify_users(
                 [req.requested_by_id], req.id,
                 "✅ Approved by Housekeeping",
@@ -2962,8 +2991,6 @@ def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
 
-        # SECOND approval — Maintenance Manager only.
-        # HK Manager cannot perform the second approval.
         if current_user.role != "ADMIN" and is_housekeeping_approver(current_user):
             flash("Housekeeping Manager performs the FIRST approval only. "
                   "The second approval is done by the Maintenance Manager.",
@@ -2992,7 +3019,6 @@ def request_approve(req_id):
         )
         log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
 
-        # Work Order created only AFTER both approvals
         existing = WorkOrder.query.filter_by(request_id=req.id).first()
         if not existing:
             wo = WorkOrder(
@@ -3188,7 +3214,6 @@ def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = get_one(MaintenanceRequest, req_id) if req_id else None
 
-    # Only Maintenance Manager (or ADMIN) can assign staff
     if current_user.role != "ADMIN" and not is_maintenance_manager(current_user):
         flash("Only the Maintenance Manager can assign technical staff.", "danger")
         return redirect(url_for("requests_list"))
