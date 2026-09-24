@@ -1280,6 +1280,17 @@ def priority_badge_class(priority):
     }.get(priority, "b-default")
 
 
+def build_department_nav():
+    """Sidebar navigation for DEPARTMENT (Housekeeping) users."""
+    return [
+        {"label": "Dashboard",     "icon": "fa-home",         "url": url_for("department_dashboard"), "active": True},
+        {"label": "New Request",   "icon": "fa-plus-circle",  "url": url_for("request_create"),       "active": False},
+        {"label": "Notifications", "icon": "fa-bell",         "url": url_for("notifications"),        "active": False},
+        {"label": "Profile",       "icon": "fa-user-circle",  "url": url_for("profile"),              "active": False},
+        {"label": "Logout",        "icon": "fa-sign-out-alt", "url": url_for("logout"),               "active": False},
+    ]
+
+
 # ══════════════════════════════════════════════════════════════
 # DASHBOARDS
 # ══════════════════════════════════════════════════════════════
@@ -1351,63 +1362,118 @@ def dashboard():
 @login_required
 @role_required("DEPARTMENT")
 def department_dashboard():
+    # ─── Fetch this department's requests ───
     if current_user.department_id:
         requests = MaintenanceRequest.query.filter(
             MaintenanceRequest.is_deleted == False,
-            db.or_(MaintenanceRequest.department_id == current_user.department_id, MaintenanceRequest.requested_by_id == current_user.id)
+            db.or_(
+                MaintenanceRequest.department_id == current_user.department_id,
+                MaintenanceRequest.requested_by_id == current_user.id
+            )
         ).order_by(MaintenanceRequest.created_at.desc()).all()
     else:
-        requests = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
+        requests = MaintenanceRequest.query.filter_by(
+            is_deleted=False,
+            requested_by_id=current_user.id
+        ).order_by(MaintenanceRequest.created_at.desc()).all()
 
-    pending = sum(1 for r in requests if r.status == "Pending")
-    approved = sum(1 for r in requests if r.status == "Approved")
-    in_progress = sum(1 for r in requests if r.status in ["Assigned", "In Progress"])
-    completed = sum(1 for r in requests if r.status == "Completed")
-    verified = sum(1 for r in requests if r.status == "Verified")
-    closed = sum(1 for r in requests if r.status == "Closed")
+    # ─── KPI counts ───
+    total       = len(requests)
+    pending     = sum(1 for r in requests if r.status == "Pending")
+    approved    = sum(1 for r in requests if r.status in ["Approved", "Assigned"])
+    in_progress = sum(1 for r in requests if r.status == "In Progress")
+    completed   = sum(1 for r in requests if r.status == "Completed")
+    verified    = sum(1 for r in requests if r.status == "Verified")
+    closed      = sum(1 for r in requests if r.status == "Closed")
+    rejected    = sum(1 for r in requests if r.status == "Rejected")
+    overdue     = sum(1 for r in requests if r.is_overdue)
 
-    rows_parts = []
+    # ─── Status breakdown ───
+    flow = [
+        ("Pending",     pending),
+        ("Approved",    approved),
+        ("In Progress", in_progress),
+        ("Completed",   completed + verified),
+        ("Closed",      closed),
+        ("Rejected",    rejected),
+    ]
+    status_labels = [s[0] for s in flow if s[1] > 0]
+    status_values = [s[1] for s in flow if s[1] > 0]
+
+    # ─── Category breakdown ───
+    cat_counts = defaultdict(int)
     for r in requests:
-        if r.status in ["Completed", "Verified", "Closed"]:
-            badge = "success"
-        elif r.status in ["Pending", "Approved"]:
-            badge = "warning"
-        elif r.status in ["Assigned", "In Progress"]:
-            badge = "info"
-        else:
-            badge = "secondary"
-        wo = WorkOrder.query.filter_by(request_id=r.id).first()
-        wo_badge = ""
-        if wo:
-            wo_badge = ' <a href="/workorders/' + str(wo.id) + '" class="badge bg-info text-decoration-none">WO: ' + str(wo.work_order_no) + '</a>'
-        rows_parts.append(
-            '<tr><td><a href="/requests/' + str(r.id) + '" style="color:#f59e0b;font-weight:600">' + str(r.request_no) + '</a>' + wo_badge + '</td>'
-            '<td>' + str(r.location_name) + '</td>'
-            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
-            '<td>' + str(r.priority) + '</td>'
-            '<td><span class="badge bg-' + badge + '">' + str(r.status) + '</span></td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "") + '</td>'
-            '<td><a href="/requests/' + str(r.id) + '" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a></td></tr>'
-        )
-    rows = "".join(rows_parts)
-    dept_name = current_user.department.name if current_user.department else "My Department"
+        cat_counts[r.category.name if r.category else "Uncategorized"] += 1
+    cat_sorted = sorted(cat_counts.items(), key=lambda x: -x[1])
+    category_labels = [k for k, _ in cat_sorted]
+    category_values = [v for _, v in cat_sorted]
 
-    content = ('<h3 style="color:#f59e0b"><i class="fas fa-building"></i> ' + str(dept_name) + ' Dashboard</h3>'
-        '<p style="color:#94a3b8">እንኳን ደህና መጡ፣ ' + str(current_user.full_name) + '!</p>'
-        '<div class="row g-3 mb-4">'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(len(requests)) + '</div><div class="metric-label">Total</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(approved) + '</div><div class="metric-label">Approved</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
-        '<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-value">' + str(verified) + '</div><div class="metric-label">Verified</div></div></div>'
-        '</div>'
-        '<a class="btn btn-primary mb-3" href="' + url_for('request_create') + '"><i class="fas fa-plus-circle"></i> New Request</a>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="7" class="text-center">No requests yet</td></tr>') + '</tbody>'
-        '</table></div></div>')
-    return page(str(dept_name) + " Dashboard", content)
+    # ─── Top locations ───
+    loc_counts = defaultdict(int)
+    for r in requests:
+        loc_counts[r.location_name] += 1
+    top_locations = sorted(loc_counts.items(), key=lambda x: -x[1])[:8]
+
+    # ─── 14-day trend ───
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    trend_labels, trend_total, trend_completed, trend_pending, trend_inprogress = [], [], [], [], []
+    for i in range(13, -1, -1):
+        day      = today - timedelta(days=i)
+        next_day = day + timedelta(days=1)
+        trend_labels.append(day.strftime("%b %d"))
+        day_reqs = [r for r in requests if r.created_at and day <= r.created_at < next_day]
+        trend_total.append(len(day_reqs))
+        trend_completed.append(sum(1 for r in day_reqs if r.status in ["Completed", "Verified", "Closed"]))
+        trend_pending.append(sum(1 for r in day_reqs if r.status == "Pending"))
+        trend_inprogress.append(sum(1 for r in day_reqs if r.status == "In Progress"))
+
+    # ─── Recent activity from StatusHistory ───
+    req_ids = [r.id for r in requests]
+    activity = []
+    if req_ids:
+        history = StatusHistory.query.filter(
+            StatusHistory.request_id.in_(req_ids)
+        ).order_by(StatusHistory.timestamp.desc()).limit(8).all()
+        for h in history:
+            activity.append({
+                "status": h.status or "",
+                "notes":  h.notes or "",
+                "user":   h.user.full_name if h.user else "System",
+                "time":   h.timestamp.strftime("%b %d, %H:%M") if h.timestamp else "",
+                "req_id": h.request_id,
+            })
+
+    dept_name = current_user.department.name if current_user.department else "Housekeeping"
+
+    chart_data = {
+        "trends": {
+            "labels":      trend_labels,
+            "total":       trend_total,
+            "completed":   trend_completed,
+            "pending":     trend_pending,
+            "in_progress": trend_inprogress,
+        },
+        "statuses":   {"labels": status_labels, "values": status_values},
+        "categories": {"labels": category_labels, "values": category_values},
+    }
+
+    return render_template(
+        "department_dashboard.html",
+        title="Housekeeping Dashboard",
+        dept_name=dept_name,
+        kpis={
+            "total": total, "pending": pending, "approved": approved,
+            "in_progress": in_progress, "completed": completed, "verified": verified,
+            "closed": closed, "rejected": rejected, "overdue": overdue,
+        },
+        recent_requests=requests[:6],
+        top_locations=top_locations,
+        activity=activity,
+        chart_data=chart_data,
+        nav_items=build_department_nav(),
+        status_badge_class=status_badge_class,
+        priority_badge_class=priority_badge_class,
+    )
 
 
 @app.route("/employee/dashboard")
