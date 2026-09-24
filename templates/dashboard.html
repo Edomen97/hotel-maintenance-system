@@ -7,9 +7,143 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<style>
+:root{
+  --rori-bg:#080812;--rori-bg-2:#111020;--rori-card:#15152A;
+  --rori-border:rgba(212,175,55,0.18);--rori-gold:#D4AF37;--rori-gold-light:#E6C65C;
+  --rori-text:#FFFFFF;--rori-text-2:#9CA3AF;--rori-success:#22C55E;
+  --rori-warning:#F59E0B;--rori-danger:#EF4444;--rori-info:#38BDF8;
+  --rori-sidebar-w:250px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body.rori-dashboard{font-family:'Inter',system-ui,sans-serif;background:var(--rori-bg);color:var(--rori-text);min-height:100vh;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.rori-layout{display:flex;min-height:100vh}
+.rori-sidebar{width:var(--rori-sidebar-w);background:var(--rori-bg-2);border-right:1px solid var(--rori-border);padding:1.5rem 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}
+.rori-sidebar-brand{display:flex;align-items:center;gap:.75rem;padding:0 1.5rem 1.5rem;border-bottom:1px solid var(--rori-border);margin-bottom:1rem}
+.rori-sidebar-brand .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#080812;box-shadow:0 0 20px rgba(212,175,55,0.4)}
+.rori-sidebar-brand h2{font-size:1rem;font-weight:800;color:#fff}
+.rori-sidebar-brand p{font-size:.65rem;color:var(--rori-text-2);letter-spacing:.5px;text-transform:uppercase}
+.rori-nav{display:flex;flex-direction:column;padding:0 .75rem;gap:.15rem}
+.rori-nav a{display:flex;align-items:center;gap:.75rem;padding:.7rem 1rem;color:var(--rori-text-2);border-radius:12px;font-size:.85rem;font-weight:500;transition:all .18s ease;border:1px solid transparent}
+.rori-nav a i{font-size:.9rem;width:18px;text-align:center}
+.rori-nav a:hover{background:rgba(212,175,55,0.08);color:#fff;border-color:rgba(212,175,55,0.25)}
+.rori-nav a.active{background:rgba(212,175,55,0.12);color:#fff;border-color:rgba(212,175,55,0.4)}
+.rori-nav a.active i{color:var(--rori-gold)}
+.rori-main{flex:1;margin-left:var(--rori-sidebar-w);padding:1.5rem 2rem 3rem;max-width:calc(100vw - var(--rori-sidebar-w));min-width:0}
+.rori-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem}
+.rori-header h1{font-size:1.5rem;font-weight:800;color:#fff}
+.rori-header .subtitle{color:var(--rori-text-2);font-size:.8rem;margin-top:.25rem}
+.rori-user{display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;background:var(--rori-card);border:1px solid var(--rori-border);border-radius:40px}
+.rori-user .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;color:#080812}
+.rori-user .info{display:flex;flex-direction:column;line-height:1.2}
+.rori-user .info strong{font-size:.85rem;color:#fff}
+.rori-user .info small{font-size:.65rem;color:var(--rori-text-2)}
+.rori-filters{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1rem 1.25rem;margin-bottom:1.5rem}
+.rori-filters-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;align-items:end}
+.rori-filters label{display:block;font-size:.65rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem;font-weight:600}
+.rori-filters select,.rori-filters input{width:100%;background:var(--rori-bg);border:1px solid rgba(212,175,55,0.2);color:#fff;padding:.55rem .75rem;border-radius:10px;font-size:.82rem;outline:none;font-family:inherit}
+.rori-filters select:focus,.rori-filters input:focus{border-color:var(--rori-gold);box-shadow:0 0 0 3px rgba(212,175,55,0.15)}
+.rori-filters select option{background:#111020;color:#fff}
+.rori-filters-buttons{display:flex;gap:.5rem;flex-wrap:wrap}
+.rori-btn{padding:.6rem 1.15rem;border-radius:10px;border:none;font-size:.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;font-family:inherit;transition:all .2s;white-space:nowrap}
+.rori-btn-primary{background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-light));color:#080812}
+.rori-btn-primary:hover{box-shadow:0 4px 20px rgba(212,175,55,0.4);transform:translateY(-1px)}
+.rori-btn-ghost{background:transparent;color:var(--rori-text-2);border:1px solid var(--rori-border)}
+.rori-btn-ghost:hover{color:#fff;border-color:var(--rori-gold)}
+.rori-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem}
+.rori-kpi{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1.25rem;position:relative;overflow:hidden;min-height:120px;transition:all .2s}
+.rori-kpi:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,0.4)}
+.rori-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--rori-gold),var(--rori-gold-light))}
+.rori-kpi.blue::before{background:linear-gradient(90deg,#38BDF8,#3B82F6)}
+.rori-kpi.green::before{background:linear-gradient(90deg,#22C55E,#10B981)}
+.rori-kpi.red::before{background:linear-gradient(90deg,#EF4444,#DC2626)}
+.rori-kpi.warning::before{background:linear-gradient(90deg,#F59E0B,#D97706)}
+.rori-kpi-label{font-size:.65rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:.5rem}
+.rori-kpi-value{font-size:1.9rem;font-weight:800;color:#fff;line-height:1;margin-bottom:.5rem}
+.rori-kpi-sub{font-size:.72rem;color:var(--rori-text-2);display:flex;align-items:center;gap:.35rem}
+.rori-kpi-sub.up{color:var(--rori-success)}
+.rori-kpi-sub.down{color:var(--rori-danger)}
+.rori-kpi-sub.neutral{color:var(--rori-text-2)}
+.rori-kpi-icon{position:absolute;top:1rem;right:1rem;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--rori-gold);background:rgba(212,175,55,0.12)}
+.rori-kpi.blue .rori-kpi-icon{color:var(--rori-info);background:rgba(56,189,248,0.12)}
+.rori-kpi.green .rori-kpi-icon{color:var(--rori-success);background:rgba(34,197,94,0.12)}
+.rori-kpi.red .rori-kpi-icon{color:var(--rori-danger);background:rgba(239,68,68,0.12)}
+.rori-kpi.warning .rori-kpi-icon{color:var(--rori-warning);background:rgba(245,158,11,0.12)}
+.rori-card{background:var(--rori-card);border:1px solid var(--rori-border);border-radius:16px;padding:1.25rem 1.5rem}
+.rori-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
+.rori-card-header h3{font-size:1rem;font-weight:600;color:#fff}
+.rori-card-header h3 i{color:var(--rori-gold);margin-right:.5rem}
+.rori-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-bottom:1.5rem}
+.rori-section{margin-bottom:1.5rem}
+.rori-chart-wrap{position:relative;height:300px;width:100%}
+.rori-chart-wrap.tall{height:340px}
+.rori-chart-wrap.donut{height:280px}
+.rori-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.rori-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.rori-table th{text-align:left;padding:.75rem;color:var(--rori-gold);font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--rori-border);font-weight:600;white-space:nowrap}
+.rori-table td{padding:.75rem;border-bottom:1px solid rgba(212,175,55,0.06);color:#e5e7eb;vertical-align:middle}
+.rori-table tr:last-child td{border-bottom:none}
+.rori-table tbody tr:hover{background:rgba(212,175,55,0.04)}
+.rori-table a{color:var(--rori-gold);font-weight:600}
+.rori-table a:hover{text-decoration:underline}
+.rori-badge{display:inline-block;padding:.25rem .65rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.rori-badge.b-pending{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rori-badge.b-approved{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rori-badge.b-assigned{background:rgba(212,175,55,0.15);color:#D4AF37;border:1px solid rgba(212,175,55,0.3)}
+.rori-badge.b-inprogress{background:rgba(56,189,248,0.15);color:#38BDF8;border:1px solid rgba(56,189,248,0.3)}
+.rori-badge.b-completed{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.rori-badge.b-verified{background:rgba(16,185,129,0.15);color:#10B981;border:1px solid rgba(16,185,129,0.3)}
+.rori-badge.b-closed{background:rgba(34,197,94,0.2);color:#16A34A;border:1px solid rgba(34,197,94,0.4)}
+.rori-badge.b-rejected{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rori-badge.b-overdue{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.rori-badge.b-default{background:rgba(156,163,175,0.15);color:#9CA3AF;border:1px solid rgba(156,163,175,0.3)}
+.rori-badge.b-urgent{background:rgba(239,68,68,0.15);color:#EF4444;border:1px solid rgba(239,68,68,0.3)}
+.rori-badge.b-high{background:rgba(245,158,11,0.15);color:#F59E0B;border:1px solid rgba(245,158,11,0.3)}
+.rori-badge.b-medium{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.3)}
+.rori-badge.b-low{background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3)}
+.rori-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:.75rem}
+.rori-stat{padding:.85rem .6rem;background:var(--rori-bg);border:1px solid var(--rori-border);border-radius:12px;text-align:center;display:block;transition:all .2s}
+.rori-stat:hover{border-color:var(--rori-gold);transform:translateY(-2px)}
+.rori-stat .val{font-size:1.4rem;font-weight:800;color:#fff;line-height:1}
+.rori-stat .lbl{font-size:.6rem;color:var(--rori-text-2);text-transform:uppercase;letter-spacing:.3px;margin-top:.35rem;font-weight:600}
+.rori-list{display:flex;flex-direction:column;gap:.5rem}
+.rori-list-item{display:flex;align-items:center;gap:.75rem;padding:.65rem .85rem;background:var(--rori-bg);border:1px solid var(--rori-border);border-radius:10px;font-size:.85rem}
+.rori-list-item .rank{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,0.15);color:var(--rori-gold);font-weight:700;font-size:.72rem}
+.rori-list-item .name{flex:1;color:#e5e7eb}
+.rori-list-item .count{font-weight:800;color:var(--rori-gold);font-size:.95rem}
+.rori-activity{display:flex;flex-direction:column;gap:.6rem}
+.rori-activity-item{display:flex;gap:.75rem;padding:.7rem .85rem;background:var(--rori-bg);border-left:3px solid var(--rori-gold);border-radius:8px;font-size:.85rem}
+.rori-activity-item .icon{width:32px;height:32px;border-radius:8px;background:rgba(212,175,55,0.15);color:var(--rori-gold);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0}
+.rori-activity-item .txt{flex:1;color:#e5e7eb;min-width:0}
+.rori-activity-item .txt strong{color:#fff}
+.rori-activity-item .time{font-size:.68rem;color:#6B7280;margin-top:.2rem}
+.rori-empty{text-align:center;padding:2rem 1rem;color:var(--rori-text-2);font-size:.85rem}
+.rori-empty i{font-size:2rem;color:var(--rori-gold);opacity:.5;display:block;margin-bottom:.5rem}
+.rori-mobile-toggle{display:none;width:40px;height:40px;border-radius:10px;background:var(--rori-card);border:1px solid var(--rori-border);color:#fff;align-items:center;justify-content:center;cursor:pointer;font-size:1rem}
+.rori-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99}
+.rori-backdrop.show{display:block}
+@media (max-width:992px){
+  .rori-sidebar{transform:translateX(-100%);transition:transform .3s ease}
+  .rori-sidebar.open{transform:translateX(0)}
+  .rori-main{margin-left:0;max-width:100vw;padding:1rem}
+  .rori-mobile-toggle{display:flex}
+  .rori-header h1{font-size:1.2rem}
+  .rori-chart-wrap{height:260px}
+  .rori-chart-wrap.tall{height:280px}
+  .rori-chart-wrap.donut{height:240px}
+}
+@media (max-width:576px){
+  .rori-user .info{display:none}
+  .rori-kpis{grid-template-columns:1fr 1fr}
+  .rori-kpi{padding:1rem;min-height:100px}
+  .rori-kpi-value{font-size:1.4rem}
+  .rori-card{padding:1rem}
+  .rori-filters-form{grid-template-columns:1fr 1fr}
+  .rori-filters-buttons{grid-column:1/-1}
+}
+</style>
 </head>
 <body class="rori-dashboard">
 
@@ -17,7 +151,6 @@
 
 <div class="rori-layout">
 
-  <!-- ═══════════ SIDEBAR ═══════════ -->
   <aside class="rori-sidebar" id="rori-sidebar">
     <div class="rori-sidebar-brand">
       <div class="logo"><i class="fas fa-hotel"></i></div>
@@ -36,19 +169,14 @@
     </nav>
   </aside>
 
-  <!-- ═══════════ MAIN ═══════════ -->
   <main class="rori-main">
 
-    <!-- Header -->
     <div class="rori-header">
       <div style="display:flex;align-items:center;gap:1rem">
         <button class="rori-mobile-toggle" id="sidebar-toggle"><i class="fas fa-bars"></i></button>
         <div>
           <h1>{{ title }}</h1>
-          <div class="subtitle">
-            Welcome back, {{ current_user.full_name or current_user.username }} —
-            {{ current_user.role }}
-          </div>
+          <div class="subtitle">Welcome back, {{ current_user.full_name or current_user.username }} — {{ current_user.role }}</div>
         </div>
       </div>
       <div class="rori-user">
@@ -63,7 +191,7 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for cat, msg in messages %}
-          <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert" style="background:#16122e;border:1px solid rgba(168,85,247,0.3);color:#fff">
+          <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert" style="background:#15152A;border:1px solid rgba(212,175,55,0.3);color:#fff">
             {{ msg }}
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
           </div>
@@ -71,37 +199,23 @@
       {% endif %}
     {% endwith %}
 
-    <!-- ────── FILTER BAR ────── -->
     <section class="rori-filters">
       <form method="get" action="{{ url_for('dashboard') }}" class="rori-filters-form">
-        <div>
-          <label>Date From</label>
-          <input type="date" name="date_from" value="{{ filters.get('date_from','') }}">
-        </div>
-        <div>
-          <label>Date To</label>
-          <input type="date" name="date_to" value="{{ filters.get('date_to','') }}">
-        </div>
-        <div>
-          <label>Department</label>
+        <div><label>Date From</label><input type="date" name="date_from" value="{{ filters.get('date_from','') }}"></div>
+        <div><label>Date To</label><input type="date" name="date_to" value="{{ filters.get('date_to','') }}"></div>
+        <div><label>Department</label>
           <select name="department">
             <option value="">All</option>
-            {% for d in all_departments %}
-              <option value="{{ d.id }}" {{ 'selected' if filters.get('department')|string == d.id|string else '' }}>{{ d.name }}</option>
-            {% endfor %}
+            {% for d in all_departments %}<option value="{{ d.id }}" {{ 'selected' if filters.get('department')|string == d.id|string else '' }}>{{ d.name }}</option>{% endfor %}
           </select>
         </div>
-        <div>
-          <label>Category</label>
+        <div><label>Category</label>
           <select name="category">
             <option value="">All</option>
-            {% for c in all_categories %}
-              <option value="{{ c.id }}" {{ 'selected' if filters.get('category')|string == c.id|string else '' }}>{{ c.name }}</option>
-            {% endfor %}
+            {% for c in all_categories %}<option value="{{ c.id }}" {{ 'selected' if filters.get('category')|string == c.id|string else '' }}>{{ c.name }}</option>{% endfor %}
           </select>
         </div>
-        <div>
-          <label>Status</label>
+        <div><label>Status</label>
           <select name="status">
             <option value="">All</option>
             {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected','Overdue'] %}
@@ -109,45 +223,31 @@
             {% endfor %}
           </select>
         </div>
-        <div>
-          <label>Floor</label>
+        <div><label>Floor</label>
           <select name="floor">
             <option value="">All</option>
-            {% for f in all_floors %}
-              <option value="{{ f }}" {{ 'selected' if filters.get('floor')|string == f|string else '' }}>Floor {{ f }}</option>
-            {% endfor %}
+            {% for f in all_floors %}<option value="{{ f }}" {{ 'selected' if filters.get('floor')|string == f|string else '' }}>Floor {{ f }}</option>{% endfor %}
           </select>
         </div>
-        <div>
-          <label>Room</label>
+        <div><label>Room</label>
           <select name="room_id">
             <option value="">All</option>
-            {% for r in all_rooms %}
-              <option value="{{ r.id }}" {{ 'selected' if filters.get('room_id')|string == r.id|string else '' }}>Room {{ r.room_number }}</option>
-            {% endfor %}
+            {% for r in all_rooms %}<option value="{{ r.id }}" {{ 'selected' if filters.get('room_id')|string == r.id|string else '' }}>Room {{ r.room_number }}</option>{% endfor %}
           </select>
         </div>
-        <div>
-          <label>Area</label>
+        <div><label>Area</label>
           <select name="area_id">
             <option value="">All</option>
-            {% for a in all_areas %}
-              <option value="{{ a.id }}" {{ 'selected' if filters.get('area_id')|string == a.id|string else '' }}>{{ a.name }}</option>
-            {% endfor %}
+            {% for a in all_areas %}<option value="{{ a.id }}" {{ 'selected' if filters.get('area_id')|string == a.id|string else '' }}>{{ a.name }}</option>{% endfor %}
           </select>
         </div>
         <div class="rori-filters-buttons">
-          <button type="submit" class="rori-btn rori-btn-primary">
-            <i class="fas fa-filter"></i> Apply
-          </button>
-          <a href="{{ url_for('dashboard') }}" class="rori-btn rori-btn-ghost">
-            <i class="fas fa-rotate-left"></i> Reset
-          </a>
+          <button type="submit" class="rori-btn rori-btn-primary"><i class="fas fa-filter"></i> Apply</button>
+          <a href="{{ url_for('dashboard') }}" class="rori-btn rori-btn-ghost"><i class="fas fa-rotate-left"></i> Reset</a>
         </div>
       </form>
     </section>
 
-    <!-- ────── KPI CARDS ────── -->
     <section class="rori-kpis">
       <div class="rori-kpi purple">
         <div class="rori-kpi-icon"><i class="fas fa-clipboard-list"></i></div>
@@ -157,60 +257,42 @@
           {% if kpis.has_prev and kpis.total_delta is not none %}
             <i class="fas {{ 'fa-arrow-trend-up' if kpis.total_delta > 0 else 'fa-arrow-trend-down' if kpis.total_delta < 0 else 'fa-minus' }}"></i>
             {{ kpis.total_delta }}% vs previous period
-          {% else %}
-            <i class="fas fa-minus"></i> No comparison data
-          {% endif %}
+          {% else %}<i class="fas fa-minus"></i> No comparison data{% endif %}
         </div>
       </div>
-
-      <div class="rori-kpi blue">
+      <div class="rori-kpi warning">
         <div class="rori-kpi-icon"><i class="fas fa-hourglass-half"></i></div>
         <div class="rori-kpi-label">Pending Requests</div>
         <div class="rori-kpi-value">{{ kpis.pending }}</div>
         <div class="rori-kpi-sub neutral">
-          {% if kpis.pending > 0 %}
-            <i class="fas fa-circle-exclamation"></i> Requires action
-          {% else %}
-            <i class="fas fa-check"></i> All clear
-          {% endif %}
+          {% if kpis.pending > 0 %}<i class="fas fa-circle-exclamation"></i> Requires action{% else %}<i class="fas fa-check"></i> All clear{% endif %}
         </div>
       </div>
-
       <div class="rori-kpi green">
         <div class="rori-kpi-icon"><i class="fas fa-circle-check"></i></div>
         <div class="rori-kpi-label">Completed Requests</div>
         <div class="rori-kpi-value">{{ kpis.completed }}</div>
-        <div class="rori-kpi-sub up">
-          <i class="fas fa-percent"></i> {{ kpis.completion_rate }}% completion rate
-        </div>
+        <div class="rori-kpi-sub up"><i class="fas fa-percent"></i> {{ kpis.completion_rate }}% completion rate</div>
       </div>
-
-      <div class="rori-kpi pink">
+      <div class="rori-kpi blue">
         <div class="rori-kpi-icon"><i class="fas fa-stopwatch"></i></div>
         <div class="rori-kpi-label">Avg Resolution Time</div>
         <div class="rori-kpi-value">{{ kpis.avg_resolution }}</div>
         <div class="rori-kpi-sub neutral">
           {% if kpis.avg_delta_seconds is not none %}
-            {% if kpis.avg_delta_seconds > 0 %}
-              <i class="fas fa-arrow-down"></i> {{ (kpis.avg_delta_seconds/60)|round|int }} min faster
-            {% elif kpis.avg_delta_seconds < 0 %}
-              <i class="fas fa-arrow-up"></i> {{ ((-kpis.avg_delta_seconds)/60)|round|int }} min slower
-            {% else %}
-              <i class="fas fa-minus"></i> No change
-            {% endif %}
-          {% else %}
-            <i class="fas fa-stopwatch"></i> Across completed work
-          {% endif %}
+            {% if kpis.avg_delta_seconds > 0 %}<i class="fas fa-arrow-down"></i> {{ (kpis.avg_delta_seconds/60)|round|int }} min faster
+            {% elif kpis.avg_delta_seconds < 0 %}<i class="fas fa-arrow-up"></i> {{ ((-kpis.avg_delta_seconds)/60)|round|int }} min slower
+            {% else %}<i class="fas fa-minus"></i> No change{% endif %}
+          {% else %}<i class="fas fa-stopwatch"></i> Across completed work{% endif %}
         </div>
       </div>
     </section>
 
-    <!-- ────── MAIN TRENDS CHART ────── -->
     <section class="rori-section">
       <div class="rori-card">
         <div class="rori-card-header">
           <h3><i class="fas fa-chart-line"></i> Maintenance Request Trends</h3>
-          <span class="hint" id="trends-granularity">
+          <span style="font-size:.7rem;color:#9CA3AF;background:rgba(212,175,55,0.1);padding:.2rem .65rem;border-radius:20px;text-transform:uppercase;font-weight:600">
             {% if chart_data.trends.granularity == 'day' %}Daily{% elif chart_data.trends.granularity == 'week' %}Weekly{% else %}Monthly{% endif %}
           </span>
         </div>
@@ -218,38 +300,27 @@
       </div>
     </section>
 
-    <!-- ────── DONUTS (Category + Status) ────── -->
     <div class="rori-grid-2">
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-chart-pie"></i> Requests by Category</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-chart-pie"></i> Requests by Category</h3></div>
         <div class="rori-chart-wrap donut"><canvas id="chart-categories"></canvas></div>
       </div>
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-circle-notch"></i> Requests by Status</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-circle-notch"></i> Requests by Status</h3></div>
         <div class="rori-chart-wrap donut"><canvas id="chart-status"></canvas></div>
       </div>
     </div>
 
-    <!-- ────── DEPARTMENT BAR ────── -->
     <section class="rori-section">
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-chart-bar"></i> Requests by Department</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-chart-bar"></i> Requests by Department</h3></div>
         <div class="rori-chart-wrap"><canvas id="chart-departments"></canvas></div>
       </div>
     </section>
 
-    <!-- ────── TOP LOCATIONS + WORK ORDER OVERVIEW ────── -->
     <div class="rori-grid-2">
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-location-dot"></i> Frequent Maintenance Areas</h3></div>
         {% if top_locations %}
           <div class="rori-list">
             {% for name, count in top_locations %}
@@ -264,66 +335,29 @@
           <div class="rori-empty"><i class="fas fa-location-dot"></i>No maintenance requests found for the selected filters.</div>
         {% endif %}
       </div>
-
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-clipboard-check"></i> Work Order Overview</h3></div>
         <div class="rori-stats-grid">
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.total }}</div>
-            <div class="lbl">Total</div>
-          </a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.pending }}</div>
-            <div class="lbl">Pending</div>
-          </a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.assigned }}</div>
-            <div class="lbl">Assigned</div>
-          </a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.in_progress }}</div>
-            <div class="lbl">In Progress</div>
-          </a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.completed }}</div>
-            <div class="lbl">Completed</div>
-          </a>
-          <a class="rori-stat" href="{{ url_for('workorders_list') }}">
-            <div class="val">{{ work_orders.verified }}</div>
-            <div class="lbl">Verified</div>
-          </a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.total }}</div><div class="lbl">Total</div></a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.pending }}</div><div class="lbl">Pending</div></a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.assigned }}</div><div class="lbl">Assigned</div></a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.in_progress }}</div><div class="lbl">In Progress</div></a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.completed }}</div><div class="lbl">Completed</div></a>
+          <a class="rori-stat" href="{{ url_for('workorders_list') }}"><div class="val">{{ work_orders.verified }}</div><div class="lbl">Verified</div></a>
         </div>
       </div>
     </div>
 
-    <!-- ────── RECENT REQUESTS TABLE ────── -->
     <section class="rori-section">
       <div class="rori-card">
         <div class="rori-card-header">
           <h3><i class="fas fa-list"></i> Recent Maintenance Requests</h3>
-          <a href="{{ url_for('requests_list') }}" class="rori-btn rori-btn-ghost" style="padding:.35rem .85rem;font-size:.75rem">
-            View all <i class="fas fa-arrow-right"></i>
-          </a>
+          <a href="{{ url_for('requests_list') }}" class="rori-btn rori-btn-ghost" style="padding:.35rem .85rem;font-size:.75rem">View all <i class="fas fa-arrow-right"></i></a>
         </div>
         {% if recent_requests %}
           <div class="rori-table-wrap">
             <table class="rori-table">
-              <thead>
-                <tr>
-                  <th>Request #</th>
-                  <th>Room / Area</th>
-                  <th>Department</th>
-                  <th>Issue</th>
-                  <th>Category</th>
-                  <th>Priority</th>
-                  <th>Assigned</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Request #</th><th>Room / Area</th><th>Department</th><th>Issue</th><th>Category</th><th>Priority</th><th>Assigned</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
               <tbody>
                 {% for r in recent_requests %}
                 <tr>
@@ -332,13 +366,9 @@
                   <td>{{ r.department.name if r.department else '—' }}</td>
                   <td>{{ r.working_item.name if r.working_item else '—' }}</td>
                   <td>{{ r.category.name if r.category else '—' }}</td>
-                  <td>
-                    <span class="rori-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
-                  </td>
+                  <td><span class="rori-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span></td>
                   <td>{{ r.assigned_to.full_name if r.assigned_to else '—' }}</td>
-                  <td>
-                    <span class="rori-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
-                  </td>
+                  <td><span class="rori-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
                   <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
                   <td><a href="{{ url_for('request_detail', req_id=r.id) }}"><i class="fas fa-eye"></i></a></td>
                 </tr>
@@ -352,24 +382,13 @@
       </div>
     </section>
 
-    <!-- ────── STAFF + INVENTORY ────── -->
     <div class="rori-grid-2">
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-user-gear"></i> Maintenance Staff Activity</h3></div>
         {% if staff_stats %}
           <div class="rori-table-wrap">
             <table class="rori-table">
-              <thead>
-                <tr>
-                  <th>Staff</th>
-                  <th>Assigned</th>
-                  <th>In Progress</th>
-                  <th>Completed</th>
-                  <th>Avg Resolution</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Staff</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg Resolution</th></tr></thead>
               <tbody>
                 {% for s in staff_stats %}
                 <tr>
@@ -389,49 +408,30 @@
       </div>
 
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-boxes-stacked"></i> Inventory Overview</h3></div>
         <div class="rori-stats-grid">
-          <div class="rori-stat">
-            <div class="val">{{ inventory.total_parts }}</div>
-            <div class="lbl">Total Parts</div>
-          </div>
-          <div class="rori-stat">
-            <div class="val" style="color:#F59E0B">{{ inventory.low_stock }}</div>
-            <div class="lbl">Low Stock</div>
-          </div>
-          <div class="rori-stat">
-            <div class="val" style="color:#EF4444">{{ inventory.out_of_stock }}</div>
-            <div class="lbl">Out of Stock</div>
-          </div>
-          <div class="rori-stat">
-            <div class="val">{{ inventory.parts_used }}</div>
-            <div class="lbl">Parts Used</div>
-          </div>
+          <div class="rori-stat"><div class="val">{{ inventory.total_parts }}</div><div class="lbl">Total Parts</div></div>
+          <div class="rori-stat"><div class="val" style="color:#F59E0B">{{ inventory.low_stock }}</div><div class="lbl">Low Stock</div></div>
+          <div class="rori-stat"><div class="val" style="color:#EF4444">{{ inventory.out_of_stock }}</div><div class="lbl">Out of Stock</div></div>
+          <div class="rori-stat"><div class="val">{{ inventory.parts_used }}</div><div class="lbl">Parts Used</div></div>
         </div>
-        <div style="margin-top:1rem;padding:.75rem 1rem;background:#100d24;border:1px solid rgba(168,85,247,0.2);border-radius:12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="margin-top:1rem;padding:.75rem 1rem;background:#111020;border:1px solid rgba(212,175,55,0.2);border-radius:12px;display:flex;justify-content:space-between;align-items:center">
           <span style="color:#9CA3AF;font-size:.8rem">Estimated Inventory Value</span>
-          <span style="font-weight:700;color:#A855F7">{{ inventory.total_value }}</span>
+          <span style="font-weight:700;color:#D4AF37">{{ inventory.total_value }}</span>
         </div>
       </div>
     </div>
 
-    <!-- ────── RECENT ACTIVITY ────── -->
     <section class="rori-section">
       <div class="rori-card">
-        <div class="rori-card-header">
-          <h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3>
-        </div>
+        <div class="rori-card-header"><h3><i class="fas fa-wave-square"></i> Recent Maintenance Activity</h3></div>
         {% if recent_activity %}
           <div class="rori-activity">
             {% for a in recent_activity %}
               <div class="rori-activity-item">
                 <div class="icon"><i class="fas fa-bolt"></i></div>
                 <div class="txt">
-                  <strong>{{ a.user }}</strong>
-                  {{ a.action }}
-                  {% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
+                  <strong>{{ a.user }}</strong> {{ a.action }}{% if a.object_type %} · {{ a.object_type }}{% if a.object_id %} #{{ a.object_id }}{% endif %}{% endif %}
                   <div class="time">{{ a.time }} · {{ a.raw_time }}</div>
                 </div>
               </div>
@@ -449,9 +449,77 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-  window.RORI_DATA = {{ chart_data|tojson }};
+window.RORI_DATA = {{ chart_data|tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+(function(){
+  'use strict';
+  function init(){
+    if (typeof Chart === 'undefined') { console.warn('Chart.js not loaded'); return; }
+    var DATA = window.RORI_DATA || {};
+    Chart.defaults.color = '#9CA3AF';
+    Chart.defaults.borderColor = 'rgba(212,175,55,0.12)';
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+    Chart.defaults.font.size = 11;
+    var tooltip = { backgroundColor:'rgba(8,8,18,0.96)', borderColor:'rgba(212,175,55,0.4)', borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:12, cornerRadius:10 };
+    var GOLD='#D4AF37', BLUE='#38BDF8', PINK='#EC4899', GREEN='#22C55E';
+    function grad(ctx,c1,c2){ var g=ctx.createLinearGradient(0,0,0,320); g.addColorStop(0,c1); g.addColorStop(1,c2); return g; }
+    function empty(el,icon,msg){ if(!el||!el.parentElement) return; el.parentElement.innerHTML='<div class="rori-empty"><i class="fas '+icon+'"></i>'+msg+'</div>'; }
 
+    (function(){
+      var el=document.getElementById('chart-trends'); if(!el) return;
+      var t=DATA.trends; if(!t||!t.labels||!t.labels.length){ empty(el,'fa-chart-line','No data for the selected filters.'); return; }
+      var ctx=el.getContext('2d');
+      new Chart(ctx,{type:'line',data:{labels:t.labels,datasets:[
+        {label:'Total',data:t.total,borderColor:GOLD,backgroundColor:grad(ctx,'rgba(212,175,55,0.35)','rgba(212,175,55,0.02)'),fill:true,tension:0.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5},
+        {label:'Completed',data:t.completed,borderColor:GREEN,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
+        {label:'Pending',data:t.pending,borderColor:PINK,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
+        {label:'In Progress',data:t.in_progress,borderColor:BLUE,backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,pointRadius:0}
+      ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
+        plugins:{legend:{position:'top',align:'end',labels:{boxWidth:8,boxHeight:8,padding:15,usePointStyle:true,pointStyle:'circle'}},tooltip:tooltip},
+        scales:{x:{grid:{color:'rgba(212,175,55,0.05)'},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:10}},y:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}}}
+      }});
+    })();
+
+    (function(){
+      var el=document.getElementById('chart-categories'); if(!el) return;
+      var c=DATA.categories; if(!c||!c.labels||!c.labels.length){ empty(el,'fa-chart-pie','No category data available.'); return; }
+      var palette=['#D4AF37','#E6C65C','#38BDF8','#22C55E','#F59E0B','#EC4899','#8B5CF6','#06B6D4','#F472B6','#10B981'];
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:c.labels,datasets:[{data:c.values,backgroundColor:palette,borderColor:'#15152A',borderWidth:3,hoverOffset:10}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'68%',
+          plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:10,usePointStyle:true,pointStyle:'circle',font:{size:10}}},
+            tooltip:{backgroundColor:tooltip.backgroundColor,borderColor:tooltip.borderColor,borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:12,cornerRadius:10,callbacks:{label:function(ctx){var p=c.percentages[ctx.dataIndex];return ' '+ctx.label+': '+ctx.parsed+' ('+p+'%)';}}}}}});
+    })();
+
+    (function(){
+      var el=document.getElementById('chart-status'); if(!el) return;
+      var s=DATA.statuses; if(!s||!s.labels||!s.labels.length){ empty(el,'fa-chart-pie','No status data available.'); return; }
+      var map={'Pending':'#F59E0B','Approved':'#3B82F6','Assigned':'#D4AF37','In Progress':'#38BDF8','Completed':'#22C55E','Verified':'#10B981','Closed':'#16A34A','Rejected':'#EF4444','Overdue':'#DC2626'};
+      var colors=s.labels.map(function(l){return map[l]||'#9CA3AF';});
+      new Chart(el.getContext('2d'),{type:'doughnut',data:{labels:s.labels,datasets:[{data:s.values,backgroundColor:colors,borderColor:'#15152A',borderWidth:3,hoverOffset:10}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'68%',
+          plugins:{legend:{position:'right',labels:{boxWidth:8,boxHeight:8,padding:10,usePointStyle:true,pointStyle:'circle',font:{size:10}}},
+            tooltip:{backgroundColor:tooltip.backgroundColor,borderColor:tooltip.borderColor,borderWidth:1,titleColor:'#fff',bodyColor:'#e5e7eb',padding:12,cornerRadius:10,callbacks:{label:function(ctx){var p=s.percentages[ctx.dataIndex];return ' '+ctx.label+': '+ctx.parsed+' ('+p+'%)';}}}}}});
+    })();
+
+    (function(){
+      var el=document.getElementById('chart-departments'); if(!el) return;
+      var d=DATA.departments; if(!d||!d.labels||!d.labels.length){ empty(el,'fa-chart-bar','No department data available.'); return; }
+      var ctx=el.getContext('2d');
+      new Chart(ctx,{type:'bar',data:{labels:d.labels,datasets:[{label:'Requests',data:d.values,backgroundColor:grad(ctx,'rgba(212,175,55,0.9)','rgba(212,175,55,0.3)'),borderRadius:8,borderSkipped:false,maxBarThickness:34}]},
+        options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:tooltip},
+          scales:{x:{beginAtZero:true,grid:{color:'rgba(212,175,55,0.06)'},ticks:{precision:0}},y:{grid:{display:false},ticks:{font:{size:11}}}}}});
+    })();
+
+    var toggle=document.getElementById('sidebar-toggle');
+    var sidebar=document.getElementById('rori-sidebar');
+    var backdrop=document.getElementById('sidebar-backdrop');
+    if(toggle&&sidebar){ toggle.addEventListener('click',function(){ sidebar.classList.toggle('open'); if(backdrop) backdrop.classList.toggle('show'); }); }
+    if(backdrop&&sidebar){ backdrop.addEventListener('click',function(){ sidebar.classList.remove('open'); backdrop.classList.remove('show'); }); }
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); } else { init(); }
+})();
+</script>
 </body>
 </html>
