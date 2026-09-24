@@ -56,7 +56,6 @@ REQUEST_STATUSES = ["Pending", "Approved", "Assigned", "In Progress", "Completed
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf", "doc", "docx", "xls", "xlsx", "csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
-HK_APPROVER_ROLES = ["SUPERVISOR", "MANAGER", "ADMIN"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -384,12 +383,12 @@ def is_housekeeping_approver(user):
         return False
     if user.role == "ADMIN":
         return True
-    if user.role == "MANAGER":
-        dept = user.department
-        if not dept:
-            return False
-        return (dept.name or "").strip().lower() == "housekeeping"
-    return False
+    if user.role != "MANAGER":
+        return False
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    if not hk_dept:
+        return False
+    return user.department_id == hk_dept.id
 
 
 def is_maintenance_manager(user):
@@ -399,12 +398,12 @@ def is_maintenance_manager(user):
         return False
     if user.role == "ADMIN":
         return True
-    if user.role == "MANAGER":
-        dept = user.department
-        if not dept:
-            return True
-        return (dept.name or "").strip().lower() != "housekeeping"
-    return False
+    if user.role != "MANAGER":
+        return False
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    if not hk_dept:
+        return True
+    return user.department_id != hk_dept.id
 
 
 def get_housekeeping_manager_users():
@@ -810,13 +809,31 @@ def seed_data():
             user.set_password("123456")
             db.session.add(user)
         else:
-            # ── FIX: keep role/name/department in sync with the seed definition.
-            # Never overwrite password (users may have changed it).
             existing.full_name = s["n"]
             existing.role = s["r"]
             existing.department_id = s["d"]
 
     db.session.commit()
+
+    # ── Startup verification ─────────────────────────────────
+    try:
+        hk = User.query.filter_by(username="kasahun").first()
+        am = User.query.filter_by(username="amir").first()
+        print("🔎 VERIFY kasahun: role=%s, dept_id=%s, dept=%s" % (
+            hk.role if hk else "MISSING",
+            hk.department_id if hk else "—",
+            (hk.department.name if hk and hk.department else "—"),
+        ))
+        print("🔎 VERIFY amir   : role=%s, dept_id=%s, dept=%s" % (
+            am.role if am else "MISSING",
+            am.department_id if am else "—",
+            (am.department.name if am and am.department else "—"),
+        ))
+        print("🔎 HK Manager count=%d   Maintenance Manager count=%d" %
+              (len(get_housekeeping_manager_users()), len(get_maintenance_manager_users())))
+    except Exception as _e:
+        print("⚠️  Startup verification failed: " + str(_e))
+
     print("✅ Seed data loaded")
 
 
@@ -860,7 +877,11 @@ def login():
           <button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግባ</button>
         </form>
         <hr class="my-4" style="border-color:rgba(245,158,11,0.2)">
-        <div class="text-center small" style="color:#94a3b8"><p class="mb-1">Admin: <b>admin / admin123</b></p><p class="mb-0">Staff: <b>tesfahun / 123456</b></p></div>
+        <div class="text-center small" style="color:#94a3b8">
+          <p class="mb-1">HK Manager: <b>kasahun / 123456</b></p>
+          <p class="mb-1">Maint Manager: <b>amir / 123456</b></p>
+          <p class="mb-0">Admin: <b>admin / admin123</b></p>
+        </div>
       </div></div>
     </div>"""
     return page("Login", login_html)
@@ -902,7 +923,7 @@ def profile():
 
 
 # ══════════════════════════════════════════════════════════════
-# REQUESTS — CREATE / LIST / DETAIL
+# REQUESTS
 # ══════════════════════════════════════════════════════════════
 @app.route("/requests")
 @login_required
@@ -1191,38 +1212,32 @@ def request_detail(req_id):
     if not wo_html:
         wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
 
-    # Top action row — admin-level workflow only
     actions = []
-
     if (req.status in ["Approved", "Assigned"]
             and (current_user.role == "ADMIN" or is_maintenance_manager(current_user))):
         actions.append(
             '<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary">'
             '<i class="fas fa-user-plus"></i> Assign Staff</a>'
         )
-
     if req.status == "Completed" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline">'
             '<button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify</button></form>'
         )
-
     if req.status == "Verified" and (current_user.role == "ADMIN" or is_maintenance_manager(current_user)):
         actions.append(
             '<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline">'
             '<button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>'
         )
-
     if current_user.role == "ADMIN" and not req.is_deleted:
         actions.append(
             '<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')">'
             '<input type="hidden" name="reason" value="Archived by admin">'
             '<button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Archive</button></form>'
         )
-
     actions_html = " ".join(actions) if actions else ""
 
-    # ── Housekeeping Manager Approval card ──────────────────────
+    # ── Housekeeping Manager Approval card ─────────────────────
     hk_block = ""
     if req.awaiting_hk_approval or req.hk_approval_status:
         hk_status = req.hk_approval_status or "Pending"
@@ -1241,7 +1256,6 @@ def request_detail(req_id):
             user_is_requester = (req.requested_by_id == current_user.id)
 
             if user_is_hk_approver and not user_is_requester:
-                # ✅ The Housekeeping Manager themselves — show big action buttons
                 hk_buttons = (
                     '<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">'
                     '<a href="' + url_for("hk_approve_request", req_id=req.id) + '" '
@@ -1268,7 +1282,6 @@ def request_detail(req_id):
                     '</script>'
                 )
             elif user_is_hk_approver and user_is_requester:
-                # HK approver viewing own request (rare)
                 hk_buttons = (
                     '<div class="alert alert-warning" style="margin-top:.75rem">'
                     '<i class="fas fa-exclamation-triangle"></i> '
@@ -1277,17 +1290,14 @@ def request_detail(req_id):
                     '</div>'
                 )
             else:
-                # Non-approver (staff/requester) viewing — neutral informative message
                 hk_buttons = (
                     '<div class="alert alert-info" style="margin-top:.75rem">'
                     '<i class="fas fa-hourglass-half"></i> '
                     'This request is waiting for <strong>' + str(hk_approver_name) +
-                    '</strong> (Housekeeping Manager) to review and approve it. '
-                    'You will be notified once a decision is made.'
+                    '</strong> (Housekeeping Manager) to review and approve it.'
                     '</div>'
                 )
         elif req.hk_approval_status == "Approved" and req.status == "Pending":
-            # After HK approval, show who is next
             mm_users = get_maintenance_manager_users()
             next_mm_name = mm_users[0].full_name if mm_users else "Maintenance / Engineering Manager"
             hk_buttons = (
@@ -1412,7 +1422,6 @@ def request_detail(req_id):
 @app.route("/hk/approvals")
 @login_required
 def hk_approvals():
-    """Housekeeping Manager's first-approval queue (Kasahun Girma)."""
     if not is_housekeeping_approver(current_user):
         abort(403)
 
@@ -1901,25 +1910,15 @@ def build_department_nav():
 
 def status_badge_class(status):
     return {
-        "Pending": "b-pending",
-        "Approved": "b-approved",
-        "Assigned": "b-assigned",
-        "In Progress": "b-inprogress",
-        "Completed": "b-completed",
-        "Verified": "b-verified",
-        "Closed": "b-closed",
-        "Rejected": "b-rejected",
-        "Overdue": "b-overdue",
+        "Pending": "b-pending", "Approved": "b-approved", "Assigned": "b-assigned",
+        "In Progress": "b-inprogress", "Completed": "b-completed",
+        "Verified": "b-verified", "Closed": "b-closed",
+        "Rejected": "b-rejected", "Overdue": "b-overdue",
     }.get(status, "b-default")
 
 
 def priority_badge_class(priority):
-    return {
-        "URGENT": "b-urgent",
-        "HIGH": "b-high",
-        "MEDIUM": "b-medium",
-        "LOW": "b-low",
-    }.get(priority, "b-default")
+    return {"URGENT": "b-urgent", "HIGH": "b-high", "MEDIUM": "b-medium", "LOW": "b-low"}.get(priority, "b-default")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1936,7 +1935,6 @@ def dashboard():
         return redirect(url_for("employee_dashboard"))
 
     args = request.args
-
     kpis = get_dashboard_kpis(args)
     trends = get_request_trends(args)
     categories = get_category_statistics(args)
@@ -1957,35 +1955,17 @@ def dashboard():
     if not all_floors:
         all_floors = sorted({r.floor for r in Room.query.all()})
 
-    chart_data = {
-        "trends": trends,
-        "categories": categories,
-        "statuses": statuses,
-        "departments": departments,
-    }
+    chart_data = {"trends": trends, "categories": categories, "statuses": statuses, "departments": departments}
 
     try:
-        return render_template(
-            "dashboard.html",
-            title="Rori Hotel Maintenance Dashboard",
-            kpis=kpis,
-            work_orders=work_orders,
-            top_locations=top_locations,
-            staff_stats=staff_stats,
-            inventory=inventory,
-            recent_activity=recent_activity,
-            recent_requests=recent_requests,
-            all_departments=all_departments,
-            all_categories=all_categories,
-            all_rooms=all_rooms,
-            all_areas=all_areas,
-            all_floors=all_floors,
-            nav_items=build_dashboard_nav(),
-            chart_data=chart_data,
+        return render_template("dashboard.html", title="Rori Hotel Maintenance Dashboard",
+            kpis=kpis, work_orders=work_orders, top_locations=top_locations,
+            staff_stats=staff_stats, inventory=inventory, recent_activity=recent_activity,
+            recent_requests=recent_requests, all_departments=all_departments,
+            all_categories=all_categories, all_rooms=all_rooms, all_areas=all_areas,
+            all_floors=all_floors, nav_items=build_dashboard_nav(), chart_data=chart_data,
             filters={k: v for k, v in args.items()},
-            status_badge_class=status_badge_class,
-            priority_badge_class=priority_badge_class,
-        )
+            status_badge_class=status_badge_class, priority_badge_class=priority_badge_class)
     except Exception as e:
         print("Dashboard render failed, falling back: " + str(e))
         fallback = (
@@ -2001,18 +1981,11 @@ def dashboard():
         return page("Dashboard", fallback)
 
 
-# ══════════════════════════════════════════════════════════════
-# EMPLOYEE DASHBOARD
-# ══════════════════════════════════════════════════════════════
 @app.route("/employee/dashboard")
 @login_required
 @role_required("EMPLOYEE")
 def employee_dashboard():
-    requests = MaintenanceRequest.query.filter_by(
-        is_deleted=False,
-        requested_by_id=current_user.id,
-    ).order_by(MaintenanceRequest.created_at.desc()).all()
-
+    requests = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
     total = len(requests)
     pending = sum(1 for r in requests if r.status == "Pending")
     in_progress = sum(1 for r in requests if r.status in ["Assigned", "In Progress"])
@@ -2020,46 +1993,33 @@ def employee_dashboard():
     rejected = sum(1 for r in requests if r.status == "Rejected")
     overdue = sum(1 for r in requests if r.is_overdue)
 
-    notifications_list = Notification.query.filter_by(
-        user_id=current_user.id
-    ).order_by(Notification.created_at.desc()).limit(5).all()
+    notifications_list = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(5).all()
 
     def badge(st):
-        return {
-            "Pending": "warning", "Approved": "primary", "Assigned": "info",
-            "In Progress": "info", "Completed": "success", "Verified": "success",
-            "Closed": "secondary", "Rejected": "danger", "Overdue": "danger",
-        }.get(st, "secondary")
+        return {"Pending": "warning", "Approved": "primary", "Assigned": "info",
+                "In Progress": "info", "Completed": "success", "Verified": "success",
+                "Closed": "secondary", "Rejected": "danger", "Overdue": "danger"}.get(st, "secondary")
 
     rows_parts = []
     for r in requests[:20]:
-        rows_parts.append(
-            '<tr>'
-            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td>'
-            '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
+        rows_parts.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td><td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
             '<td><span class="badge bg-' + badge(r.status) + '">' + str(r.status) + '</span></td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
-            '</tr>'
-        )
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td></tr>')
     rows = "".join(rows_parts)
 
     notif_html = ""
     for n in notifications_list:
-        notif_html += (
-            '<div style="padding:.6rem .8rem;background:rgba(30,41,59,0.5);border-left:3px solid #f59e0b;border-radius:10px;margin-bottom:.4rem">'
+        notif_html += ('<div style="padding:.6rem .8rem;background:rgba(30,41,59,0.5);border-left:3px solid #f59e0b;border-radius:10px;margin-bottom:.4rem">'
             '<strong style="color:#f59e0b">' + str(n.title) + '</strong>'
-            '<div style="font-size:.85rem;color:#cbd5e1;margin-top:.2rem">' + str(n.message) + '</div>'
-            '</div>'
-        )
+            '<div style="font-size:.85rem;color:#cbd5e1;margin-top:.2rem">' + str(n.message) + '</div></div>')
     if not notif_html:
         notif_html = '<p style="color:#94a3b8">No notifications yet.</p>'
 
     content = (
         '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-home"></i> My Dashboard</h3>'
-        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>'
-        '</div>'
+        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
         '<div class="row g-3 mb-4">'
         '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
         '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
@@ -2068,16 +2028,13 @@ def employee_dashboard():
         '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(rejected) + '</div><div class="metric-label">Rejected</div></div></div>'
         '<div class="col-md-2"><div class="metric-card"><div class="metric-value">' + str(overdue) + '</div><div class="metric-label">Overdue</div></div></div>'
         '</div>'
-        '<div class="row">'
-        '<div class="col-md-8"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
+        '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
         '<div class="table-responsive"><table class="table table-hover">'
         '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>'
         '<tbody>' + (rows if rows else '<tr><td colspan="5" class="text-center">No requests yet. <a href="' + url_for("request_create") + '">Create one</a>.</td></tr>') + '</tbody>'
         '</table></div></div></div>'
         '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h5>'
-        + notif_html +
-        '<a href="' + url_for("notifications") + '" class="btn btn-sm btn-secondary mt-2">View all</a>'
-        '</div></div>'
+        + notif_html + '<a href="' + url_for("notifications") + '" class="btn btn-sm btn-secondary mt-2">View all</a></div></div>'
         '</div>'
     )
     return page("My Dashboard", content)
@@ -2114,10 +2071,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .hk-user-txt small{font-size:.6rem;color:#A855F7;font-weight:700;text-transform:uppercase}
 .hk-flash{background:#14142a;border:1px solid rgba(139,92,246,0.2);color:#fff;font-size:.8rem;border-radius:12px;padding:.7rem 1rem;margin-bottom:1rem}
 .hk-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-bottom:1rem}
-.hk-c2{grid-column:span 2}
-.hk-c4{grid-column:span 4}
-.hk-c6{grid-column:span 6}
-.hk-c8{grid-column:span 8}
+.hk-c2{grid-column:span 2}.hk-c4{grid-column:span 4}.hk-c6{grid-column:span 6}.hk-c8{grid-column:span 8}
 .hk-card{background:#14142a;border:1px solid rgba(139,92,246,0.15);border-radius:18px;padding:1.1rem 1.2rem}
 .hk-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap}
 .hk-card-head h3{font-size:.85rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:.5rem}
@@ -2140,8 +2094,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .hk-kpi.p .hk-kpi-ico{background:rgba(236,72,153,0.14);color:#EC4899}
 .hk-kpi-foot{font-size:.62rem;color:#9CA3AF;display:flex;align-items:center;gap:.3rem;margin-top:.4rem}
 .hk-chart{position:relative;width:100%;height:230px}
-.hk-chart.tall{height:280px}
-.hk-chart.donut{height:230px}
+.hk-chart.tall{height:280px}.hk-chart.donut{height:230px}
 .hk-prog-list{display:flex;flex-direction:column;gap:.7rem}
 .hk-prog-row{display:flex;flex-direction:column;gap:.35rem}
 .hk-prog-top{display:flex;justify-content:space-between;font-size:.74rem}
@@ -2197,14 +2150,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 </head>
 <body>
 <div class="hk-wrap">
-
   <div class="hk-top">
     <div class="hk-title">
       <div class="hk-logo"><i class="fas fa-broom"></i></div>
-      <div>
-        <h1>{{ dept_name }} <span>Dashboard</span></h1>
-        <p>Housekeeping &amp; Room Maintenance Overview</p>
-      </div>
+      <div><h1>{{ dept_name }} <span>Dashboard</span></h1><p>Housekeeping &amp; Room Maintenance Overview</p></div>
     </div>
     <div class="hk-user">
       <div class="hk-user-av">{{ (current_user.full_name or current_user.username or 'U')[0]|upper }}</div>
@@ -2222,250 +2171,98 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   {% endwith %}
 
   <div class="hk-grid">
-    <div class="hk-c2">
-      <div class="hk-kpi">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">Total</div><div class="hk-kpi-val">{{ kpis.total }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-clipboard-list"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-list"></i> All requests</div>
-      </div>
-    </div>
-    <div class="hk-c2">
-      <div class="hk-kpi o">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">Pending</div><div class="hk-kpi-val">{{ kpis.pending }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-hourglass-half"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-circle-exclamation"></i> Awaiting</div>
-      </div>
-    </div>
-    <div class="hk-c2">
-      <div class="hk-kpi b">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">Approved</div><div class="hk-kpi-val">{{ kpis.approved }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-check-circle"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-thumbs-up"></i> Ready</div>
-      </div>
-    </div>
-    <div class="hk-c2">
-      <div class="hk-kpi p">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">In Progress</div><div class="hk-kpi-val">{{ kpis.in_progress }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-spinner"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-wrench"></i> Working</div>
-      </div>
-    </div>
-    <div class="hk-c2">
-      <div class="hk-kpi g">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">Completed</div><div class="hk-kpi-val">{{ kpis.completed }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-circle-check"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-check-double"></i> Finished</div>
-      </div>
-    </div>
-    <div class="hk-c2">
-      <div class="hk-kpi">
-        <div class="hk-kpi-top">
-          <div><div class="hk-kpi-lbl">Closed</div><div class="hk-kpi-val">{{ kpis.closed }}</div></div>
-          <div class="hk-kpi-ico"><i class="fas fa-archive"></i></div>
-        </div>
-        <div class="hk-kpi-foot"><i class="fas fa-lock"></i> Archived</div>
-      </div>
-    </div>
+    <div class="hk-c2"><div class="hk-kpi"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">Total</div><div class="hk-kpi-val">{{ kpis.total }}</div></div><div class="hk-kpi-ico"><i class="fas fa-clipboard-list"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-list"></i> All requests</div></div></div>
+    <div class="hk-c2"><div class="hk-kpi o"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">Pending</div><div class="hk-kpi-val">{{ kpis.pending }}</div></div><div class="hk-kpi-ico"><i class="fas fa-hourglass-half"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-circle-exclamation"></i> Awaiting</div></div></div>
+    <div class="hk-c2"><div class="hk-kpi b"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">Approved</div><div class="hk-kpi-val">{{ kpis.approved }}</div></div><div class="hk-kpi-ico"><i class="fas fa-check-circle"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-thumbs-up"></i> Ready</div></div></div>
+    <div class="hk-c2"><div class="hk-kpi p"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">In Progress</div><div class="hk-kpi-val">{{ kpis.in_progress }}</div></div><div class="hk-kpi-ico"><i class="fas fa-spinner"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-wrench"></i> Working</div></div></div>
+    <div class="hk-c2"><div class="hk-kpi g"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">Completed</div><div class="hk-kpi-val">{{ kpis.completed }}</div></div><div class="hk-kpi-ico"><i class="fas fa-circle-check"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-check-double"></i> Finished</div></div></div>
+    <div class="hk-c2"><div class="hk-kpi"><div class="hk-kpi-top"><div><div class="hk-kpi-lbl">Closed</div><div class="hk-kpi-val">{{ kpis.closed }}</div></div><div class="hk-kpi-ico"><i class="fas fa-archive"></i></div></div><div class="hk-kpi-foot"><i class="fas fa-lock"></i> Archived</div></div></div>
   </div>
 
   <div class="hk-grid">
-    <div class="hk-c8">
-      <div class="hk-card">
-        <div class="hk-card-head">
-          <h3><i class="fas fa-chart-area"></i> Housekeeping Request Trends</h3>
-          <span class="hk-hint">Last 14 Days</span>
-        </div>
-        <div class="hk-chart tall"><canvas id="chart-trends"></canvas></div>
-      </div>
-    </div>
-    <div class="hk-c4">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-chart-pie"></i> Status Distribution</h3></div>
-        <div class="hk-chart donut"><canvas id="chart-status"></canvas></div>
-      </div>
-    </div>
+    <div class="hk-c8"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-chart-area"></i> Housekeeping Request Trends</h3><span class="hk-hint">Last 14 Days</span></div><div class="hk-chart tall"><canvas id="chart-trends"></canvas></div></div></div>
+    <div class="hk-c4"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-chart-pie"></i> Status Distribution</h3></div><div class="hk-chart donut"><canvas id="chart-status"></canvas></div></div></div>
   </div>
 
   <div class="hk-grid">
-    <div class="hk-c4">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-building"></i> By Floor</h3></div>
-        <div class="hk-chart"><canvas id="chart-floors"></canvas></div>
-      </div>
-    </div>
-    <div class="hk-c4">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-chart-bar"></i> By Category</h3></div>
-        <div class="hk-chart"><canvas id="chart-categories"></canvas></div>
-      </div>
-    </div>
-    <div class="hk-c4">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-fire"></i> Priority</h3></div>
-        <div class="hk-chart donut"><canvas id="chart-priorities"></canvas></div>
-      </div>
-    </div>
+    <div class="hk-c4"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-building"></i> By Floor</h3></div><div class="hk-chart"><canvas id="chart-floors"></canvas></div></div></div>
+    <div class="hk-c4"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-chart-bar"></i> By Category</h3></div><div class="hk-chart"><canvas id="chart-categories"></canvas></div></div></div>
+    <div class="hk-c4"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-fire"></i> Priority</h3></div><div class="hk-chart donut"><canvas id="chart-priorities"></canvas></div></div></div>
   </div>
 
   <div class="hk-grid">
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-location-dot"></i> Top Housekeeping Areas</h3></div>
-        {% if top_locations and top_locations|length > 0 %}
-          {% set max_c = top_locations[0][1] if top_locations[0][1] > 0 else 1 %}
-          <div class="hk-prog-list">
-            {% for name, count in top_locations %}
-              <div class="hk-prog-row">
-                <div class="hk-prog-top"><span class="nm">{{ name }}</span><span class="ct">{{ count }}</span></div>
-                <div class="hk-prog-bar"><span style="width:{{ (count / max_c * 100)|round|int }}%"></span></div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-location-dot"></i>No data yet.</div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head">
-          <h3><i class="fas fa-list"></i> My Housekeeping Requests</h3>
-          <a href="{{ url_for('request_create') }}" class="hk-link"><i class="fas fa-plus"></i> New</a>
-        </div>
-        {% if my_requests and my_requests|length > 0 %}
-          <div class="hk-act">
-            {% for r in my_requests %}
-              {% set av_class = 'a2' if loop.index % 4 == 2 else 'a3' if loop.index % 4 == 3 else 'a4' if loop.index % 4 == 0 else '' %}
-              <div class="hk-act-item">
-                <div class="hk-act-av {{ av_class }}">{{ (r.request_no or 'R')[0]|upper }}</div>
-                <div class="hk-act-main">
-                  <div class="hk-act-line1">
-                    <a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a>
-                    <span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
-                    <span class="hk-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span>
-                  </div>
-                  <div class="hk-act-line2">
-                    <span><i class="fas fa-location-dot"></i> {{ r.location_name }}</span>
-                    <span><i class="fas fa-clock"></i> {{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</span>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
-        {% endif %}
-      </div>
-    </div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-location-dot"></i> Top Housekeeping Areas</h3></div>
+      {% if top_locations and top_locations|length > 0 %}
+        {% set max_c = top_locations[0][1] if top_locations[0][1] > 0 else 1 %}
+        <div class="hk-prog-list">{% for name, count in top_locations %}
+          <div class="hk-prog-row"><div class="hk-prog-top"><span class="nm">{{ name }}</span><span class="ct">{{ count }}</span></div>
+          <div class="hk-prog-bar"><span style="width:{{ (count / max_c * 100)|round|int }}%"></span></div></div>
+        {% endfor %}</div>
+      {% else %}<div class="hk-empty"><i class="fas fa-location-dot"></i>No data yet.</div>{% endif %}
+    </div></div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-list"></i> My Housekeeping Requests</h3>
+      <a href="{{ url_for('request_create') }}" class="hk-link"><i class="fas fa-plus"></i> New</a></div>
+      {% if my_requests and my_requests|length > 0 %}
+        <div class="hk-act">{% for r in my_requests %}
+          {% set av_class = 'a2' if loop.index % 4 == 2 else 'a3' if loop.index % 4 == 3 else 'a4' if loop.index % 4 == 0 else '' %}
+          <div class="hk-act-item"><div class="hk-act-av {{ av_class }}">{{ (r.request_no or 'R')[0]|upper }}</div>
+          <div class="hk-act-main"><div class="hk-act-line1">
+            <a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a>
+            <span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span>
+            <span class="hk-badge {{ priority_badge_class(r.priority) }}">{{ r.priority }}</span></div>
+            <div class="hk-act-line2"><span><i class="fas fa-location-dot"></i> {{ r.location_name }}</span>
+            <span><i class="fas fa-clock"></i> {{ r.created_at.strftime('%b %d, %H:%M') if r.created_at else '—' }}</span></div></div></div>
+        {% endfor %}</div>
+      {% else %}<div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>{% endif %}
+    </div></div>
   </div>
 
   <div class="hk-grid">
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-clock-rotate-left"></i> Latest Requests</h3></div>
-        {% if recent_requests and recent_requests|length > 0 %}
-          <table class="hk-table">
-            <thead><tr><th>Request</th><th>Location</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody>
-              {% for r in recent_requests %}
-                <tr>
-                  <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
-                  <td>{{ r.location_name }}</td>
-                  <td><span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
-                  <td style="color:#9CA3AF;font-size:.7rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-wrench"></i> Maintenance Follow-up</h3></div>
-        {% if work_orders and work_orders|length > 0 %}
-          <div class="hk-act">
-            {% for wo in work_orders %}
-              <div class="hk-act-item">
-                <div class="hk-act-av a2"><i class="fas fa-tools"></i></div>
-                <div class="hk-act-main">
-                  <div class="hk-act-line1">
-                    <a href="{{ url_for('workorder_detail', wo_id=wo.id) }}">{{ wo.work_order_no }}</a>
-                    <span class="hk-badge {{ status_badge_class(wo.status) }}">{{ wo.status }}</span>
-                  </div>
-                  <div class="hk-act-line2">
-                    <span><i class="fas fa-user"></i> {{ wo.assigned_to.full_name if wo.assigned_to else 'Unassigned' }}</span>
-                    <span><i class="fas fa-clock"></i> {{ wo.created_at.strftime('%b %d') if wo.created_at else '—' }}</span>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-wrench"></i>No work orders yet.</div>
-        {% endif %}
-      </div>
-    </div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-clock-rotate-left"></i> Latest Requests</h3></div>
+      {% if recent_requests and recent_requests|length > 0 %}
+        <table class="hk-table"><thead><tr><th>Request</th><th>Location</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody>{% for r in recent_requests %}<tr>
+          <td><a href="{{ url_for('request_detail', req_id=r.id) }}">{{ r.request_no }}</a></td>
+          <td>{{ r.location_name }}</td>
+          <td><span class="hk-badge {{ status_badge_class(r.status) }}">{{ r.status }}</span></td>
+          <td style="color:#9CA3AF;font-size:.7rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<div class="hk-empty"><i class="fas fa-inbox"></i>No requests yet.</div>{% endif %}
+    </div></div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-wrench"></i> Maintenance Follow-up</h3></div>
+      {% if work_orders and work_orders|length > 0 %}
+        <div class="hk-act">{% for wo in work_orders %}
+          <div class="hk-act-item"><div class="hk-act-av a2"><i class="fas fa-tools"></i></div>
+          <div class="hk-act-main"><div class="hk-act-line1">
+            <a href="{{ url_for('workorder_detail', wo_id=wo.id) }}">{{ wo.work_order_no }}</a>
+            <span class="hk-badge {{ status_badge_class(wo.status) }}">{{ wo.status }}</span></div>
+            <div class="hk-act-line2"><span><i class="fas fa-user"></i> {{ wo.assigned_to.full_name if wo.assigned_to else 'Unassigned' }}</span>
+            <span><i class="fas fa-clock"></i> {{ wo.created_at.strftime('%b %d') if wo.created_at else '—' }}</span></div></div></div>
+        {% endfor %}</div>
+      {% else %}<div class="hk-empty"><i class="fas fa-wrench"></i>No work orders yet.</div>{% endif %}
+    </div></div>
   </div>
 
   <div class="hk-grid">
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head"><h3><i class="fas fa-wave-square"></i> Housekeeping Activity</h3></div>
-        {% if activity and activity|length > 0 %}
-          <div class="hk-feed">
-            {% for a in activity %}
-              <div class="hk-feed-item">
-                <div class="hk-feed-ic"><i class="fas fa-bolt"></i></div>
-                <div class="hk-feed-b">
-                  <div class="tx"><strong>{{ a.user }}</strong>{% if a.status %} set <strong>{{ a.status }}</strong>{% endif %}{% if a.notes %} — {{ a.notes }}{% endif %}</div>
-                  <div class="tm">{{ a.time }}</div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="hk-c6">
-      <div class="hk-card">
-        <div class="hk-card-head">
-          <h3><i class="fas fa-bell"></i> Notifications</h3>
-          <a href="{{ url_for('notifications') }}" class="hk-link">View all</a>
-        </div>
-        {% if notifications_list and notifications_list|length > 0 %}
-          <div class="hk-feed">
-            {% for n in notifications_list %}
-              <div class="hk-feed-item {% if not n.is_read %}unread{% endif %}">
-                <div class="hk-feed-ic"><i class="fas fa-envelope"></i></div>
-                <div class="hk-feed-b">
-                  <div class="tx"><strong>{{ n.title }}</strong>{% if n.message %} — {{ n.message }}{% endif %}</div>
-                  <div class="tm">{{ n.created_at.strftime('%b %d, %H:%M') if n.created_at else '' }}</div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="hk-empty"><i class="fas fa-bell"></i>No notifications yet.</div>
-        {% endif %}
-      </div>
-    </div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-wave-square"></i> Housekeeping Activity</h3></div>
+      {% if activity and activity|length > 0 %}
+        <div class="hk-feed">{% for a in activity %}
+          <div class="hk-feed-item"><div class="hk-feed-ic"><i class="fas fa-bolt"></i></div>
+          <div class="hk-feed-b"><div class="tx"><strong>{{ a.user }}</strong>{% if a.status %} set <strong>{{ a.status }}</strong>{% endif %}{% if a.notes %} — {{ a.notes }}{% endif %}</div>
+          <div class="tm">{{ a.time }}</div></div></div>
+        {% endfor %}</div>
+      {% else %}<div class="hk-empty"><i class="fas fa-wave-square"></i>No recent activity.</div>{% endif %}
+    </div></div>
+    <div class="hk-c6"><div class="hk-card"><div class="hk-card-head"><h3><i class="fas fa-bell"></i> Notifications</h3>
+      <a href="{{ url_for('notifications') }}" class="hk-link">View all</a></div>
+      {% if notifications_list and notifications_list|length > 0 %}
+        <div class="hk-feed">{% for n in notifications_list %}
+          <div class="hk-feed-item {% if not n.is_read %}unread{% endif %}"><div class="hk-feed-ic"><i class="fas fa-envelope"></i></div>
+          <div class="hk-feed-b"><div class="tx"><strong>{{ n.title }}</strong>{% if n.message %} — {{ n.message }}{% endif %}</div>
+          <div class="tm">{{ n.created_at.strftime('%b %d, %H:%M') if n.created_at else '' }}</div></div></div>
+        {% endfor %}</div>
+      {% else %}<div class="hk-empty"><i class="fas fa-bell"></i>No notifications yet.</div>{% endif %}
+    </div></div>
   </div>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -2629,13 +2426,8 @@ def department_dashboard():
     dept_name = current_user.department.name if current_user.department else "Housekeeping"
 
     chart_data = {
-        "trends": {
-            "labels":      trend_labels,
-            "total":       trend_total,
-            "completed":   trend_completed,
-            "pending":     trend_pending,
-            "in_progress": trend_inprogress,
-        },
+        "trends": {"labels": trend_labels, "total": trend_total, "completed": trend_completed,
+                   "pending": trend_pending, "in_progress": trend_inprogress},
         "statuses":   {"labels": status_labels, "values": status_values},
         "categories": {"labels": category_labels, "values": category_values},
         "floors":     {"labels": floor_labels, "values": floor_values},
@@ -2646,22 +2438,14 @@ def department_dashboard():
         HK_DASHBOARD_TEMPLATE,
         title="Housekeeping Dashboard",
         dept_name=dept_name,
-        kpis={
-            "total": total, "pending": pending, "approved": approved,
-            "in_progress": in_progress, "completed": completed, "verified": verified,
-            "closed": closed, "rejected": rejected, "overdue": overdue,
-        },
-        recent_requests=requests[:6],
-        my_requests=requests[:5],
-        top_locations=top_locations,
-        activity=activity,
-        work_orders=work_orders,
-        notifications_list=notifications_list,
-        unread_count=unread_count,
-        chart_data=chart_data,
-        nav_items=build_department_nav(),
-        status_badge_class=status_badge_class,
-        priority_badge_class=priority_badge_class,
+        kpis={"total": total, "pending": pending, "approved": approved,
+              "in_progress": in_progress, "completed": completed, "verified": verified,
+              "closed": closed, "rejected": rejected, "overdue": overdue},
+        recent_requests=requests[:6], my_requests=requests[:5],
+        top_locations=top_locations, activity=activity, work_orders=work_orders,
+        notifications_list=notifications_list, unread_count=unread_count,
+        chart_data=chart_data, nav_items=build_department_nav(),
+        status_badge_class=status_badge_class, priority_badge_class=priority_badge_class,
     )
 
 
@@ -2722,27 +2506,19 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
 </head>
 <body>
 <div class="wrap">
-
   <div class="top">
-    <div>
-      <h1>Housekeeping <span>Approval</span></h1>
-      <p>Review and sign the maintenance request before submitting to Maintenance Manager.</p>
-    </div>
-    <a href="{{ url_for('request_detail', req_id=req.id) }}" class="btn-back">
-      <i class="fas fa-arrow-left"></i> Back to Request
-    </a>
+    <div><h1>Housekeeping <span>Approval</span></h1>
+      <p>Review and sign the maintenance request before submitting to Maintenance Manager.</p></div>
+    <a href="{{ url_for('request_detail', req_id=req.id) }}" class="btn-back"><i class="fas fa-arrow-left"></i> Back to Request</a>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for cat, msg in messages %}
-        <div class="alert alert-{{ 'danger' if cat == 'danger' else 'info' }}">{{ msg }}</div>
-      {% endfor %}
-    {% endif %}
+    {% if messages %}{% for cat, msg in messages %}
+      <div class="alert alert-{{ 'danger' if cat == 'danger' else 'info' }}">{{ msg }}</div>
+    {% endfor %}{% endif %}
   {% endwith %}
 
   <div class="grid">
-
     <div class="card">
       <h3><i class="fas fa-clipboard-list"></i> Request Details</h3>
       <table>
@@ -2777,32 +2553,23 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
         <input type="hidden" name="action" id="action_field" value="approve">
 
         <label style="font-size:.75rem;color:#9CA3AF;font-weight:600;display:block;margin-bottom:.35rem">
-          Digital Signature <span style="color:#EF4444">*</span>
-        </label>
-        <div class="sig-wrap">
-          <canvas id="signature-pad"></canvas>
-        </div>
+          Digital Signature <span style="color:#EF4444">*</span></label>
+        <div class="sig-wrap"><canvas id="signature-pad"></canvas></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
           <span class="sig-hint">Sign inside the box above.</span>
           <button type="button" class="btn-clear" id="clear-sig"><i class="fas fa-eraser"></i> Clear</button>
         </div>
 
         <label style="font-size:.75rem;color:#9CA3AF;font-weight:600;display:block;margin-bottom:.35rem">
-          Notes (optional)
-        </label>
+          Notes (optional)</label>
         <textarea name="notes" placeholder="Optional remarks…"></textarea>
 
         <div class="actions">
-          <button type="submit" class="btn btn-approve" id="btn-approve">
-            <i class="fas fa-check-circle"></i> Approve &amp; Submit
-          </button>
-          <button type="submit" class="btn btn-reject" id="btn-reject">
-            <i class="fas fa-times-circle"></i> Reject
-          </button>
+          <button type="submit" class="btn btn-approve" id="btn-approve"><i class="fas fa-check-circle"></i> Approve &amp; Submit</button>
+          <button type="submit" class="btn btn-reject" id="btn-reject"><i class="fas fa-times-circle"></i> Reject</button>
         </div>
       </form>
     </div>
-
   </div>
 </div>
 
@@ -2812,14 +2579,7 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
   'use strict';
   var canvas = document.getElementById('signature-pad');
   if (!canvas || typeof SignaturePad === 'undefined') return;
-
-  var signaturePad = new SignaturePad(canvas, {
-    backgroundColor: 'rgb(255,255,255)',
-    penColor: 'rgb(0,0,0)',
-    minWidth: 1,
-    maxWidth: 3
-  });
-
+  var signaturePad = new SignaturePad(canvas, {backgroundColor: 'rgb(255,255,255)', penColor: 'rgb(0,0,0)', minWidth: 1, maxWidth: 3});
   function resizeCanvas() {
     var ratio = Math.max(window.devicePixelRatio || 1, 1);
     var data = signaturePad.toData();
@@ -2831,43 +2591,24 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
   }
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
-
-  document.getElementById('clear-sig').addEventListener('click', function(){
-    signaturePad.clear();
-  });
-
+  document.getElementById('clear-sig').addEventListener('click', function(){ signaturePad.clear(); });
   var form = document.getElementById('approve-form');
   var sigField = document.getElementById('signature_data');
   var actionField = document.getElementById('action_field');
-
   document.getElementById('btn-approve').addEventListener('click', function(e){
     actionField.value = 'approve';
-    if (signaturePad.isEmpty()) {
-      e.preventDefault();
-      alert('Please sign before approving.');
-      return;
-    }
+    if (signaturePad.isEmpty()) { e.preventDefault(); alert('Please sign before approving.'); return; }
     sigField.value = signaturePad.toDataURL('image/png');
   });
-
   document.getElementById('btn-reject').addEventListener('click', function(e){
     actionField.value = 'reject';
     var notes = form.querySelector('textarea[name="notes"]').value.trim();
-    if (!notes) {
-      e.preventDefault();
-      alert('Please write a reason for rejection.');
-      return;
-    }
+    if (!notes) { e.preventDefault(); alert('Please write a reason for rejection.'); return; }
     sigField.value = signaturePad.isEmpty() ? '' : signaturePad.toDataURL('image/png');
   });
-
   form.addEventListener('submit', function(e){
     if (actionField.value === 'approve') {
-      if (signaturePad.isEmpty()) {
-        e.preventDefault();
-        alert('Please sign before approving.');
-        return false;
-      }
+      if (signaturePad.isEmpty()) { e.preventDefault(); alert('Please sign before approving.'); return false; }
       sigField.value = signaturePad.toDataURL('image/png');
     }
   });
@@ -2880,17 +2621,12 @@ textarea:focus{border-color:#A855F7;box-shadow:0 0 0 3px rgba(139,92,246,0.12)}
 @app.route("/requests/<int:req_id>/hk-approve", methods=["GET", "POST"])
 @login_required
 def hk_approve_request(req_id):
-    # FIRST approval — Housekeeping Manager only (Kasahun Girma)
     if not is_housekeeping_approver(current_user):
         abort(403)
-
     req = get_or_404(MaintenanceRequest, req_id)
-
-    # Housekeeping staff must not approve their own request
     if req.requested_by_id == current_user.id:
         flash("You cannot approve your own request.", "danger")
         return redirect(url_for("request_detail", req_id=req_id))
-
     if not req.awaiting_hk_approval:
         flash("This request is not awaiting Housekeeping approval.", "warning")
         return redirect(url_for("request_detail", req_id=req_id))
@@ -2904,7 +2640,6 @@ def hk_approve_request(req_id):
             if not signature or not signature.startswith("data:image/"):
                 flash("A digital signature is required to approve.", "danger")
                 return redirect(url_for("hk_approve_request", req_id=req_id))
-
             req.hk_approved_by_id = current_user.id
             req.hk_approved_at = datetime.utcnow()
             req.hk_approval_status = "Approved"
@@ -2912,40 +2647,19 @@ def hk_approve_request(req_id):
             req.hk_approval_notes = notes or "Approved by Housekeeping Manager"
             req.awaiting_hk_approval = False
             req.status = "Pending"
-
-            log_status_change(
-                req.id, "HK Approved",
-                notes="HK Approved by " + str(current_user.full_name)
-            )
-            log_status_change(
-                req.id, "Pending Maintenance Manager Approval",
-                notes="Forwarded to Maintenance Manager"
-            )
+            log_status_change(req.id, "HK Approved", notes="HK Approved by " + str(current_user.full_name))
+            log_status_change(req.id, "Pending Maintenance Manager Approval", notes="Forwarded to Maintenance Manager")
             log_audit("HK Approve", "MaintenanceRequest", req.id, "awaiting_hk", "hk_approved")
-
             mm_users = get_maintenance_manager_users()
             admins = User.query.filter(User.role == "ADMIN", User.active == True).all()
             recipients = [u.id for u in mm_users] + [u.id for u in admins]
-            notify_users(
-                recipients, req.id,
-                "📬 HK Approved — Pending Your Approval",
-                "Request " + str(req.request_no) +
-                " was approved by Housekeeping Manager " +
-                str(current_user.full_name) +
-                ". It now awaits Maintenance Manager approval.",
-                "Pending Maintenance Approval",
-                link=url_for("request_detail", req_id=req.id),
-            )
-
-            notify_users(
-                [req.requested_by_id], req.id,
-                "✅ Approved by Housekeeping",
-                "Your request " + str(req.request_no) +
-                " was approved by Housekeeping Manager and sent to Maintenance Manager.",
-                "HK Approved",
-                link=url_for("request_detail", req_id=req.id),
-            )
-
+            notify_users(recipients, req.id, "📬 HK Approved — Pending Your Approval",
+                "Request " + str(req.request_no) + " was approved by Housekeeping Manager " +
+                str(current_user.full_name) + ". It now awaits Maintenance Manager approval.",
+                "Pending Maintenance Approval", link=url_for("request_detail", req_id=req.id))
+            notify_users([req.requested_by_id], req.id, "✅ Approved by Housekeeping",
+                "Your request " + str(req.request_no) + " was approved by Housekeeping Manager and sent to Maintenance Manager.",
+                "HK Approved", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
             flash("✅ Approved and submitted to Maintenance Manager.", "success")
             return redirect(url_for("request_detail", req_id=req_id))
@@ -2957,32 +2671,17 @@ def hk_approve_request(req_id):
             req.hk_approval_notes = notes or "Rejected by Housekeeping Manager"
             req.awaiting_hk_approval = False
             req.status = "Rejected"
-
-            log_status_change(
-                req.id, "HK Rejected",
-                notes="HK Rejected by " + str(current_user.full_name) +
-                      ": " + req.hk_approval_notes
-            )
+            log_status_change(req.id, "HK Rejected",
+                notes="HK Rejected by " + str(current_user.full_name) + ": " + req.hk_approval_notes)
             log_audit("HK Reject", "MaintenanceRequest", req.id, "awaiting_hk", "hk_rejected")
-
-            notify_users(
-                [req.requested_by_id], req.id,
-                "❌ Rejected by Housekeeping",
-                "Your request " + str(req.request_no) +
-                " was rejected: " + req.hk_approval_notes,
-                "HK Rejected",
-                link=url_for("request_detail", req_id=req_id),
-            )
-
+            notify_users([req.requested_by_id], req.id, "❌ Rejected by Housekeeping",
+                "Your request " + str(req.request_no) + " was rejected: " + req.hk_approval_notes,
+                "HK Rejected", link=url_for("request_detail", req_id=req_id))
             db.session.commit()
             flash("Request rejected.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
 
-    return render_template_string(
-        HK_APPROVE_TEMPLATE,
-        req=req,
-        title="Housekeeping Approval",
-    )
+    return render_template_string(HK_APPROVE_TEMPLATE, req=req, title="Housekeeping Approval")
 
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
@@ -2990,57 +2689,34 @@ def hk_approve_request(req_id):
 def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
-
         if current_user.role != "ADMIN" and is_housekeeping_approver(current_user):
             flash("Housekeeping Manager performs the FIRST approval only. "
-                  "The second approval is done by the Maintenance Manager.",
-                  "danger")
+                  "The second approval is done by the Maintenance Manager.", "danger")
             return redirect(url_for("request_detail", req_id=req_id))
-
         if req.awaiting_hk_approval:
             flash("This request must be approved by Housekeeping Manager first.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
-
         if req.hk_approval_status == "Rejected":
             flash("This request was rejected by Housekeeping.", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
-
         if req.status != "Pending":
             flash("Not pending", "warning")
             return redirect(url_for("request_detail", req_id=req_id))
-
         req.status = "Approved"
         req.manager_id = current_user.id
-
-        log_status_change(
-            req.id, "Approved",
-            notes="Approved by " + str(current_user.full_name) +
-                  " (Maintenance Manager)"
-        )
+        log_status_change(req.id, "Approved", notes="Approved by " + str(current_user.full_name) + " (Maintenance Manager)")
         log_audit("Approve", "MaintenanceRequest", req.id, "Pending", "Approved")
-
         existing = WorkOrder.query.filter_by(request_id=req.id).first()
         if not existing:
-            wo = WorkOrder(
-                work_order_no=work_order_no_generator(),
-                request_id=req.id,
-                assigned_to_id=None,
-                status="Pending",
-            )
+            wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=None, status="Pending")
             db.session.add(wo)
             db.session.flush()
             log_audit("Create", "WorkOrder", wo.id, new_value=wo.work_order_no)
             log_status_change(req.id, "WO Created", notes="WO " + str(wo.work_order_no))
             notify_maintenance_staff(req, wo)
-
-        notify_users(
-            [req.requested_by_id], req.id,
-            "Request Approved",
+        notify_users([req.requested_by_id], req.id, "Request Approved",
             "Request " + str(req.request_no) + " approved by Maintenance Manager",
-            "Approved",
-            link=url_for("request_detail", req_id=req.id),
-        )
-
+            "Approved", link=url_for("request_detail", req_id=req.id))
         db.session.commit()
         flash("✅ Request approved!", "success")
     except Exception as e:
@@ -3176,7 +2852,6 @@ def workorders_list():
         return redirect(url_for("department_dashboard"))
     if current_user.role == "EMPLOYEE":
         return redirect(url_for("employee_dashboard"))
-
     if current_user.role in STAFF_ROLES:
         wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id, WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
     else:
@@ -3213,11 +2888,9 @@ def workorders_list():
 def workorder_create():
     req_id = request.args.get("request_id", type=int)
     req = get_one(MaintenanceRequest, req_id) if req_id else None
-
     if current_user.role != "ADMIN" and not is_maintenance_manager(current_user):
         flash("Only the Maintenance Manager can assign technical staff.", "danger")
         return redirect(url_for("requests_list"))
-
     users = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     user_opts = "".join('<option value="' + str(u.id) + '">' + str(u.full_name) + ' (' + str(u.role) + ')</option>' for u in users)
 
@@ -3297,14 +2970,10 @@ def workorder_detail(wo_id):
             remove_btn = ('<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(&#39;Remove this part? Stock will be restored.&#39;)">'
                 '<button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i> Remove</button></form>')
         parts_rows_parts.append(
-            '<tr><td>' + str(pname) + '</td>'
-            '<td>' + str(psupplier) + '</td>'
-            '<td>' + str(p.quantity) + '</td>'
-            '<td>' + str(punit) + '</td>'
-            '<td>' + str(p.unit_cost or 0) + '</td>'
-            '<td>' + str(line_total) + '</td>'
-            '<td>' + remove_btn + '</td></tr>'
-        )
+            '<tr><td>' + str(pname) + '</td><td>' + str(psupplier) + '</td>'
+            '<td>' + str(p.quantity) + '</td><td>' + str(punit) + '</td>'
+            '<td>' + str(p.unit_cost or 0) + '</td><td>' + str(line_total) + '</td>'
+            '<td>' + remove_btn + '</td></tr>')
     parts_rows = "".join(parts_rows_parts)
     add_part_btn = ""
     if can_manage_parts and wo.status in ["Assigned", "In Progress"]:
@@ -3315,8 +2984,7 @@ def workorder_detail(wo_id):
         '</div><div class="table-responsive"><table class="table">'
         '<thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Unit Cost</th><th>Total</th><th></th></tr></thead>'
         '<tbody>' + (parts_rows if parts_rows else '<tr><td colspan="7" class="text-center" style="color:#94a3b8">No parts</td></tr>') + '</tbody>'
-        '</table></div>'
-        '<p class="text-end mb-0"><b>Total: ' + str(parts_total) + '</b></p></div>')
+        '</table></div><p class="text-end mb-0"><b>Total: ' + str(parts_total) + '</b></p></div>')
 
     completion_html = ""
     if wo.completion_photo:
@@ -3328,26 +2996,18 @@ def workorder_detail(wo_id):
     actions = ""
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
         if wo.status == "Assigned":
-            start_url = url_for("workorder_start", wo_id=wo.id)
-            actions += ('<form method="post" action="' + start_url + '">'
-                '<button type="submit" class="btn btn-warning mb-2 w-100">'
-                '<i class="fas fa-play"></i> Start Work</button></form>')
+            actions += ('<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '">'
+                '<button type="submit" class="btn btn-warning mb-2 w-100"><i class="fas fa-play"></i> Start Work</button></form>')
         if wo.status == "In Progress":
-            complete_url = url_for("workorder_complete", wo_id=wo.id)
-            actions += ('<a href="' + complete_url + '" class="btn btn-success mb-2 w-100">'
+            actions += ('<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn btn-success mb-2 w-100">'
                 '<i class="fas fa-check"></i> Complete Work</a>')
-
     if (current_user.role == "ADMIN" or is_maintenance_manager(current_user)) and wo.status == "Completed":
-        verify_url = url_for("workorder_verify", wo_id=wo.id)
-        actions += ('<form method="post" action="' + verify_url + '">'
-            '<button type="submit" class="btn btn-info mb-2 w-100">'
-            '<i class="fas fa-check-double"></i> ✅ Verify</button></form>')
+        actions += ('<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '">'
+            '<button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify</button></form>')
 
-    back_url = url_for("workorders_list")
     content = ('<div class="d-flex justify-content-between mb-3">'
         '<h3 style="color:#f59e0b">🔧 Work Order ' + str(wo.work_order_no) + '</h3>'
-        '<a href="' + back_url + '" class="btn btn-secondary btn-sm">'
-        '<i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<a href="' + url_for("workorders_list") + '" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="row"><div class="col-md-8"><div class="card"><table class="table">'
         '<tr><th style="width:150px;color:#94a3b8">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr>'
@@ -3532,15 +3192,10 @@ def suppliers_list():
             actions += ('<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(&#39;Deactivate this supplier?&#39;)">'
                 '<button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-ban"></i> Deactivate</button></form>')
         rows_parts.append(
-            '<tr><td>' + str(s.id) + '</td>'
-            '<td>' + str(s.company_name) + '</td>'
-            '<td>' + str(s.contact_person or "\u2014") + '</td>'
-            '<td>' + str(s.phone or "\u2014") + '</td>'
-            '<td>' + str(s.email or "\u2014") + '</td>'
-            '<td>' + str(s.address or "\u2014") + '</td>'
-            '<td>' + badge + '</td>'
-            '<td>' + actions + '</td></tr>'
-        )
+            '<tr><td>' + str(s.id) + '</td><td>' + str(s.company_name) + '</td>'
+            '<td>' + str(s.contact_person or "\u2014") + '</td><td>' + str(s.phone or "\u2014") + '</td>'
+            '<td>' + str(s.email or "\u2014") + '</td><td>' + str(s.address or "\u2014") + '</td>'
+            '<td>' + badge + '</td><td>' + actions + '</td></tr>')
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b"><i class="fas fa-truck"></i> Suppliers</h3>'
         '<a class="btn btn-primary mb-3" href="' + url_for("supplier_add") + '"><i class="fas fa-plus-circle"></i> Add Supplier</a>'
@@ -3568,19 +3223,13 @@ def supplier_add():
             return page("Add Supplier", supplier_form_html(None, url_for("supplier_add"), False))
         try:
             status = request.form.get("status", "Active")
-            s = Supplier(
-                company_name=name,
-                contact_person=request.form.get("contact_person", "").strip(),
-                phone=request.form.get("phone", "").strip(),
-                email=email,
+            s = Supplier(company_name=name, contact_person=request.form.get("contact_person", "").strip(),
+                phone=request.form.get("phone", "").strip(), email=email,
                 address=request.form.get("address", "").strip(),
                 tax_number=request.form.get("tax_number", "").strip(),
                 notes=request.form.get("notes", "").strip(),
-                status=status,
-                is_active=(status == "Active"),
-            )
-            db.session.add(s)
-            db.session.flush()
+                status=status, is_active=(status == "Active"))
+            db.session.add(s); db.session.flush()
             log_audit("Supplier Created", "Supplier", s.id, new_value=name)
             db.session.commit()
             flash("\u2705 Supplier saved", "success")
@@ -3688,19 +3337,14 @@ def inventory_add():
             flash("A part with this name already exists", "warning")
             return redirect(url_for("inventory_add"))
         try:
-            p = InventoryPart(
-                part_name=name,
-                category=request.form.get("category", "").strip(),
+            p = InventoryPart(part_name=name, category=request.form.get("category", "").strip(),
                 quantity=request.form.get("quantity", type=float) or 0,
                 minimum_stock=request.form.get("minimum_stock", type=float) or 5,
                 unit=request.form.get("unit", "pcs").strip() or "pcs",
                 unit_cost=request.form.get("unit_cost", type=float) or 0,
                 storage_location=request.form.get("storage_location", "").strip(),
-                status="Active",
-                supplier_id=request.form.get("supplier_id", type=int),
-            )
-            db.session.add(p)
-            db.session.flush()
+                status="Active", supplier_id=request.form.get("supplier_id", type=int))
+            db.session.add(p); db.session.flush()
             log_audit("Inventory Part Created", "InventoryPart", p.id, new_value=name)
             db.session.commit()
             flash("\u2705 Part saved", "success")
@@ -3850,11 +3494,9 @@ def notifications():
         rows_parts.append(
             '<tr class="' + cls + '">'
             '<td><a href="' + link + '" style="color:#f59e0b;font-weight:600">' + str(n.title) + '</a></td>'
-            '<td>' + str(n.message) + '</td>'
-            '<td>' + str(n.notification_type) + '</td>'
+            '<td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td>'
             '<td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td>'
-            '<td>' + read_action + '</td></tr>'
-        )
+            '<td>' + read_action + '</td></tr>')
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h3>'
         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
@@ -3892,8 +3534,7 @@ def rooms_list():
     rooms = Room.query.order_by(Room.room_number).all()
     rows = "".join('<tr><td>' + str(r.room_number) + '</td><td>' + str(r.floor) + '</td><td>' + str(r.status) + '</td></tr>' for r in rooms)
     content = ('<h3 style="color:#f59e0b">Rooms</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead>'
-        '<tbody>' + rows + '</tbody></table></div>')
+        '<thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Rooms", content)
 
 
@@ -3903,8 +3544,7 @@ def areas_list():
     areas = Area.query.order_by(Area.name).all()
     rows = "".join('<tr><td>' + str(a.name) + '</td><td>' + str(a.department) + '</td></tr>' for a in areas)
     content = ('<h3 style="color:#f59e0b">Areas</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Name</th><th>Dept</th></tr></thead>'
-        '<tbody>' + rows + '</tbody></table></div>')
+        '<thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Areas", content)
 
 
@@ -3923,15 +3563,11 @@ def inventory_list():
         sup_name = p.supplier.company_name if p.supplier else "\u2014"
         edit_url = url_for("inventory_edit", part_id=p.id)
         rows_parts.append(
-            '<tr><td>' + str(p.part_name) + '</td>'
-            '<td>' + str(p.category or "\u2014") + '</td>'
-            '<td>' + str(sup_name) + '</td>'
-            '<td>' + str(p.quantity) + '</td>'
-            '<td>' + str(p.unit or "pcs") + '</td>'
-            '<td>' + str(p.unit_cost or 0) + '</td>'
+            '<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "\u2014") + '</td>'
+            '<td>' + str(sup_name) + '</td><td>' + str(p.quantity) + '</td>'
+            '<td>' + str(p.unit or "pcs") + '</td><td>' + str(p.unit_cost or 0) + '</td>'
             '<td>' + stock_badge + '</td>'
-            '<td><a class="btn btn-sm btn-info" href="' + edit_url + '"><i class="fas fa-edit"></i> Edit</a></td></tr>'
-        )
+            '<td><a class="btn btn-sm btn-info" href="' + edit_url + '"><i class="fas fa-edit"></i> Edit</a></td></tr>')
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b"><i class="fas fa-boxes"></i> Inventory</h3>'
         '<a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a>'
@@ -3948,8 +3584,7 @@ def employees_list():
     emps = Employee.query.all()
     rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td></tr>' for e in emps)
     content = ('<h3 style="color:#f59e0b">Employees</h3><div class="card"><table class="table">'
-        '<thead><tr><th>ID</th><th>Name</th><th>Title</th></tr></thead>'
-        '<tbody>' + rows + '</tbody></table></div>')
+        '<thead><tr><th>ID</th><th>Name</th><th>Title</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Employees", content)
 
 
@@ -3975,9 +3610,8 @@ def audit_logs():
     rows_parts = []
     for a in logs:
         user_name = a.user.full_name if a.user else "System"
-        obj_type = a.object_type or ""
         date_str = a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""
-        rows_parts.append('<tr><td>' + str(user_name) + '</td><td>' + str(a.action) + '</td><td>' + str(obj_type) + '</td><td>' + str(date_str) + '</td></tr>')
+        rows_parts.append('<tr><td>' + str(user_name) + '</td><td>' + str(a.action) + '</td><td>' + str(a.object_type or "") + '</td><td>' + str(date_str) + '</td></tr>')
     rows = "".join(rows_parts)
     content = ('<h3 style="color:#f59e0b">Audit Log</h3><div class="card"><table class="table">'
         '<thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead>'
@@ -4006,8 +3640,7 @@ def backup_now():
         dst = sqlite3.connect(os.path.join(BACKUP_FOLDER, filename))
         with dst:
             src.backup(dst)
-        src.close()
-        dst.close()
+        src.close(); dst.close()
         flash("Backup created: " + filename, "success")
     except Exception as e:
         flash("Error: " + str(e), "danger")
@@ -4038,34 +3671,77 @@ def reports():
 @app.route("/debug")
 def debug():
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    kasahun = User.query.filter_by(username="kasahun").first()
+    amir = User.query.filter_by(username="amir").first()
     return jsonify({
         "users": User.query.count(),
-        "dept_users": User.query.filter_by(role="DEPARTMENT").count(),
+        "housekeeping_department": {
+            "id": hk_dept.id if hk_dept else None,
+            "name": hk_dept.name if hk_dept else None,
+        },
+        "kasahun": {
+            "exists": bool(kasahun),
+            "username": kasahun.username if kasahun else None,
+            "full_name": kasahun.full_name if kasahun else None,
+            "role": kasahun.role if kasahun else None,
+            "department_id": kasahun.department_id if kasahun else None,
+            "department_name": kasahun.department.name if kasahun and kasahun.department else None,
+            "is_hk_approver": bool(kasahun and is_housekeeping_approver(kasahun)),
+        },
+        "amir": {
+            "exists": bool(amir),
+            "username": amir.username if amir else None,
+            "full_name": amir.full_name if amir else None,
+            "role": amir.role if amir else None,
+            "department_id": amir.department_id if amir else None,
+            "is_maintenance_manager": bool(amir and is_maintenance_manager(amir)),
+        },
         "housekeeping_managers": [
-            {"username": u.username, "full_name": u.full_name, "role": u.role,
-             "dept": u.department.name if u.department else None}
-            for u in (User.query.filter_by(role="MANAGER", department_id=hk_dept.id).all() if hk_dept else [])
+            {"username": u.username, "full_name": u.full_name}
+            for u in get_housekeeping_manager_users()
         ],
         "maintenance_managers": [
-            {"username": u.username, "full_name": u.full_name, "role": u.role,
-             "dept": u.department.name if u.department else None}
+            {"username": u.username, "full_name": u.full_name}
             for u in get_maintenance_manager_users()
         ],
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "awaiting_hk": MaintenanceRequest.query.filter_by(awaiting_hk_approval=True).count(),
-        "deleted_requests": MaintenanceRequest.query.filter_by(is_deleted=True).count(),
         "work_orders": WorkOrder.query.count(),
-        "unassigned_wos": WorkOrder.query.filter(WorkOrder.assigned_to_id.is_(None)).count(),
-        "notifications": Notification.query.count(),
     })
+
+
+@app.route("/debug/fix-kasahun")
+def debug_fix_kasahun():
+    """Emergency route: force Kasahun's role and department to be correct."""
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    if not hk_dept:
+        return jsonify({"error": "Housekeeping department not found"}), 404
+    kasahun = User.query.filter_by(username="kasahun").first()
+    if not kasahun:
+        kasahun = User(username="kasahun", full_name="Kasahun Girma", role="MANAGER", department_id=hk_dept.id)
+        kasahun.set_password("123456")
+        db.session.add(kasahun)
+        db.session.commit()
+        return jsonify({"created": True, "username": "kasahun", "role": "MANAGER",
+                        "department": hk_dept.name, "password": "123456"})
+    kasahun.role = "MANAGER"
+    kasahun.department_id = hk_dept.id
+    kasahun.full_name = "Kasahun Girma"
+    db.session.commit()
+    return jsonify({"fixed": True, "username": "kasahun", "role": kasahun.role,
+                    "department": kasahun.department.name if kasahun.department else None})
 
 
 @app.route("/debug/routes")
 def debug_routes():
     routes = []
     for r in app.url_map.iter_rules():
-        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete", "delete", "restore", "mark-read", "hk-approve", "hk/approvals", "requests", "employee", "department"]):
-            routes.append({"rule": r.rule, "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]), "endpoint": r.endpoint})
+        if any(k in r.rule for k in ["verify", "approve", "close", "start", "complete",
+                                      "delete", "restore", "mark-read", "hk-approve",
+                                      "hk/approvals", "requests", "employee", "department", "debug"]):
+            routes.append({"rule": r.rule,
+                           "methods": sorted([m for m in r.methods if m not in ["HEAD", "OPTIONS"]]),
+                           "endpoint": r.endpoint})
     return jsonify(routes)
 
 
@@ -4074,12 +3750,15 @@ def debug_routes():
 # ══════════════════════════════════════════════════════════════
 @app.route("/manifest.json")
 def manifest():
-    return jsonify({"name": "Rori Hotel Maintenance", "short_name": "RoriMaint", "start_url": "/dashboard", "display": "standalone", "background_color": "#0f172a", "theme_color": "#f59e0b", "icons": []})
+    return jsonify({"name": "Rori Hotel Maintenance", "short_name": "RoriMaint",
+                    "start_url": "/dashboard", "display": "standalone",
+                    "background_color": "#0f172a", "theme_color": "#f59e0b", "icons": []})
 
 
 @app.route("/sw.js")
 def service_worker():
-    return Response("self.addEventListener('install',e=>self.skipWaiting());", mimetype="application/javascript")
+    return Response("self.addEventListener('install',e=>self.skipWaiting());",
+                    mimetype="application/javascript")
 
 
 @app.route("/logo.png")
@@ -4105,7 +3784,9 @@ def not_found(e):
 
 @app.errorhandler(405)
 def method_not_allowed(e):
-    return page("Method Not Allowed", '<div class="alert alert-danger"><h4>405</h4><p>Method not allowed.</p><a class="btn btn-primary" href="/">Home</a></div>'), 405
+    return page("Method Not Allowed",
+                '<div class="alert alert-danger"><h4>405</h4><p>Method not allowed.</p>'
+                '<a class="btn btn-primary" href="/">Home</a></div>'), 405
 
 
 @app.errorhandler(500)
@@ -4125,4 +3806,4 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000) 
+    app.run(debug=True, host="0.0.0.0", port=5000)
