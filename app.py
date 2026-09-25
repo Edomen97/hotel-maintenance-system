@@ -1026,7 +1026,7 @@ def request_restore(req_id):
     return redirect(url_for("deleted_requests"))
 
 
-# ══════════════════════════════════════════ ANALYTICS
+# ══════════════════════════════════════════ ANALYTICS & METRICS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
 PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
@@ -1082,11 +1082,29 @@ def get_kpis(args):
     reqs = build_filtered_query(args).all()
     total = len(reqs)
     pending = sum(1 for r in reqs if r.status in PENDING_STATES)
-    completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
+    assigned = sum(1 for r in reqs if r.status == "Assigned")
+    in_progress = sum(1 for r in reqs if r.status == "In Progress")
+    completed = sum(1 for r in reqs if r.status == "Completed")
+    verified = sum(1 for r in reqs if r.status == "Verified")
+    closed = sum(1 for r in reqs if r.status == "Closed")
+    rejected = sum(1 for r in reqs if r.status == "Rejected")
+    
+    total_completed_group = sum(1 for r in reqs if r.status in COMPLETED_STATES)
     avg = _avg_sec([r for r in reqs if r.status in COMPLETED_STATES])
-    rate = (completed / total * 100) if total else 0.0
-    return {"total": total, "pending": pending, "completed": completed,
-            "completion_rate": round(rate,1), "avg_resolution": format_duration(avg)}
+    rate = (total_completed_group / total * 100) if total else 0.0
+    
+    return {
+        "total": total, 
+        "pending": pending, 
+        "assigned": assigned,
+        "in_progress": in_progress,
+        "completed": completed, 
+        "verified": verified,
+        "closed": closed,
+        "rejected": rejected,
+        "completion_rate": round(rate,1), 
+        "avg_resolution": format_duration(avg)
+    }
 
 
 def get_trends(args):
@@ -1246,7 +1264,7 @@ def get_inventory_summary():
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
 
 
-# ══════════════════════════════════════════ DASHBOARD
+# ══════════════════════════════════════════ CENTRAL MANAGER DASHBOARD
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -1267,6 +1285,11 @@ def dashboard():
     inventory = get_inventory_summary()
     recent_reqs = build_filtered_query(args).order_by(MaintenanceRequest.created_at.desc()).limit(15).all()
 
+    # Completed work area historical dataset for manager review board
+    completed_work_orders = WorkOrder.query.join(MaintenanceRequest).filter(
+        WorkOrder.status.in_(COMPLETED_STATES) | MaintenanceRequest.status.in_(COMPLETED_STATES)
+    ).order_by(WorkOrder.completed_date.desc()).limit(25).all()
+
     all_depts = Department.query.order_by(Department.name).all()
     all_cats = Category.query.order_by(Category.name).all()
     all_rooms = Room.query.order_by(Room.room_number).all()
@@ -1282,6 +1305,7 @@ def dashboard():
         kpis=kpis, work_orders={"total": WorkOrder.query.count()},
         top_locations=[], staff_stats=tech_workload, inventory=inventory,
         recent_activity=activity, recent_requests=recent_reqs,
+        completed_work_orders=completed_work_orders,
         all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms,
         all_areas=all_areas, all_floors=all_floors,
         chart_data=chart_data, filters={k: v for k, v in args.items()},
@@ -1406,10 +1430,17 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
   <div class="row g-3 mb-4">
     <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clipboard-list"></i></div><div class="metric-value">{{ kpis.total }}</div><div class="metric-label">Total</div></div></div>
     <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#f59e0b"><i class="fas fa-hourglass-half"></i></div><div class="metric-value">{{ kpis.pending }}</div><div class="metric-label">Pending</div></div></div>
+    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-tasks"></i></div><div class="metric-value">{{ kpis.assigned }}</div><div class="metric-label">Assigned</div></div></div>
+    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#8b5cf6"><i class="fas fa-spinner"></i></div><div class="metric-value">{{ kpis.in_progress }}</div><div class="metric-label">In Progress</div></div></div>
     <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#22c55e"><i class="fas fa-circle-check"></i></div><div class="metric-value">{{ kpis.completed }}</div><div class="metric-label">Completed</div></div></div>
-    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-percent"></i></div><div class="metric-value">{{ kpis.completion_rate }}%</div><div class="metric-label">Rate</div></div></div>
-    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-clock"></i></div><div class="metric-value" style="font-size:1.3rem">{{ kpis.avg_resolution }}</div><div class="metric-label">Avg Time</div></div></div>
-    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-toolbox"></i></div><div class="metric-value">{{ work_orders.total }}</div><div class="metric-label">Work Orders</div></div></div>
+    <div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-check-double"></i></div><div class="metric-value">{{ kpis.verified }}</div><div class="metric-label">Verified</div></div></div>
+  </div>
+  
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color:#64748b"><i class="fas fa-lock"></i></div><div class="metric-value">{{ kpis.closed }}</div><div class="metric-label">Closed</div></div></div>
+    <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-ban"></i></div><div class="metric-value">{{ kpis.rejected }}</div><div class="metric-label">Rejected</div></div></div>
+    <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-percent"></i></div><div class="metric-value">{{ kpis.completion_rate }}%</div><div class="metric-label">Completion Rate</div></div></div>
+    <div class="col-6 col-md-3"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-clock"></i></div><div class="metric-value" style="font-size:1.3rem">{{ kpis.avg_resolution }}</div><div class="metric-label">Avg Resolution Time</div></div></div>
   </div>
 
   <div class="row g-3 mb-4">
@@ -1489,6 +1520,31 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
     </div>
   </div>
 
+  <!-- COMPLETED WORK BOARD (Manager Historical Board) -->
+  <div class="card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 style="margin:0"><i class="fas fa-clipboard-check" style="color:#22c55e"></i> Completed Work Board & History</h5>
+      <span class="badge bg-success">Historical Completed Jobs</span>
+    </div>
+    {% if completed_work_orders|length > 0 %}
+    <div class="table-responsive"><table class="table table-hover">
+      <thead><tr><th>WO #</th><th>Req #</th><th>Department</th><th>Location</th><th>Problem</th><th>Technician</th><th>Completed Date</th><th>Verification</th><th>Verified By</th></tr></thead>
+      <tbody>{% for wo in completed_work_orders %}
+        <tr>
+          <td><a href="{{ url_for('workorder_detail', wo_id=wo.id) }}" style="color:#f59e0b;font-weight:600">{{ wo.work_order_no }}</a></td>
+          <td><a href="{{ url_for('request_detail', req_id=wo.request_id) }}" style="color:#38bdf8">{{ wo.request.request_no if wo.request else '—' }}</a></td>
+          <td>{{ wo.request.department.name if wo.request and wo.request.department else '—' }}</td>
+          <td>{{ wo.request.location_name if wo.request else '—' }}</td>
+          <td>{{ wo.request.description[:45] ~ '...' if wo.request and wo.request.description else '—' }}</td>
+          <td>{{ wo.assigned_to.full_name if wo.assigned_to else '—' }}</td>
+          <td style="color:#94a3b8;font-size:.78rem">{{ wo.completed_date.strftime('%Y-%m-%d %H:%M') if wo.completed_date else '—' }}</td>
+          <td><span class="badge bg-{{ 'info' if wo.status=='Verified' else 'success' }}">{{ wo.status }}</span></td>
+          <td>{{ wo.verified_by.full_name if wo.verified_by else '—' }}</td>
+        </tr>
+      {% endfor %}</tbody></table></div>
+    {% else %}<div class="empty"><i class="fas fa-clipboard-check"></i>No completed work records found in history.</div>{% endif %}
+  </div>
+
   <div class="row g-3 mb-4">
     <div class="col-lg-8">
       <div class="card">
@@ -1548,7 +1604,6 @@ window.DASHBOARD_DATA = {{ chart_data|tojson }};
   var TT = {backgroundColor:'rgba(15,23,42,0.97)', borderColor:'rgba(245,158,11,0.5)',
             borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:11, cornerRadius:10};
   var C = {amber:'#f59e0b', green:'#22c55e', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
-  var PALETTE = [C.amber, C.blue, C.green, C.purple, C.cyan, C.pink, C.red, '#84cc16', '#f97316', '#a855f7', '#0ea5e9', C.gray];
   function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
   function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
 
