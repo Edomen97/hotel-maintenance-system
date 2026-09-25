@@ -751,9 +751,6 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 <div class="container mt-4">""" + flash_html + content + """</div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-/* ═══════════════════════════════════════════════════════════
-   REAL-TIME NOTIFICATIONS — Audio Chime + Vibration
-   ═══════════════════════════════════════════════════════════ */
 (function(){
   'use strict';
   if (!window.NotifState) {
@@ -846,6 +843,163 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 </script>
 </body>
 </html>"""
+
+
+# ══════════════════════════════════════════════════════════════
+# DASHBOARD APPROVAL QUEUE BUILDERS (NEW — for Kasahun & Amir)
+# ══════════════════════════════════════════════════════════════
+def build_hk_approval_queue_html():
+    """Kasahun Girma's Housekeeping Approval Queue section (shown in dashboard)."""
+    pending_reqs = MaintenanceRequest.query.filter_by(
+        awaiting_hk_approval=True, is_deleted=False
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    hk_dept = Department.query.filter_by(name="Housekeeping").first()
+    hk_dept_id = hk_dept.id if hk_dept else -1
+
+    all_hk_reqs = MaintenanceRequest.query.filter(
+        MaintenanceRequest.is_deleted == False,
+        MaintenanceRequest.department_id == hk_dept_id,
+    ).all()
+    approved_count = sum(1 for r in all_hk_reqs if r.hk_approval_status == "Approved")
+    rejected_count = sum(1 for r in all_hk_reqs if r.hk_approval_status == "Rejected")
+    pending_count = len(pending_reqs)
+
+    rows_parts = []
+    for r in pending_reqs:
+        badge_prio = {"URGENT": "danger", "HIGH": "warning",
+                      "MEDIUM": "info", "LOW": "secondary"}.get(r.priority, "secondary")
+        rows_parts.append(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) +
+            '" style="color:#f59e0b;font-weight:700">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str((r.description or "")[:60]) + ('…' if r.description and len(r.description) > 60 else '') + '</td>'
+            '<td><span class="badge bg-' + badge_prio + '">' + str(r.priority) + '</span></td>'
+            '<td style="color:#94a3b8;font-size:.85rem">' +
+            (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '<td><a class="btn btn-sm btn-info" href="' +
+            url_for("hk_approve_request", req_id=r.id) +
+            '"><i class="fas fa-pen-nib"></i> Review &amp; Approve</a></td>'
+            '</tr>'
+        )
+    rows = "".join(rows_parts)
+    if not rows:
+        rows = '<tr><td colspan="6" class="text-center" style="color:#94a3b8;padding:1.5rem">✅ No pending Housekeeping approvals.</td></tr>'
+
+    return (
+        '<div class="card" style="border-left:5px solid #06b6d4">'
+        '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
+        '<h4 style="color:#f59e0b;margin:0"><i class="fas fa-broom"></i> 🏠 Housekeeping Approval Queue</h4>'
+        '<div style="color:#94a3b8;font-size:.85rem">Approver: <strong style="color:#e2e8f0">'
+        + str(current_user.full_name or current_user.username) + '</strong> — Housekeeping Manager</div>'
+        '</div>'
+        '<div class="row g-3 mb-3">'
+        '<div class="col-md-4"><div class="metric-card" style="border-left:4px solid #f59e0b">'
+        '<div class="metric-value">' + str(pending_count) + '</div><div class="metric-label">Pending</div></div></div>'
+        '<div class="col-md-4"><div class="metric-card" style="border-left:4px solid #22c55e">'
+        '<div class="metric-value">' + str(approved_count) + '</div><div class="metric-label">Approved</div></div></div>'
+        '<div class="col-md-4"><div class="metric-card" style="border-left:4px solid #ef4444">'
+        '<div class="metric-value">' + str(rejected_count) + '</div><div class="metric-label">Rejected</div></div></div>'
+        '</div>'
+        '<h5 style="color:#f59e0b;font-size:1rem;margin-top:1rem">📋 Pending Requests</h5>'
+        '<div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Description</th>'
+        '<th>Priority</th><th>Created</th><th>Action</th></tr></thead>'
+        '<tbody>' + rows + '</tbody></table></div>'
+        '<p style="color:#94a3b8;font-size:.8rem;margin-top:.5rem"><i class="fas fa-info-circle"></i> '
+        'After you approve, requests move to <strong>Maintenance / Engineering Manager (Amir Awel)</strong>.</p>'
+        '</div>'
+    )
+
+
+def build_mm_approval_queue_html():
+    """Amir Awel's Maintenance / Engineering Approval section (shown in dashboard)."""
+    mm_pending = MaintenanceRequest.query.filter(
+        MaintenanceRequest.is_deleted == False,
+        MaintenanceRequest.awaiting_hk_approval == False,
+        MaintenanceRequest.status == "Pending",
+        MaintenanceRequest.manager_id.is_(None),
+        MaintenanceRequest.hk_approval_status != "Rejected",
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    awaiting_assignment = MaintenanceRequest.query.filter(
+        MaintenanceRequest.is_deleted == False,
+        MaintenanceRequest.status == "Approved",
+        MaintenanceRequest.manager_id.isnot(None),
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    rows_parts = []
+    for r in mm_pending:
+        badge_prio = {"URGENT": "danger", "HIGH": "warning",
+                      "MEDIUM": "info", "LOW": "secondary"}.get(r.priority, "secondary")
+        hk_label = ""
+        if r.hk_approval_status == "Approved" and r.hk_approved_by:
+            hk_label = ('<div style="color:#22c55e;font-size:.72rem;margin-top:2px">'
+                        '✓ HK Approved by ' + str(r.hk_approved_by.full_name) + '</div>')
+        rows_parts.append(
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) +
+            '" style="color:#f59e0b;font-weight:700">' + str(r.request_no) + '</a>' + hk_label + '</td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.department.name if r.department else "—") + '</td>'
+            '<td><span class="badge bg-' + badge_prio + '">' + str(r.priority) + '</span></td>'
+            '<td style="color:#94a3b8;font-size:.85rem">' +
+            (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '<td><a class="btn btn-sm btn-success" href="' +
+            url_for("request_detail", req_id=r.id) +
+            '"><i class="fas fa-check-circle"></i> Approve</a></td>'
+            '</tr>'
+        )
+    rows = "".join(rows_parts)
+    if not rows:
+        rows = '<tr><td colspan="6" class="text-center" style="color:#94a3b8;padding:1.5rem">✅ No requests awaiting your approval.</td></tr>'
+
+    assign_rows = ""
+    for r in awaiting_assignment:
+        assign_rows += (
+            '<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) +
+            '" style="color:#f59e0b;font-weight:700">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.priority) + '</td>'
+            '<td><span class="badge bg-info">Awaiting Assignment</span></td>'
+            '<td><a class="btn btn-sm btn-primary" href="' +
+            url_for("workorder_create", request_id=r.id) +
+            '"><i class="fas fa-user-plus"></i> Assign Staff</a></td>'
+            '</tr>'
+        )
+    if not assign_rows:
+        assign_rows = '<tr><td colspan="5" class="text-center" style="color:#94a3b8;padding:1rem">No approved requests awaiting staff assignment.</td></tr>'
+
+    return (
+        '<div class="card" style="border-left:5px solid #f59e0b">'
+        '<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
+        '<h4 style="color:#f59e0b;margin:0"><i class="fas fa-wrench"></i> 🔧 Maintenance / Engineering Approval</h4>'
+        '<div style="color:#94a3b8;font-size:.85rem">Approver: <strong style="color:#e2e8f0">'
+        + str(current_user.full_name or current_user.username) + '</strong> — Maintenance / Engineering Manager</div>'
+        '</div>'
+        '<div class="row g-3 mb-3">'
+        '<div class="col-md-6"><div class="metric-card" style="border-left:4px solid #f59e0b">'
+        '<div class="metric-value">' + str(len(mm_pending)) + '</div>'
+        '<div class="metric-label">Pending Your Approval</div></div></div>'
+        '<div class="col-md-6"><div class="metric-card" style="border-left:4px solid #06b6d4">'
+        '<div class="metric-value">' + str(len(awaiting_assignment)) + '</div>'
+        '<div class="metric-label">Awaiting Assignment</div></div></div>'
+        '</div>'
+        '<h5 style="color:#f59e0b;font-size:1rem;margin-top:1rem">📋 Pending Your Approval</h5>'
+        '<div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Department</th>'
+        '<th>Priority</th><th>Created</th><th>Action</th></tr></thead>'
+        '<tbody>' + rows + '</tbody></table></div>'
+        '<h5 style="color:#f59e0b;font-size:1rem;margin-top:1.5rem">🛠️ Approved — Awaiting Technician Assignment</h5>'
+        '<div class="table-responsive"><table class="table table-hover">'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead>'
+        '<tbody>' + assign_rows + '</tbody></table></div>'
+        '<p style="color:#94a3b8;font-size:.8rem;margin-top:.5rem"><i class="fas fa-info-circle"></i> '
+        'Requests awaiting Housekeeping Manager approval are <strong>not visible</strong> here until Kasahun Girma approves them first.</p>'
+        '</div>'
+    )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1297,6 +1451,15 @@ def request_detail(req_id):
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id and not is_housekeeping_approver(current_user):
         abort(403)
 
+    # BACKEND ENFORCEMENT: Amir (Maintenance Manager) must NOT see
+    # HK-pending requests until Kasahun approves them.
+    if (current_user.role in ["MANAGER", "ADMIN"]
+            and not is_housekeeping_approver(current_user)
+            and req.awaiting_hk_approval):
+        flash("This request is still awaiting Housekeeping Manager approval. "
+              "It will become visible once Kasahun Girma approves it.", "warning")
+        return redirect(url_for("dashboard"))
+
     history = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     work_orders = WorkOrder.query.filter_by(request_id=req.id).all()
 
@@ -1335,7 +1498,6 @@ def request_detail(req_id):
 
     actions = []
 
-    # Assign Staff — ONLY after Maintenance Manager has verified & approved
     can_assign_staff = (
         req.status in ["Approved", "Assigned"]
         and not req.awaiting_hk_approval
@@ -1368,7 +1530,6 @@ def request_detail(req_id):
         )
     actions_html = " ".join(actions) if actions else ""
 
-    # ── Housekeeping Manager Approval card ─────────────────────
     hk_block = ""
     if req.awaiting_hk_approval or req.hk_approval_status:
         hk_status = req.hk_approval_status or "Pending"
@@ -1452,7 +1613,6 @@ def request_detail(req_id):
             hk_block += '<tr><th style="color:#94a3b8">Notes</th><td>' + str(req.hk_approval_notes) + '</td></tr>'
         hk_block += '</tbody></table>' + hk_buttons + '</div>'
 
-    # ── Maintenance Manager Verification card ──────────────────
     mm_block = ""
     if (not req.awaiting_hk_approval) and req.status != "Rejected":
         mm_users = get_maintenance_manager_users()
@@ -2091,6 +2251,13 @@ def dashboard():
 
     chart_data = {"trends": trends, "categories": categories, "statuses": statuses, "departments": departments}
 
+    # ── NEW: Approval queues for Kasahun (HK) and Amir (Maintenance) ──
+    approval_html = ""
+    if is_housekeeping_approver(current_user):
+        approval_html = build_hk_approval_queue_html()
+    elif is_maintenance_manager(current_user):
+        approval_html = build_mm_approval_queue_html()
+
     try:
         return render_template(
             "dashboard.html",
@@ -2103,6 +2270,7 @@ def dashboard():
             filters={k: v for k, v in args.items()},
             status_badge_class=status_badge_class, priority_badge_class=priority_badge_class,
             current_role=current_user.role,
+            approval_queues_html=approval_html,
         )
     except Exception as e:
         print("Dashboard render failed, falling back: " + str(e))
@@ -2122,7 +2290,8 @@ def dashboard():
             for r in recent_requests
         )
         fallback = (
-            '<h3 style="color:#f59e0b">Dashboard</h3>'
+            approval_html +
+            '<h3 style="color:#f59e0b">📊 Overview</h3>'
             '<div class="row g-3 mb-4">'
             '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["total"]) + '</div><div class="metric-label">Total</div></div></div>'
             '<div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(kpis["pending"]) + '</div><div class="metric-label">Pending</div></div></div>'
@@ -2612,7 +2781,7 @@ def department_dashboard():
 
 
 # ══════════════════════════════════════════════════════════════
-# HOUSEKEEPING APPROVAL — embedded template
+# HOUSEKEEPING APPROVAL PAGE + SUBMIT HANDLER
 # ══════════════════════════════════════════════════════════════
 HK_APPROVE_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -3943,7 +4112,6 @@ def debug():
 
 @app.route("/debug/fix-housekeeping")
 def debug_fix_housekeeping():
-    """Emergency: force 'housekeeping' user to be Kasahun Girma (MANAGER, HK dept)."""
     hk_dept = Department.query.filter_by(name="Housekeeping").first()
     if not hk_dept:
         return jsonify({"error": "Housekeeping department not found"}), 404
