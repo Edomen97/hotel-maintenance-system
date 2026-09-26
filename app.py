@@ -1,15 +1,17 @@
+# app.py
 import csv, io, json, os, re, sqlite3, uuid, traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text, inspect
 from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-                   render_template, request, send_file, url_for, Response)
+                   render_template, render_template_string, request, send_file, url_for, Response)
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+import qrcode
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
@@ -38,7 +40,7 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ═════════════════════════════════════════ MODELS
+# ════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -309,7 +311,7 @@ class ChecklistTemplate(db.Model):
 @login_manager.user_loader
 def load_user(user_id): return db.session.get(User, int(user_id))
 
-# ══════════════════════════════════════════ HELPERS
+# ═════════════════════════════════════════ HELPERS
 def role_required(*roles):
     def dec(fn):
         @wraps(fn)
@@ -450,7 +452,7 @@ def ensure_database_schema():
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
-# ══════════════════════════════════════════ PAGE HELPER
+# ═════════════════════════════════════════ PAGE
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
@@ -493,16 +495,13 @@ def page(title, content):
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
-    
     nav_html = "".join('<a class="nav-link" href="' + str(u) + '">' + str(l) + '</a>' for l, u in nav)
     bell_html = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
         badge = '<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">' + str(unread) + '</span>' if unread > 0 else ""
         bell_html = '<a class="nav-link" id="nav-bell" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
-    
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
-    
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -566,54 +565,181 @@ if(document.getElementById('nav-bell')){poll();setInterval(poll,15000);}
 })();
 </script></body></html>"""
 
-# ══════════════════════════════════════════ SEED
+# ═════════════════════════════════════════ SEED (ተሻሽሎ)
 def seed_data():
+    # Departments
     for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other"]:
         if not Department.query.filter_by(name=name).first():
             db.session.add(Department(name=name))
     db.session.commit()
+    
+    # Floors
     for f in [2,3,4,5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
+    
+    # Rooms
     if Room.query.count() == 0:
         for num in range(201, 301):
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
+    
+    # Areas
     for n, d in [("Buduchalley","F&B"),("Sillanto","Unknown"),("Fura","Unknown"),("Executive","Unknown"),("Mitima","Unknown"),("Odako","Unknown"),("Gudumale","Unknown"),("Bubble","Unknown"),("Bubbles","Unknown"),("Fura Corridor","Unknown"),("Executive Meeting Room","Unknown"),("Counter","Unknown")]:
-        if not Area.query.filter_by(name=n).first(): db.session.add(Area(name=n, department=d))
+        if not Area.query.filter_by(name=n).first():
+            db.session.add(Area(name=n, department=d))
+    
+    # Categories
     for c in ["Electrical","Plumbing","HVAC","Painting","Carpentry","Civil","Safety","General","Other"]:
-        if not Category.query.filter_by(name=c).first(): db.session.add(Category(name=c))
+        if not Category.query.filter_by(name=c).first():
+            db.session.add(Category(name=c))
+    
+    # Working Items
     for i in ["Light","Switch","Window","Door Key","Door Lock","Paint","Mirror","Drainage Cover","Frame","Background Frame","Spot Light","Plumbing","AC","Electrical","Other"]:
-        if not WorkingItem.query.filter_by(name=i).first(): db.session.add(WorkingItem(name=i))
-    for eid, n, t in [(1,"ተስሁን ነከረ","General Mechanic"),(2,"ቸርነት አሞና","General Mechanic"),(3,"ስምዖን ዮሐንስ","General Mechanic"),(4,"አበባየ ክፍሌ","Supervisor"),(5,"አሚር አወል","Manager")]:
-        if not db.session.get(Employee, eid): db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
+        if not WorkingItem.query.filter_by(name=i).first():
+            db.session.add(WorkingItem(name=i))
+    
+    # Employees
+    for eid, n, t in [(1,"ተስሁን ከረ","General Mechanic"),(2,"ቸርነት አሞና","General Mechanic"),(3,"ስምዖን ሐንስ","General Mechanic"),(4,"አበባየ ክፍሌ","Supervisor"),(5,"አሚር አወል","Manager")]:
+        if not db.session.get(Employee, eid):
+            db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
+    
+    # Suppliers
     if Supplier.query.count() == 0:
         for s in ["ABC Maintenance Supply","Hawassa Engineering Supply","Rori Hotel Approved Supplier"]:
             db.session.add(Supplier(company_name=s, contact_person="", phone="", status="Active", is_active=True))
+    
+    # Inventory Parts (አዲስ!)
+    if InventoryPart.query.count() == 0:
+        parts_data = [
+            ("Light Bulb", "Electrical", 50, 10, "pcs", 2.5, "Store A"),
+            ("Door Handle", "Carpentry", 20, 5, "pcs", 15.0, "Store A"),
+            ("Paint Bucket", "Painting", 15, 5, "bucket", 45.0, "Store B"),
+            ("AC Filter", "HVAC", 30, 10, "pcs", 12.0, "Store C"),
+            ("Pipe Connector", "Plumbing", 40, 10, "pcs", 8.5, "Store A"),
+            ("Switch Plate", "Electrical", 25, 5, "pcs", 5.0, "Store B"),
+            ("Window Lock", "Carpentry", 18, 5, "pcs", 7.5, "Store A"),
+            ("Drain Cover", "Plumbing", 12, 5, "pcs", 18.0, "Store C"),
+        ]
+        for name, cat, qty, min_stock, unit, cost, location in parts_data:
+            db.session.add(InventoryPart(
+                part_name=name, category=cat, quantity=qty,
+                minimum_stock=min_stock, unit=unit, unit_cost=cost,
+                storage_location=location, status="Active"
+            ))
+    
+    # Users
     hk = Department.query.filter_by(name="Housekeeping").first()
     if not User.query.filter_by(username="admin").first():
-        u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local"); u.set_password("admin123"); db.session.add(u)
+        u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
+        u.set_password("admin123")
+        db.session.add(u)
+    
     for s in [
         {"u":"amir","n":"Amir Awel","r":"MANAGER","d":None},
         {"u":"kasahun","n":"Kasahun Girma","r":"MANAGER","d":hk.id if hk else None},
-        {"u":"abebayhu","n":"አበባየሁ ክሌ","r":"SUPERVISOR","d":None},
-        {"u":"tesfahun","n":"ተስፋሁን ነከረ","r":"TECHNICIAN","d":None},
+        {"u":"abebayhu","n":"አበባየሁ ክፍሌ","r":"SUPERVISOR","d":None},
+        {"u":"tesfahun","n":"ተስሁን ነከረ","r":"TECHNICIAN","d":None},
         {"u":"simon","n":"ስምዖን ዮሐንስ","r":"TECHNICIAN","d":None},
-        {"u":"chernet","n":"ርነት አሞና","r":"TECHNICIAN","d":None},
-        {"u":"wale","n":"ዋ","r":"TECHNICIAN","d":None},
-        {"u":"tsadiku","n":"ፃቁ","r":"TECHNICIAN","d":None},
+        {"u":"chernet","n":"ቸርነት አሞና","r":"TECHNICIAN","d":None},
+        {"u":"wale","n":"ሌ","r":"TECHNICIAN","d":None},
+        {"u":"tsadiku","n":"ፃዲቁ","r":"TECHNICIAN","d":None},
         {"u":"employee1","n":"Test Employee","r":"EMPLOYEE","d":None},
         {"u":"housekeeping","n":"Kassahun Girma","r":"DEPARTMENT","d":hk.id if hk else None},
     ]:
         ex = User.query.filter_by(username=s["u"]).first()
         if not ex:
-            u = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"]); u.set_password("123456"); db.session.add(u)
+            u = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"])
+            u.set_password("123456")
+            db.session.add(u)
         else:
-            ex.full_name = s["n"]; ex.role = s["r"]; ex.department_id = s["d"]
+            ex.full_name = s["n"]
+            ex.role = s["r"]
+            ex.department_id = s["d"]
+    
+    # Sample Maintenance Requests (አዲስ! - Dashboard data ለማሳየት)
+    if MaintenanceRequest.query.count() == 0:
+        admin = User.query.filter_by(username="admin").first()
+        amir = User.query.filter_by(username="amir").first()
+        tesfahun = User.query.filter_by(username="tesfahun").first()
+        hk_dept = Department.query.filter_by(name="Housekeeping").first()
+        eng_dept = Department.query.filter_by(name="Engineering").first()
+        room1 = Room.query.filter_by(room_number="201").first()
+        room2 = Room.query.filter_by(room_number="205").first()
+        light_item = WorkingItem.query.filter_by(name="Light").first()
+        ac_item = WorkingItem.query.filter_by(name="AC").first()
+        plumbing_item = WorkingItem.query.filter_by(name="Plumbing").first()
+        electrical_cat = Category.query.filter_by(name="Electrical").first()
+        hvac_cat = Category.query.filter_by(name="HVAC").first()
+        plumbing_cat = Category.query.filter_by(name="Plumbing").first()
+        
+        sample_requests = [
+            {"no": "R-202609200001-0001", "loc": "Room", "room": room1, "item": light_item, "cat": electrical_cat, "desc": "Light not working in room 201", "prio": "HIGH", "status": "Completed", "dept": hk_dept, "by": admin, "assigned": tesfahun, "days_ago": 5},
+            {"no": "R-202609210001-0002", "loc": "Room", "room": room2, "item": ac_item, "cat": hvac_cat, "desc": "AC not cooling properly", "prio": "URGENT", "status": "In Progress", "dept": eng_dept, "by": amir, "assigned": tesfahun, "days_ago": 2},
+            {"no": "R-202609220001-0003", "loc": "Room", "room": room1, "item": plumbing_item, "cat": plumbing_cat, "desc": "Bathroom sink leaking", "prio": "MEDIUM", "status": "Pending", "dept": hk_dept, "by": admin, "assigned": None, "days_ago": 1},
+            {"no": "R-202609230001-0004", "loc": "Room", "room": room2, "item": light_item, "cat": electrical_cat, "desc": "Switch not responding", "prio": "LOW", "status": "Approved", "dept": eng_dept, "by": amir, "assigned": None, "days_ago": 1},
+            {"no": "R-202609240001-0005", "loc": "Room", "room": room1, "item": ac_item, "cat": hvac_cat, "desc": "AC making strange noise", "prio": "HIGH", "status": "Verified", "dept": hk_dept, "by": admin, "assigned": tesfahun, "days_ago": 7},
+        ]
+        
+        for sr in sample_requests:
+            req = MaintenanceRequest(
+                request_no=sr["no"],
+                location_type=sr["loc"],
+                room_id=sr["room"].id if sr["room"] else None,
+                working_item_id=sr["item"].id if sr["item"] else None,
+                category_id=sr["cat"].id if sr["cat"] else None,
+                description=sr["desc"],
+                priority=sr["prio"],
+                status=sr["status"],
+                department_id=sr["dept"].id if sr["dept"] else None,
+                requested_by_id=sr["by"].id if sr["by"] else None,
+                assigned_to_id=sr["assigned"].id if sr["assigned"] else None,
+                created_at=datetime.utcnow() - timedelta(days=sr["days_ago"]),
+                signature_name=sr["by"].full_name if sr["by"] else "Admin",
+                signature_status="SIGNED",
+                signature_signed_at=datetime.utcnow() - timedelta(days=sr["days_ago"]),
+            )
+            if sr["status"] in ["Completed", "Verified"]:
+                req.completed_date = datetime.utcnow() - timedelta(days=sr["days_ago"]-1)
+            req.due_date = datetime.utcnow() + timedelta(hours=24)
+            db.session.add(req)
+    
+    # Sample Work Orders (አዲስ!)
+    if WorkOrder.query.count() == 0:
+        req1 = MaintenanceRequest.query.filter_by(request_no="R-202609200001-0001").first()
+        req2 = MaintenanceRequest.query.filter_by(request_no="R-202609210001-0002").first()
+        tesfahun = User.query.filter_by(username="tesfahun").first()
+        
+        if req1:
+            wo1 = WorkOrder(
+                work_order_no="WO-202609200001-0001",
+                request_id=req1.id,
+                assigned_to_id=tesfahun.id if tesfahun else None,
+                status="Completed",
+                work_performed="Replaced light bulb",
+                labor_hours=1.5,
+                completion_notes="Light fixed successfully",
+                created_at=datetime.utcnow() - timedelta(days=5),
+                completed_date=datetime.utcnow() - timedelta(days=4),
+            )
+            db.session.add(wo1)
+        
+        if req2:
+            wo2 = WorkOrder(
+                work_order_no="WO-202609210001-0002",
+                request_id=req2.id,
+                assigned_to_id=tesfahun.id if tesfahun else None,
+                status="In Progress",
+                work_performed="Checking AC unit",
+                labor_hours=2.0,
+                created_at=datetime.utcnow() - timedelta(days=2),
+            )
+            db.session.add(wo2)
+    
     db.session.commit()
-    print("✅ Seed data loaded")
+    print("✅ Seed data loaded with sample requests and work orders")
 
-# ══════════════════════════════════════════ AUTH
+# ═════════════════════════════════════════ AUTH
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -630,7 +756,7 @@ def login():
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
-        flash("የተሳተ መለያ ስም ወይም የይለፍ ቃል","danger")
+        flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል","danger")
     lh = """<div class="row justify-content-center align-items-center" style="min-height:80vh">
 <div class="col-11 col-md-5"><div class="login-card">
 <div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የገና ክል መግቢያ</p></div>
@@ -658,29 +784,33 @@ def profile():
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
-        db.session.commit(); flash("መጃዎ ተዘምል","success"); return redirect(url_for("profile"))
+        db.session.commit(); flash("መረጃዎ ተዘምኗል","success"); return redirect(url_for("profile"))
     c = ('<h3 style="color:#f59e0b">👤 መገለጫ</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
          '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
-         '<p>📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
+         '<p> ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
          '<form method="post"><div class="mb-3"><label class="form-label">ኢሜይል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
-         '<div class="mb-3"><label class="form-label">ስልክ</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
-         '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይለጥም"></div>'
-         '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div>')
+         '<div class="mb-3"><label class="form-label">ስል</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
+         '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይየርም"></div>'
+         '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀም</button></form></div>')
     return page("Profile", c)
 
-# ══════════════════════════════════════════ REQUESTS
+# ═════════════════════════════════════════ REQUESTS
 @app.route("/requests")
 @login_required
 def requests_list():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if current_user.role in ["MANAGER","ADMIN"]: pass
+    if current_user.role in ["MANAGER","ADMIN"]:
+        pass
     elif current_user.role == "DEPARTMENT":
         if current_user.department_id:
             q = q.filter(db.or_(MaintenanceRequest.department_id == current_user.department_id,
                                 MaintenanceRequest.requested_by_id == current_user.id))
-        else: q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
-    elif current_user.role == "EMPLOYEE": q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
-    elif current_user.role in STAFF_ROLES: q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
+        else:
+            q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role == "EMPLOYEE":
+        q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role in STAFF_ROLES:
+        q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
     if request.args.get("status"): q = q.filter(MaintenanceRequest.status == request.args["status"])
     if request.args.get("priority"): q = q.filter(MaintenanceRequest.priority == request.args["priority"])
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
@@ -693,7 +823,7 @@ def requests_list():
         del_html = ""
         if is_mgr:
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" '
-                        'onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ህ ጥያቄ ወ Archived ዝርዝር ይባል። ለመመለስ ከ Admin Menu ውስ መለግ ያስልጋል\');">'
+                        'onsubmit="return confirm(\'⚠️ እርግጠኛ ነት? ይህ ጥያ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ስጥ መለግ ያስፈልጋል\');">'
                         '<input type="hidden" name="reason" value="Archived by manager">'
                         '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
@@ -733,7 +863,8 @@ def request_create():
             prio = request.form.get("priority","MEDIUM")
             fl = request.form.get("floor", type=int)
             did = request.form.get("department_id", type=int)
-            if not did and current_user.department_id: did = current_user.department_id
+            if not did and current_user.department_id:
+                did = current_user.department_id
             if current_user.role == "DEPARTMENT" and current_user.department_id: did = current_user.department_id
             if current_user.role == "EMPLOYEE" and not did and current_user.department_id: did = current_user.department_id
             if lt == "Room" and rid:
@@ -745,14 +876,16 @@ def request_create():
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
             sig_data = request.form.get("signature_data", "").strip()
             if not sig_data:
-                flash("እባክዎ ፊርማዎን ይስሉ! (Signature is required)","danger")
+                flash("እባክ ፊርማዎን ይስሉ! (Signature is required)","danger")
                 return redirect(url_for("request_create"))
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
                 requested_by_id=current_user.id, department_id=did, awaiting_hk_approval=False,
-                signature_name=current_user.full_name, signature_status="SIGNED",
-                signature_signed_at=datetime.utcnow(), signature_data=sig_data
+                signature_name=current_user.full_name,
+                signature_status="SIGNED",
+                signature_signed_at=datetime.utcnow(),
+                signature_data=sig_data
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
@@ -801,12 +934,12 @@ def request_create():
          '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
          '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
          '<div class="col-12 mb-3">'
-         '<label class="form-label">እባክዎ ዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
+         '<label class="form-label">እባዎ ከዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
          '<div style="border: 2px dashed rgba(245,158,11,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
          '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
          '</div>'
          '<div class="mt-2 d-flex gap-2">'
-         '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያፉ (Clear)</button>'
+         '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያጥፉ (Clear)</button>'
          '</div>'
          '<input type="hidden" name="signature_data" id="signature-data">'
          '</div>'
@@ -832,7 +965,7 @@ def request_create():
          'document.querySelector("form").addEventListener("submit", function(e){'
          'if (signaturePad.isEmpty()){'
          'e.preventDefault();'
-         'alert("እክ ፊርማዎን ስሉ! (Please provide your signature)");'
+         'alert("እባክዎ ፊርማዎን ይስሉ! (Please provide your signature)");'
          'return false;'
          '}'
          'document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");'
@@ -889,7 +1022,7 @@ def request_detail(req_id):
                     '<div style="font-size:1.1rem; font-weight:600; color:#f8fafc; margin-bottom:0.5rem;">' + str(req.signature_name or "Unknown") + '</div>'
                     '<div style="border-bottom: 1px dashed rgba(245,158,11,0.3); margin-bottom:0.75rem;"></div>'
                     + sig_image_html +
-                    '<div style="color:#22c55e; font-weight:600; margin-top:1rem; margin-bottom:0.25rem;"><i class="fas fa-check-circle"></i> በይ የተፈረመ (Officially Signed)</div>'
+                    '<div style="color:#22c55e; font-weight:600; margin-top:1rem; margin-bottom:0.25rem;"><i class="fas fa-check-circle"></i> በይፋ የተፈረመ (Officially Signed)</div>'
                     '<div style="color:#94a3b8; font-size:0.85rem;">Department: ' + str(req.department.name if req.department else "N/A") + '</div>'
                     '<div style="color:#94a3b8; font-size:0.85rem;">Signed: ' + sig_time + '</div>'
                     '</div>')
@@ -906,7 +1039,7 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'⚠️ እርግጠኛ ዎት? ይህ ጥያቄ ወደ Archived ዝርር ይባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'️ እርግጠ ነዎት? ይህ ያቄ ወደ Archived ዝርዝር ይገል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
          '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
@@ -1031,7 +1164,7 @@ def request_restore(req_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("deleted_requests"))
 
-# ══════════════════════════════════════════ ANALYTICS
+# ═════════════════════════════════════════ ANALYTICS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
 PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
@@ -1235,7 +1368,7 @@ def get_inventory_summary():
     val = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
 
-# ══════════════════════════════════════════ DASHBOARD ROUTE
+# ═════════════════════════════════════════ DASHBOARD
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -1264,17 +1397,366 @@ def dashboard():
     chart_data = {"trends": trends, "statuses": statuses, "departments": departments,
                   "dept_completion": dept_completion, "priorities": priorities,
                   "categories": categories, "floors": floors}
-    return render_template("dashboard.html",
-                           kpis=kpis, work_orders={"total": WorkOrder.query.count()},
-                           top_locations=[], staff_stats=tech_workload, inventory=inventory,
-                           recent_activity=activity, recent_requests=recent_reqs,
-                           all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms,
-                           all_areas=all_areas, all_floors=all_floors,
-                           chart_data=chart_data, filters={k: v for k, v in args.items()},
-                           technician_workload=tech_workload, dept_completion=dept_completion,
-                           current_user=current_user)
+    return render_template_string(DASHBOARD_TEMPLATE,
+                                  kpis=kpis, work_orders={"total": WorkOrder.query.count()},
+                                  top_locations=[], staff_stats=tech_workload, inventory=inventory,
+                                  recent_activity=activity, recent_requests=recent_reqs,
+                                  all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms,
+                                  all_areas=all_areas, all_floors=all_floors,
+                                  chart_data=chart_data, filters={k: v for k, v in args.items()},
+                                  technician_workload=tech_workload, dept_completion=dept_completion,
+                                  current_user=current_user)
 
-# ══════════════════════════════════════════ DEPARTMENT DASHBOARD
+# ═════════════════════════════════════════ DASHBOARD TEMPLATE
+DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manager Dashboard | Rori Hotel</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23,42,0.88),rgba(30,41,59,0.88)),url('/static/rori_hotel_bg.jpg') center center/cover no-repeat fixed;min-height:100vh;color:#e2e8f0;padding-top:70px}
+.navbar{background:rgba(15,23,42,0.95)!important;backdrop-filter:blur(16px);border-bottom:1px solid rgba(245,158,11,0.25);padding:.75rem 1.5rem}
+.navbar-brand{font-weight:800;font-size:1.3rem;color:#f59e0b!important}
+.nav-link{color:#cbd5e1!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem}
+.nav-link i{color:#f59e0b;margin-right:4px}
+.nav-link:hover{background:rgba(245,158,11,0.12);color:#f59e0b!important}
+.navbar-toggler{border-color:rgba(245,158,11,0.4)}
+.container{max-width:1400px;padding:1.5rem}
+.card{background:rgba(15,23,42,0.75);backdrop-filter:blur(12px);border:1px solid rgba(245,158,11,0.2);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
+.card h5{color:#f59e0b;font-weight:600}
+.metric-card{background:rgba(15,23,42,0.7);backdrop-filter:blur(10px);border:1px solid rgba(245,158,11,0.15);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s}
+.metric-card:hover{transform:translateY(-2px);border-color:rgba(245,158,11,0.3)}
+.metric-value{font-size:2rem;font-weight:800;color:#f8fafc;line-height:1}
+.metric-label{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem}
+.metric-icon{font-size:1.4rem;color:#f59e0b;margin-bottom:.35rem}
+.table{color:#e2e8f0}
+.table thead th{color:#f59e0b;border-bottom:2px solid rgba(245,158,11,0.2);font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap}
+.table td{padding:10px;border-color:rgba(245,158,11,0.08);font-size:.85rem}
+.table-hover tbody tr:hover{background-color:rgba(245,158,11,0.06)}
+.btn{border-radius:40px;font-weight:600;padding:.6rem 1.6rem;border:none}
+.btn-primary{background:linear-gradient(135deg,#f59e0b,#d97706);color:#0f172a}
+.btn-sm{padding:.35rem .8rem;font-size:.78rem}
+.form-control,.form-select{background:rgba(15,23,42,0.6);border:1px solid rgba(245,158,11,0.2);border-radius:12px;color:#e2e8f0;padding:.65rem .9rem}
+.form-control:focus,.form-select:focus{background:rgba(15,23,42,0.9);color:#f8fafc;border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,0.15)}
+.form-label{color:#cbd5e1;font-weight:500;font-size:.82rem}
+.badge{padding:.35rem .75rem;border-radius:20px;font-weight:600;font-size:.72rem}
+.chart-box{position:relative;width:100%;height:280px}
+.chart-box.tall{height:340px}
+.chart-box.donut{height:240px}
+.prog-list{display:flex;flex-direction:column;gap:.7rem}
+.prog-row{display:flex;flex-direction:column;gap:.3rem}
+.prog-top{display:flex;justify-content:space-between;font-size:.78rem}
+.prog-top .nm{color:#e5e7eb;font-weight:600}
+.prog-top .ct{color:#f59e0b;font-weight:800}
+.prog-bar{height:6px;background:rgba(245,158,11,0.1);border-radius:6px;overflow:hidden}
+.prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#f59e0b,#ec4899)}
+.feed{display:flex;flex-direction:column;gap:.4rem}
+.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:rgba(15,23,42,0.4);border-left:2px solid #f59e0b;border-radius:9px;font-size:.78rem}
+.feed-item .tx{color:#e5e7eb}
+.feed-item .tx strong{color:#fff}
+.feed-item .tm{font-size:.65rem;color:#6b7280;margin-top:2px}
+.empty{text-align:center;padding:2rem 1rem;color:#94a3b8;font-size:.85rem}
+.empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
+.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
+.filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
+@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
+</style></head><body>
+<nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
+<a class="navbar-brand" href="{{ url_for('dashboard') }}"><i class="fas fa-hotel"></i> Rori Hotel</a>
+<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+<div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">
+<a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
+<a class="nav-link" href="{{ url_for('request_create') }}"><i class="fas fa-plus-circle"></i> New</a>
+<a class="nav-link" href="{{ url_for('requests_list') }}"><i class="fas fa-tasks"></i> Requests</a>
+<a class="nav-link" href="{{ url_for('workorders_list') }}"><i class="fas fa-clipboard-list"></i> Work Orders</a>
+<a class="nav-link" href="{{ url_for('rooms_list') }}"><i class="fas fa-door-open"></i> Rooms</a>
+<a class="nav-link" href="{{ url_for('areas_list') }}"><i class="fas fa-map-marked-alt"></i> Areas</a>
+<a class="nav-link" href="{{ url_for('inventory_list') }}"><i class="fas fa-boxes"></i> Inventory</a>
+<a class="nav-link" href="{{ url_for('suppliers_list') }}"><i class="fas fa-truck"></i> Suppliers</a>
+<a class="nav-link" href="{{ url_for('employees_list') }}"><i class="fas fa-users"></i> Employees</a>
+{% if current_user.role == 'ADMIN' %}
+<a class="nav-link" href="{{ url_for('admin_users') }}"><i class="fas fa-user-cog"></i> Users</a>
+<a class="nav-link" href="{{ url_for('audit_logs') }}"><i class="fas fa-history"></i> Audit</a>
+<a class="nav-link" href="{{ url_for('deleted_requests') }}"><i class="fas fa-archive"></i> Archived</a>
+<a class="nav-link" href="{{ url_for('backup_page') }}"><i class="fas fa-archive"></i> Backup</a>
+{% endif %}
+<a class="nav-link" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> Reports</a>
+<a class="nav-link" href="{{ url_for('notifications') }}"><i class="fas fa-bell"></i> Notifications</a>
+<a class="nav-link" href="{{ url_for('profile') }}"><i class="fas fa-user-circle"></i> {{ current_user.full_name or current_user.username }}</a>
+<a class="nav-link" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
+</div></div></div></nav>
+<div class="container mt-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+<div>
+<h2 style="color:#f59e0b;font-weight:800;margin:0"><i class="fas fa-chart-line"></i> Central Maintenance Dashboard</h2>
+<p style="color:#94a3b8;font-size:.85rem;margin:.25rem 0 0">All departments · Real-time analytics</p>
+</div>
+<a href="{{ url_for('request_create') }}" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>
+</div>
+<form method="get" class="filter-bar">
+<div><label class="form-label">From</label><input type="date" class="form-control" name="date_from" value="{{ filters.get('date_from','') }}"></div>
+<div><label class="form-label">To</label><input type="date" class="form-control" name="date_to" value="{{ filters.get('date_to','') }}"></div>
+<div><label class="form-label">Department</label>
+<select class="form-select" name="department">
+<option value="">All</option>
+{% for d in all_departments %}<option value="{{ d.id }}" {% if filters.get('department') == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+</select></div>
+<div><label class="form-label">Category</label>
+<select class="form-select" name="category">
+<option value="">All</option>
+{% for c in all_categories %}<option value="{{ c.id }}" {% if filters.get('category') == c.id|string %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+</select></div>
+<div><label class="form-label">Status</label>
+<select class="form-select" name="status">
+<option value="">All</option>
+{% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}
+<option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+</select></div>
+<div style="flex:0"><button class="btn btn-primary" type="submit"><i class="fas fa-filter"></i> Apply</button></div>
+<div style="flex:0"><a class="btn btn-sm" href="{{ url_for('dashboard') }}" style="background:#475569;color:#fff;padding:.65rem 1.2rem;border-radius:40px;font-weight:600;font-size:.85rem">Reset</a></div>
+</form>
+<div class="row g-3 mb-4">
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clipboard-list"></i></div><div class="metric-value">{{ kpis.total }}</div><div class="metric-label">Total</div></div></div>
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#f59e0b"><i class="fas fa-hourglass-half"></i></div><div class="metric-value">{{ kpis.pending }}</div><div class="metric-label">Pending</div></div></div>
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#22c55e"><i class="fas fa-circle-check"></i></div><div class="metric-value">{{ kpis.completed }}</div><div class="metric-label">Completed</div></div></div>
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-percent"></i></div><div class="metric-value">{{ kpis.completion_rate }}%</div><div class="metric-label">Rate</div></div></div>
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-clock"></i></div><div class="metric-value" style="font-size:1.3rem">{{ kpis.avg_resolution }}</div><div class="metric-label">Avg Time</div></div></div>
+<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-toolbox"></i></div><div class="metric-value">{{ work_orders.total }}</div><div class="metric-label">Work Orders</div></div></div>
+</div>
+<div class="row g-3 mb-4">
+<div class="col-lg-8">
+<div class="card"><h5 class="mb-3"><i class="fas fa-chart-area"></i> Request Trends</h5>
+<div class="chart-box tall"><canvas id="chartTrends"></canvas></div>
+</div>
+</div>
+<div class="col-lg-4">
+<div class="card"><h5 class="mb-3"><i class="fas fa-chart-pie"></i> Status Distribution</h5>
+<div class="chart-box donut"><canvas id="chartStatus"></canvas></div>
+</div>
+</div>
+</div>
+<div class="row g-3 mb-4">
+<div class="col-lg-6">
+<div class="card"><h5 class="mb-3"><i class="fas fa-building"></i> Requests by Department</h5>
+<div class="chart-box"><canvas id="chartDept"></canvas></div>
+</div>
+</div>
+<div class="col-lg-6">
+<div class="card"><h5 class="mb-3"><i class="fas fa-check-double"></i> Completion % by Department</h5>
+<div class="chart-box"><canvas id="chartDeptCompletion"></canvas></div>
+</div>
+</div>
+</div>
+<div class="row g-3 mb-4">
+<div class="col-lg-4">
+<div class="card"><h5 class="mb-3"><i class="fas fa-fire"></i> Priority Distribution</h5>
+<div class="chart-box donut"><canvas id="chartPriority"></canvas></div>
+</div>
+</div>
+<div class="col-lg-4">
+<div class="card"><h5 class="mb-3"><i class="fas fa-tags"></i> Categories</h5>
+<div class="chart-box"><canvas id="chartCategories"></canvas></div>
+</div>
+</div>
+<div class="col-lg-4">
+<div class="card"><h5 class="mb-3"><i class="fas fa-layer-group"></i> By Floor</h5>
+<div class="chart-box"><canvas id="chartFloors"></canvas></div>
+</div>
+</div>
+</div>
+<div class="row g-3 mb-4">
+<div class="col-lg-6">
+<div class="card"><h5 class="mb-3"><i class="fas fa-chart-bar"></i> Department Share (%)</h5>
+{% if chart_data.departments.labels|length > 0 %}
+<div class="prog-list">
+{% for i in range(chart_data.departments.labels|length) %}
+<div class="prog-row">
+<div class="prog-top"><span class="nm">{{ chart_data.departments.labels[i] }}</span>
+<span class="ct">{{ chart_data.departments.values[i] }} · {{ chart_data.departments.percentages[i] }}%</span></div>
+<div class="prog-bar"><span style="width:{{ chart_data.departments.percentages[i] }}%"></span></div>
+</div>
+{% endfor %}
+</div>
+{% else %}<div class="empty"><i class="fas fa-inbox"></i>No data available</div>{% endif %}
+</div>
+</div>
+<div class="col-lg-6">
+<div class="card"><h5 class="mb-3"><i class="fas fa-users-gear"></i> Technician Workload</h5>
+{% if technician_workload|length > 0 %}
+<div class="table-responsive"><table class="table table-hover">
+<thead><tr><th>Technician</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg Time</th></tr></thead>
+<tbody>{% for t in technician_workload %}
+<tr><td><strong>{{ t.name }}</strong><br><small style="color:#94a3b8">{{ t.role }}</small></td>
+<td><span class="badge" style="background:#3b82f6">{{ t.assigned }}</span></td>
+<td><span class="badge" style="background:#f59e0b">{{ t.in_progress }}</span></td>
+<td><span class="badge" style="background:#22c55e">{{ t.completed }}</span></td>
+<td>{{ t.avg_resolution }}</td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}<div class="empty"><i class="fas fa-users"></i>No technicians</div>{% endif %}
+</div>
+</div>
+</div>
+<div class="row g-3 mb-4">
+<div class="col-lg-8">
+<div class="card">
+<div class="d-flex justify-content-between align-items-center mb-3">
+<h5 style="margin:0"><i class="fas fa-clock-rotate-left"></i> Recent Requests</h5>
+<a href="{{ url_for('requests_list') }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.35rem .9rem;border-radius:20px;font-weight:600;font-size:.75rem">View All</a>
+</div>
+{% if recent_requests|length > 0 %}
+<div class="table-responsive"><table class="table table-hover">
+<thead><tr><th>Request</th><th>Department</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+<tbody>{% for r in recent_requests %}
+<tr><td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#f59e0b;font-weight:600">{{ r.request_no }}</a></td>
+<td>{{ r.department.name if r.department else '—' }}</td>
+<td>{{ r.location_name }}</td>
+<td><span class="badge" style="background:{{ '#ef4444' if r.priority=='URGENT' else '#f59e0b' if r.priority=='HIGH' else '#3b82f6' if r.priority=='MEDIUM' else '#22c55e' }}">{{ r.priority }}</span></td>
+<td><span class="badge" style="background:{{ '#22c55e' if r.status in ['Completed','Verified','Closed'] else '#f59e0b' if r.status=='Pending' else '#3b82f6' if r.status=='Approved' else '#8b5cf6' if r.status in ['Assigned','In Progress'] else '#6b7280' }}">{{ r.status }}</span></td>
+<td style="color:#94a3b8;font-size:.78rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
+<td><a href="{{ url_for('request_detail', req_id=r.id) }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.2rem .6rem;border-radius:8px;font-size:.7rem">Open</a></td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}<div class="empty"><i class="fas fa-inbox"></i>No requests</div>{% endif %}
+</div>
+</div>
+<div class="col-lg-4">
+<div class="card"><h5 class="mb-3"><i class="fas fa-wave-square"></i> Activity</h5>
+{% if recent_activity|length > 0 %}
+<div class="feed">
+{% for a in recent_activity %}
+<div class="feed-item"><i class="fas fa-bolt" style="color:#f59e0b;margin-top:.15rem"></i>
+<div style="flex:1"><div class="tx"><strong>{{ a.user }}</strong> — {{ a.action }}</div>
+<div class="tm">{{ a.time }}</div></div></div>
+{% endfor %}
+</div>
+{% else %}<div class="empty"><i class="fas fa-wave-square"></i>No activity</div>{% endif %}
+</div>
+<div class="card"><h5 class="mb-3"><i class="fas fa-boxes"></i> Inventory Snapshot</h5>
+<div class="prog-list">
+<div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+window.DASHBOARD_DATA = {{ chart_data|tojson }};
+(function(){
+'use strict';
+if(typeof Chart === 'undefined') return;
+var D = window.DASHBOARD_DATA || {};
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(245,158,11,0.1)';
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+Chart.defaults.font.size = 11;
+var TT = {backgroundColor:'rgba(15,23,42,0.97)', borderColor:'rgba(245,158,11,0.5)',
+borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:11, cornerRadius:10};
+var C = {amber:'#f59e0b', green:'#22c55e', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
+function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
+function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
+(function(){
+var el = document.getElementById('chartTrends');
+if(!el) return;
+var t = D.trends;
+if(!t || !t.labels || !t.labels.length){em(el,'fa-chart-area','No data available'); return;}
+var c = el.getContext('2d');
+new Chart(c, {type:'line', data:{labels:t.labels, datasets:[
+{label:'Total', data:t.total, borderColor:C.amber, borderWidth:2.5, fill:true,
+backgroundColor:gr(c,'rgba(245,158,11,0.35)','rgba(245,158,11,0.01)'),
+tension:0.4, pointRadius:0, pointHoverRadius:6},
+{label:'Completed', data:t.completed, borderColor:C.green, borderWidth:2.2, fill:true,
+backgroundColor:gr(c,'rgba(34,197,94,0.2)','rgba(34,197,94,0.01)'),
+tension:0.4, pointRadius:0, pointHoverRadius:5},
+{label:'Pending', data:t.pending, borderColor:C.red, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5},
+{label:'In Progress', data:t.in_progress, borderColor:C.purple, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5}
+]}, options:{responsive:true, maintainAspectRatio:false, interaction:{intersect:false, mode:'index'},
+plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8, boxHeight:8, padding:14, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
+scales:{x:{grid:{color:'rgba(245,158,11,0.05)'}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:10}},
+y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+})();
+(function(){
+var el = document.getElementById('chartStatus');
+if(!el) return;
+var s = D.statuses;
+if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;}
+var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple,
+'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
+new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[
+{data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
+]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
+plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
+})();
+(function(){
+var el = document.getElementById('chartDept');
+if(!el) return;
+var d = D.departments;
+if(!d || !d.labels || !d.labels.length){em(el,'fa-building','No data available'); return;}
+var c = el.getContext('2d');
+new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
+{label:'Requests', data:d.values, backgroundColor:gr(c,'rgba(245,158,11,0.95)','rgba(236,72,153,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
+]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
+y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+})();
+(function(){
+var el = document.getElementById('chartDeptCompletion');
+if(!el) return;
+var d = D.dept_completion;
+if(!d || !d.labels || !d.labels.length){em(el,'fa-check-double','No data available'); return;}
+var c = el.getContext('2d');
+new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
+{label:'Total', data:d.totals, backgroundColor:'rgba(148,163,184,0.35)', borderRadius:8, borderSkipped:false, maxBarThickness:28},
+{label:'Completed', data:d.completed, backgroundColor:gr(c,'rgba(34,197,94,0.95)','rgba(16,185,129,0.5)'), borderRadius:8, borderSkipped:false, maxBarThickness:28}
+]}, options:{responsive:true, maintainAspectRatio:false,
+plugins:{legend:{position:'top', labels:{boxWidth:8, boxHeight:8, padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
+scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
+y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+})();
+(function(){
+var el = document.getElementById('chartPriority');
+if(!el) return;
+var p = D.priorities;
+if(!p || !p.labels || !p.labels.length){em(el,'fa-fire','No data available'); return;}
+var map = {'URGENT':C.red, 'HIGH':C.amber, 'MEDIUM':C.blue, 'LOW':C.green};
+new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[
+{data:p.values, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
+]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
+plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
+})();
+(function(){
+var el = document.getElementById('chartCategories');
+if(!el) return;
+var x = D.categories;
+if(!x || !x.labels || !x.labels.length){em(el,'fa-tags','No data available'); return;}
+var c = el.getContext('2d');
+new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
+{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}
+]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}},
+y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+})();
+(function(){
+var el = document.getElementById('chartFloors');
+if(!el) return;
+var x = D.floors;
+if(!x || !x.labels || !x.labels.length){em(el,'fa-layer-group','No data available'); return;}
+var c = el.getContext('2d');
+new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
+{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
+]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+})();
+})();
+</script>
+</body></html>"""
+
+# ═════════════════════════════════════════ DEPARTMENT DASHBOARD
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -1322,7 +1804,7 @@ def department_dashboard():
          '</table></div></div>')
     return page("Department Dashboard", c)
 
-# ══════════════════════════════════════════ EMPLOYEE DASHBOARD
+# ═════════════════════════════════════════ EMPLOYEE DASHBOARD
 @app.route("/employee/dashboard")
 @login_required
 @role_required("EMPLOYEE")
@@ -1347,7 +1829,7 @@ def employee_dashboard():
          '</table></div></div>')
     return page("Employee Dashboard", c)
 
-# ══════════════════════════════════════════ WORK ORDERS
+# ═════════════════════════════════════════ WORK ORDERS
 @app.route("/workorders")
 @login_required
 def workorders_list():
@@ -1560,7 +2042,7 @@ def workorder_verify(wo_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
 
-# ══════════════════════════════════════════ SUPPLIERS
+# ═════════════════════════════════════════ SUPPLIERS
 def supplier_active(s):
     if s is None: return True
     if s.is_active is not None: return s.is_active
@@ -1666,7 +2148,7 @@ def supplier_deactivate(supplier_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("suppliers_list"))
 
-# ══════════════════════════════════════════ INVENTORY
+# ═════════════════════════════════════════ INVENTORY
 def part_form(p, action):
     def v(f, d=""):
         if p:
@@ -1737,7 +2219,7 @@ def inventory_edit(part_id):
             db.session.rollback(); flash("Error: " + str(e),"danger")
     return page("Edit Part", part_form(p, url_for("inventory_edit", part_id=p.id)))
 
-# ══════════════════════════════════════════ WORK ORDER PARTS
+# ═════════════════════════════════════════ WORK ORDER PARTS
 def can_parts(wo):
     return (current_user.role in ["MANAGER","ADMIN"] or
             (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
@@ -1794,7 +2276,7 @@ def workorder_part_remove(wo_id, part_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
-# ══════════════════════════════════════════ NOTIFICATIONS
+# ════════════════════════════════════════ NOTIFICATIONS
 @app.route("/api/notifications/unread")
 @login_required
 def api_unread():
@@ -1836,7 +2318,7 @@ def notification_mark_read(n_id):
     except Exception as e: flash("Error: " + str(e),"danger")
     return redirect(url_for("notifications"))
 
-# ══════════════════════════════════════════ OTHER PAGES
+# ═════════════════════════════════════════ OTHER PAGES
 @app.route("/rooms")
 @role_required("ADMIN","MANAGER")
 def rooms_list():
@@ -1943,7 +2425,7 @@ def reports():
          '</div>')
     return page("Reports", c)
 
-# ══════════════════════════════════════════ DEBUG
+# ═════════════════════════════════════════ DEBUG
 @app.route("/debug")
 def debug():
     return jsonify({
@@ -1957,7 +2439,7 @@ def debug():
                      for u in User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()],
     })
 
-# ══════════════════════════════════════════ PWA / LOGO
+# ═════════════════════════════════════════ PWA / LOGO
 @app.route("/manifest.json")
 def manifest():
     return jsonify({"name": "Rori Hotel Maintenance","short_name": "RoriMaint","start_url": "/dashboard",
@@ -1973,7 +2455,7 @@ def logo():
     if os.path.exists(p): return send_file(p, mimetype="image/png")
     return Response("", mimetype="image/png")
 
-# ══════════════════════════════════════════ ERRORS
+# ═════════════════════════════════════════ ERRORS
 @app.errorhandler(403)
 def e403(e): return page("Forbidden",'<div class="alert alert-danger">Access denied.</div>'), 403
 @app.errorhandler(404)
@@ -1985,7 +2467,7 @@ def e500(e):
     tb = traceback.format_exc(); print("500 ERROR: " + tb)
     return "<h1>500 Error</h1><pre>" + tb + "</pre>", 500
 
-# ══════════════════════════════════════════ INIT
+# ═════════════════════════════════════════ INIT
 with app.app_context():
     ensure_database_schema()
     seed_data()
