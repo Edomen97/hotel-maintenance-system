@@ -148,7 +148,7 @@ class MaintenanceRequest(db.Model):
     signature_name = db.Column(db.String(150), nullable=True)
     signature_status = db.Column(db.String(30), default="SIGNED")
     signature_signed_at = db.Column(db.DateTime, nullable=True)
-    signature_data = db.Column(db.Text, nullable=True)  # ✅ ለእውነተኛ የተሳለ ፊርማ ምስል (Base64 Image)
+    signature_data = db.Column(db.Text, nullable=True)  # ✅ ለእውነተኛ የተሳለ ፊርማ ምስል (Base64)
 
     room = db.relationship("Room", foreign_keys=[room_id])
     area = db.relationship("Area", foreign_keys=[area_id])
@@ -438,7 +438,7 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)")
             add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
             add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
-            add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT") # ✅ ፊርማ ምስል Column
+            add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT") # ✅ ፊርማ ምስል
             
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
@@ -493,7 +493,7 @@ def page(title, content):
             if r == "ADMIN":
                 nav += [('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
                     ('<i class="fas fa-history"></i> Audit', url_for('audit_logs')),
-                    ('<i class="fas fa-trash"></i> Deleted', url_for('deleted_requests')),
+                    ('<i class="fas fa-archive"></i> Archived', url_for('deleted_requests')),
                     ('<i class="fas fa-archive"></i> Backup', url_for('backup_page'))]
             nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
                 ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
@@ -704,10 +704,11 @@ def requests_list():
     for r in reqs:
         del_html = ""
         if is_mgr:
+            # ✅ ጠንካራ የማረጋገጫ መልእክት (በስህተት እንዳይሰረዝ)
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" '
-                'onsubmit="return confirm(\'Delete request ' + str(r.request_no) + '?\')">'
-                '<input type="hidden" name="reason" value="Deleted by manager">'
-                '<button type="submit" class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button></form>')
+                'onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ውስጥ መፈለግ ያስፈልጋል።\');">'
+                '<input type="hidden" name="reason" value="Archived by manager">'
+                '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
             '<td>' + str(r.location_name) + '</td>'
             '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
@@ -747,6 +748,10 @@ def request_create():
             fl = request.form.get("floor", type=int)
             did = request.form.get("department_id", type=int)
             
+            # ✅ የግድ የክፍል (Department) መታወቂያ እንዲኖር ማረጋገጫ (ይህ ስራዎች እንዳይጠፉ ያደርጋል)
+            if not did and current_user.department_id:
+                did = current_user.department_id
+            
             if current_user.role == "DEPARTMENT" and current_user.department_id: did = current_user.department_id
             if current_user.role == "EMPLOYEE" and not did and current_user.department_id: did = current_user.department_id
             
@@ -764,7 +769,7 @@ def request_create():
             if not sig_data:
                 flash("እባክዎ ፊርማዎን ይስሉ! (Signature is required)","danger")
                 return redirect(url_for("request_create"))
-                
+
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
@@ -945,7 +950,8 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Delete this request?\')"><input type="hidden" name="reason" value="Deleted by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Delete</button></form>')
+            # ✅ ጠንካራ Confirmation ለ Archive
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
     
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
@@ -1033,11 +1039,11 @@ def request_close(req_id):
 def request_delete(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
-        if req.is_deleted: flash("Already deleted","warning"); return redirect(url_for("request_detail", req_id=req_id))
+        if req.is_deleted: flash("Already archived","warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.is_deleted = True; req.deleted_at = datetime.utcnow(); req.deleted_by_id = current_user.id
-        req.deletion_reason = request.form.get("reason","Deleted by manager")
-        log_audit("SoftDelete","MaintenanceRequest",req.id,"active","deleted",new_value=req.deletion_reason)
-        db.session.commit(); flash("Request archived","success")
+        req.deletion_reason = request.form.get("reason","Archived by manager")
+        log_audit("Archive","MaintenanceRequest",req.id,"active","archived",new_value=req.deletion_reason)
+        db.session.commit(); flash("✅ Request archived successfully","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("requests_list"))
@@ -1055,7 +1061,7 @@ def deleted_requests():
             '<td>' + str(r.deletion_reason or "—") + '</td>'
             '<td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
     c = ('<h3 style="color:#f59e0b">🗑️ Archived Requests</h3><div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Deleted At</th><th>Deleted By</th><th>Reason</th><th></th></tr></thead>'
+        '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead>'
         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No archived requests</td></tr>') + '</tbody></table></div></div>')
     return page("Archived", c)
 
@@ -1065,8 +1071,8 @@ def request_restore(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
         req.is_deleted = False; req.deleted_at = None; req.deleted_by_id = None; req.deletion_reason = None
-        log_audit("Restore","MaintenanceRequest",req.id,"deleted","active")
-        db.session.commit(); flash("Request restored","success")
+        log_audit("Restore","MaintenanceRequest",req.id,"archived","active")
+        db.session.commit(); flash("✅ Request restored","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("deleted_requests"))
@@ -1387,7 +1393,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 {% if current_user.role == 'ADMIN' %}
 <a class="nav-link" href="{{ url_for('admin_users') }}"><i class="fas fa-user-cog"></i> Users</a>
 <a class="nav-link" href="{{ url_for('audit_logs') }}"><i class="fas fa-history"></i> Audit</a>
-<a class="nav-link" href="{{ url_for('deleted_requests') }}"><i class="fas fa-trash"></i> Deleted</a>
+<a class="nav-link" href="{{ url_for('deleted_requests') }}"><i class="fas fa-archive"></i> Archived</a>
 <a class="nav-link" href="{{ url_for('backup_page') }}"><i class="fas fa-archive"></i> Backup</a>
 {% endif %}
 <a class="nav-link" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> Reports</a>
