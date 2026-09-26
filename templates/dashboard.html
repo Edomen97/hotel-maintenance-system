@@ -39,11 +39,13 @@
         .prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#f59e0b,#ec4899)}
         .feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:rgba(15,23,42,0.4);border-left:2px solid #f59e0b;border-radius:9px;font-size:.78rem;margin-bottom:.4rem}
         .filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
+        .empty{text-align:center;padding:2rem 1rem;color:#94a3b8;font-size:.85rem}
+        .empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
         @media(max-width:768px){.metric-value{font-size:1.5rem}.chart-box{height:220px}}
     </style>
 </head>
 <body>
-    <!-- Navbar (Same as app.py page() function) -->
+    <!-- Navbar -->
     <nav class="navbar navbar-expand-lg fixed-top">
         <div class="container-fluid">
             <a class="navbar-brand" href="{{ url_for('dashboard') }}"><i class="fas fa-hotel"></i> Rori Hotel</a>
@@ -94,15 +96,15 @@
             <div><label class="form-label">Status</label>
                 <select class="form-select" name="status">
                     <option value="">All</option>
-                    {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed'] %}
+                    {% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}
                     <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
                 </select>
             </div>
             <div style="flex:0"><button class="btn btn-primary" type="submit"><i class="fas fa-filter"></i> Apply</button></div>
-            <div style="flex:0"><a class="btn btn-sm" href="{{ url_for('dashboard') }}" style="background:#475569;color:#fff;padding:.65rem 1.2rem;border-radius:40px;font-weight:600">Reset</a></div>
+            <div style="flex:0"><a class="btn btn-sm" href="{{ url_for('dashboard') }}" style="background:#475569;color:#fff;padding:.65rem 1.2rem;border-radius:40px;font-weight:600;font-size:.85rem">Reset</a></div>
         </form>
 
-        <!-- KPI Cards (Live Data from DB) -->
+        <!-- KPI Cards -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-2">
                 <div class="metric-card">
@@ -202,7 +204,7 @@
             </div>
         </div>
 
-        <!-- Bottom Row: Tech Workload, Recent Requests, Activity -->
+        <!-- Bottom Row: Tech Workload & Recent Requests -->
         <div class="row g-3 mb-4">
             <div class="col-lg-6">
                 <div class="card">
@@ -225,7 +227,7 @@
                         </table>
                     </div>
                     {% else %}
-                    <p style="color:#94a3b8;text-align:center;padding:2rem">No technicians found</p>
+                    <div class="empty"><i class="fas fa-users"></i>No technicians found</div>
                     {% endif %}
                 </div>
             </div>
@@ -254,7 +256,7 @@
                         </table>
                     </div>
                     {% else %}
-                    <p style="color:#94a3b8;text-align:center;padding:2rem">No requests yet</p>
+                    <div class="empty"><i class="fas fa-inbox"></i>No requests yet</div>
                     {% endif %}
                 </div>
             </div>
@@ -276,7 +278,7 @@
                     </div>
                     {% endfor %}
                     {% else %}
-                    <p style="color:#94a3b8;text-align:center;padding:2rem">No activity</p>
+                    <div class="empty"><i class="fas fa-wave-square"></i>No activity</div>
                     {% endif %}
                 </div>
             </div>
@@ -302,7 +304,7 @@
         </div>
     </div>
 
-    <!-- Chart.js Scripts with Live Data -->
+    <!-- Chart.js Scripts -->
     <script>
         window.DASHBOARD_DATA = {{ chart_data|tojson }};
         (function(){
