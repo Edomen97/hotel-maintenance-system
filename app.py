@@ -35,7 +35,7 @@ login_manager.login_view = "login"
 
 ROLES = ["ADMIN", "MANAGER", "SUPERVISOR", "TECHNICIAN", "MAINTENANCE STAFF", "EMPLOYEE", "DEPARTMENT"]
 ROOM_STATUSES = ["Available", "Occupied", "Reserved", "Maintenance", "Out of Service"]
-REQUEST_STATUSES = ["Pending", "Pending HK Approval", "Approved", "Assigned", "In Progress", "Completed", "Verified", "Closed", "Rejected", "Overdue"]
+REQUEST_STATUSES = ["Pending", "Approved", "Assigned", "In Progress", "Completed", "Verified", "Closed", "Rejected", "Overdue"]
 PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
@@ -138,8 +138,6 @@ class MaintenanceRequest(db.Model):
     deletion_reason = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Housekeeping Approval Fields
     awaiting_hk_approval = db.Column(db.Boolean, default=False)
     hk_approved_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     hk_approved_at = db.Column(db.DateTime)
@@ -147,7 +145,7 @@ class MaintenanceRequest(db.Model):
     hk_signature_data = db.Column(db.Text)
     hk_approval_notes = db.Column(db.Text)
     
-    # Digital Signature Fields
+    # ✅ Digital Signature Fields
     signature_name = db.Column(db.String(150), nullable=True)
     signature_status = db.Column(db.String(30), default="SIGNED")
     signature_signed_at = db.Column(db.DateTime, nullable=True)
@@ -436,7 +434,7 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","hk_signature_data","ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT")
             add_column_if_missing("maintenance_requests","hk_approval_notes","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT")
             
-            # Digital Signature Schema Migration
+            # ✅ Digital Signature Schema Migration
             add_column_if_missing("maintenance_requests","signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)")
             add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
             add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
@@ -621,7 +619,8 @@ def seed_data():
         {"u":"wale","n":"ዋሌ","r":"TECHNICIAN","d":None},
         {"u":"tsadiku","n":"ፃዲቁ","r":"TECHNICIAN","d":None},
         {"u":"employee1","n":"Test Employee","r":"EMPLOYEE","d":None},
-        {"u":"housekeeping","n":"Housekeeping Staff","r":"DEPARTMENT","d":hk.id if hk else None},
+        # ✅ housekeeping መለያ ሳይሰረዝ ስሙ ወደ Kassahun Girma ተቀይሯል
+        {"u":"housekeeping","n":"Kassahun Girma","r":"DEPARTMENT","d":hk.id if hk else None},
     ]:
         ex = User.query.filter_by(username=s["u"]).first()
         if not ex:
@@ -659,6 +658,7 @@ def login():
 <hr class="my-4" style="border-color:rgba(245,158,11,0.2)"><div class="text-center small" style="color:#94a3b8">
 <p class="mb-1">Manager (Amir): <b>amir / 123456</b></p>
 <p class="mb-1">HK Manager (Kasahun): <b>kasahun / 123456</b></p>
+<p class="mb-1">Housekeeping (Kassahun): <b>housekeeping / 123456</b></p>
 <p class="mb-0">Admin: <b>admin / admin123</b></p></div>
 </div></div></div>"""
     return page("Login", lh)
@@ -710,7 +710,7 @@ def requests_list():
     
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
     
-    def bd(st): return {"Pending":"warning","Pending HK Approval":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+    def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
                         "Completed":"success","Verified":"success","Closed":"secondary",
                         "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
                         
@@ -724,26 +724,22 @@ def requests_list():
                         '<input type="hidden" name="reason" value="Deleted by manager">'
                         '<button type="submit" class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button></form>')
                         
-        sig_badge = '<span class="badge bg-success"><i class="fas fa-check"></i> Signed</span>' if r.signature_status == "SIGNED" else '<span class="badge bg-secondary">Unsigned</span>'
-        
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
                     '<td>' + str(r.location_name) + '</td>'
                     '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
                     '<td>' + str(r.department.name if r.department else "—") + '</td>'
-                    '<td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td>'
-                    '<td>' + sig_badge + '</td>'
                     '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
                     '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
                     '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
                     + ('<td style="width:60px;text-align:center">' + del_html + '</td>' if is_mgr else '') + '</tr>')
                     
-    header = ('<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Requested By</th><th>Signature</th><th>Priority</th><th>Status</th><th>Created</th>'
+    header = ('<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>'
               + ('<th></th>' if is_mgr else '') + '</tr></thead>')
               
     c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>'
          '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
          '<div class="card"><div class="table-responsive"><table class="table table-hover">' + header +
-         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('10' if is_mgr else '9') + '" class="text-center">No requests found</td></tr>') +
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" class="text-center">No requests found</td></tr>') +
          '</tbody></table></div></div>')
     return page("Requests", c)
 
@@ -781,6 +777,7 @@ def request_create():
             if not desc:
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
                 
+            # ✅ Digital Signature - ከ current_user የሚወሰድ
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
@@ -790,25 +787,20 @@ def request_create():
                 signature_signed_at=datetime.utcnow()
             )
             
-            # Housekeeping Workflow Trigger
-            if current_user.department and current_user.department.name == "Housekeeping":
-                req.awaiting_hk_approval = True
-                req.status = "Pending HK Approval"
-                
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
             
-            log_audit("REQUEST_CREATED","MaintenanceRequest",req.id,new_value=req.request_no)
-            log_audit("DIGITALLY_SIGNED","MaintenanceRequest",req.id,new_value=current_user.full_name)
-            log_status_change(req.id, req.status, notes="Created and signed by " + str(current_user.full_name))
+            log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
+            log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=current_user.full_name)
+            log_status_change(req.id,"Pending",notes="Created and signed by " + str(current_user.full_name))
             
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 New Request",
-                         "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending",
+                         "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending approval",
                          "New Request", link=url_for("request_detail", req_id=req.id))
                          
             db.session.commit()
-            flash("✅ Request created successfully! " + req.request_no,"success")
+            flash("✅ Request created successfully!","success")
             return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
@@ -849,7 +841,7 @@ def request_create():
          '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
          '<div class="col-12 d-flex gap-2">'
          '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
-         '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit & Sign Request</button>'
+         '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
          '</div></div></form></div>'
          '<script>(function(){var lt=document.getElementById("locationType");'
          'var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
@@ -872,7 +864,7 @@ def request_detail(req_id):
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     wos = WorkOrder.query.filter_by(request_id=req.id).all()
     
-    def bd(st): return {"Pending":"warning","Pending HK Approval":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+    def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
                         "Completed":"success","Verified":"success","Closed":"secondary",
                         "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
                         
@@ -894,7 +886,7 @@ def request_detail(req_id):
                     '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
     if not wo_html: wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
     
-    # Digital Signature Card
+    # ✅ Digital Signature Card
     sig_html = ""
     if req.signature_status == "SIGNED":
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "N/A"
@@ -908,17 +900,11 @@ def request_detail(req_id):
                     '</div>')
                     
     actions = []
-    is_mgr = current_user.role in ["ADMIN","MANAGER"]
-    
-    if is_mgr:
-        if req.status == "Pending HK Approval":
-            actions.append('<form method="post" action="' + url_for("request_hk_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> HK Approve</button></form>')
-            
-        if req.status in ["Pending","Pending HK Approval","Approved","Assigned"] and req.assigned_to_id is None:
+    if current_user.role in ["ADMIN","MANAGER"]:
+        if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
             actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary"><i class="fas fa-user-plus"></i> Assign Staff</a>')
         elif req.status in ["Approved","Assigned"]:
             actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary"><i class="fas fa-user-edit"></i> Reassign</a>')
-            
         if req.status == "Pending":
             actions.append('<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button></form>')
         if req.status == "Completed":
@@ -952,32 +938,6 @@ def request_detail(req_id):
          '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
          '</div><div class="col-md-4"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
     return page("Request " + str(req.request_no), c)
-
-@app.route("/requests/<int:req_id>/hk-approve", methods=["POST"])
-@role_required("MANAGER","ADMIN")
-def request_hk_approve(req_id):
-    try:
-        req = get_or_404(MaintenanceRequest, req_id)
-        if req.status != "Pending HK Approval":
-            flash("Not awaiting HK approval","warning"); return redirect(url_for("request_detail", req_id=req_id))
-            
-        req.status = "Approved"
-        req.awaiting_hk_approval = False
-        req.hk_approved_by_id = current_user.id
-        req.hk_approved_at = datetime.utcnow()
-        req.hk_approval_status = "Approved"
-        
-        log_status_change(req.id,"Approved",notes="HK Approved by " + str(current_user.full_name))
-        log_audit("HK_APPROVE","MaintenanceRequest",req.id,old_value="Pending HK Approval",new_value="Approved")
-        
-        notify_users([req.requested_by_id], req.id, "✅ HK Approved",
-                     "Request " + str(req.request_no) + " approved by Housekeeping", "Approved",
-                     link=url_for("request_detail", req_id=req.id))
-                     
-        db.session.commit(); flash("✅ Housekeeping Approval Granted!","success")
-    except Exception as e:
-        db.session.rollback(); flash("Error: " + str(e),"danger")
-    return redirect(url_for("request_detail", req_id=req_id))
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER","ADMIN")
@@ -1081,7 +1041,7 @@ def request_restore(req_id):
 
 # ══════════════════════════════════════════ ANALYTICS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
-PENDING_STATES = ["Pending","Pending HK Approval","Approved"]
+PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
 
 def _parse_date(v):
@@ -1185,7 +1145,7 @@ def get_status_stats(args):
     reqs = build_filtered_query(args).all()
     counts = defaultdict(int)
     for r in reqs: counts[r.status] += 1
-    order = ["Pending","Pending HK Approval","Approved","Assigned","In Progress","Completed","Verified","Closed","Rejected","Overdue"]
+    order = ["Pending","Approved","Assigned","In Progress","Completed","Verified","Closed","Rejected","Overdue"]
     total = sum(counts.values())
     items = [(s, counts[s]) for s in order if counts.get(s,0) > 0]
     for s, c in counts.items():
@@ -1427,7 +1387,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 <div><label class="form-label">Status</label>
 <select class="form-select" name="status">
 <option value="">All</option>
-{% for s in ['Pending','Pending HK Approval','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}
+{% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}
 <option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
 </select></div>
 <div style="flex:0"><button class="btn btn-primary" type="submit"><i class="fas fa-filter"></i> Apply</button></div>
@@ -1523,25 +1483,15 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 </div>
 {% if recent_requests|length > 0 %}
 <div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Request</th><th>Department</th><th>Requested By</th><th>Location</th><th>Priority</th><th>Status</th><th>Signature</th><th>Date</th><th></th></tr></thead>
+<thead><tr><th>Request</th><th>Department</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
 <tbody>{% for r in recent_requests %}
-<tr>
-    <td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#f59e0b;font-weight:600">{{ r.request_no }}</a></td>
-    <td>{{ r.department.name if r.department else '—' }}</td>
-    <td>{{ r.requested_by.full_name if r.requested_by else '—' }}</td>
-    <td>{{ r.location_name }}</td>
-    <td><span class="badge" style="background:{{ '#ef4444' if r.priority=='URGENT' else '#f59e0b' if r.priority=='HIGH' else '#3b82f6' if r.priority=='MEDIUM' else '#22c55e' }}">{{ r.priority }}</span></td>
-    <td><span class="badge" style="background:{{ '#22c55e' if r.status in ['Completed','Verified','Closed'] else '#f59e0b' if r.status in ['Pending','Pending HK Approval'] else '#3b82f6' if r.status=='Approved' else '#8b5cf6' if r.status in ['Assigned','In Progress'] else '#6b7280' }}">{{ r.status }}</span></td>
-    <td>
-        {% if r.signature_status == 'SIGNED' %}
-        <span class="badge" style="background:#22c55e"><i class="fas fa-check"></i> Signed</span>
-        {% else %}
-        <span class="badge" style="background:#6b7280">Unsigned</span>
-        {% endif %}
-    </td>
-    <td style="color:#94a3b8;font-size:.78rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
-    <td><a href="{{ url_for('request_detail', req_id=r.id) }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.2rem .6rem;border-radius:8px;font-size:.7rem">Open</a></td>
-</tr>
+<tr><td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#f59e0b;font-weight:600">{{ r.request_no }}</a></td>
+<td>{{ r.department.name if r.department else '—' }}</td>
+<td>{{ r.location_name }}</td>
+<td><span class="badge" style="background:{{ '#ef4444' if r.priority=='URGENT' else '#f59e0b' if r.priority=='HIGH' else '#3b82f6' if r.priority=='MEDIUM' else '#22c55e' }}">{{ r.priority }}</span></td>
+<td><span class="badge" style="background:{{ '#22c55e' if r.status in ['Completed','Verified','Closed'] else '#f59e0b' if r.status=='Pending' else '#3b82f6' if r.status=='Approved' else '#8b5cf6' if r.status in ['Assigned','In Progress'] else '#6b7280' }}">{{ r.status }}</span></td>
+<td style="color:#94a3b8;font-size:.78rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
+<td><a href="{{ url_for('request_detail', req_id=r.id) }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.2rem .6rem;border-radius:8px;font-size:.7rem">Open</a></td></tr>
 {% endfor %}</tbody></table></div>
 {% else %}<div class="empty"><i class="fas fa-inbox"></i>No requests</div>{% endif %}
 </div>
@@ -1611,7 +1561,7 @@ var el = document.getElementById('chartStatus');
 if(!el) return;
 var s = D.statuses;
 if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;}
-var map = {'Pending':C.amber, 'Pending HK Approval':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple,
+var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple,
 'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
 new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[
 {data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
@@ -1696,7 +1646,7 @@ def department_dashboard():
         q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
     total = len(reqs)
-    pending = sum(1 for r in reqs if r.status in ["Pending", "Pending HK Approval"])
+    pending = sum(1 for r in reqs if r.status == "Pending")
     approved = sum(1 for r in reqs if r.status in ["Approved","Assigned"])
     in_progress = sum(1 for r in reqs if r.status == "In Progress")
     completed = sum(1 for r in reqs if r.status == "Completed")
@@ -1705,7 +1655,7 @@ def department_dashboard():
     rejected = sum(1 for r in reqs if r.status == "Rejected")
     overdue = sum(1 for r in reqs if r.is_overdue)
     
-    def bd(st): return {"Pending":"warning","Pending HK Approval":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+    def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
                         "Completed":"success","Verified":"success","Closed":"secondary",
                         "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
                         
@@ -1739,7 +1689,7 @@ def department_dashboard():
 @role_required("EMPLOYEE")
 def employee_dashboard():
     reqs = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
-    def bd(st): return {"Pending":"warning","Pending HK Approval":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+    def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
                         "Completed":"success","Verified":"success","Closed":"secondary",
                         "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
@@ -1831,7 +1781,6 @@ def workorder_create():
          '<div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="' + str(req.request_no if req else "") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
-         '<div class="mb-3"><label class="form-label">Requested By</label><input class="form-control" value="' + str(req.requested_by.full_name if req and req.requested_by else "—") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
          '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
          '<button class="btn btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
@@ -1882,7 +1831,6 @@ def workorder_detail(wo_id):
          '<tr><th style="color:#94a3b8">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr>'
          '<tr><th style="color:#94a3b8">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr>'
          '<tr><th style="color:#94a3b8">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr>'
-         '<tr><th style="color:#94a3b8">Requested By</th><td><strong>' + str(wo.request.requested_by.full_name if wo.request and wo.request.requested_by else "—") + '</strong></td></tr>'
          '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-info">' + str(wo.status) + '</span></td></tr>'
          '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned") + '</td></tr>'
          '<tr><th style="color:#94a3b8">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr>'
@@ -2042,7 +1990,7 @@ def supplier_add():
             db.session.commit(); flash("✅ Saved","success"); return redirect(url_for("suppliers_list"))
         except Exception as e:
             db.session.rollback(); flash("Error: " + str(e),"danger")
-    return page("Add Supplier", supplier_form(None, url_for("supplier_add"), False))
+        return page("Add Supplier", supplier_form(None, url_for("supplier_add"), False))
 
 @app.route("/suppliers/<int:supplier_id>/edit", methods=["GET","POST"])
 @role_required("ADMIN","MANAGER")
@@ -2287,7 +2235,7 @@ def inventory_list():
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-boxes"></i> Inventory</h3>'
          '<a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a>'
          '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-         '<thead><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead>'
+         '<thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead>'
          '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" class="text-center">No parts</td></tr>') + '</tbody></table></div></div>')
     return page("Inventory", c)
 
@@ -2348,7 +2296,7 @@ def backup_now():
 def reports():
     base = MaintenanceRequest.query.filter_by(is_deleted=False)
     total = base.count()
-    pending = base.filter(MaintenanceRequest.status.in_(["Pending", "Pending HK Approval"])).count()
+    pending = base.filter_by(status="Pending").count()
     completed = base.filter_by(status="Completed").count()
     verified = base.filter_by(status="Verified").count()
     c = ('<h3 style="color:#f59e0b">Reports</h3><div class="row g-3 mb-4">'
