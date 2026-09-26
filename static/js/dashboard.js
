@@ -1,196 +1,126 @@
-(function () {
-  'use strict';
-
-  function init() {
-    var toggle   = document.getElementById('hk-toggle');
-    var sidebar  = document.getElementById('hk-sidebar');
-    var backdrop = document.getElementById('hk-backdrop');
-    if (toggle && sidebar) {
-      toggle.addEventListener('click', function () {
-        sidebar.classList.toggle('open');
-        if (backdrop) backdrop.classList.toggle('show');
-      });
+<script>
+window.DASHBOARD_DATA = {{ chart_data|tojson }};
+(function(){
+    'use strict';
+    if(typeof Chart === 'undefined') {
+        console.error('Chart.js not loaded');
+        return;
     }
-    if (backdrop && sidebar) {
-      backdrop.addEventListener('click', function () {
-        sidebar.classList.remove('open');
-        backdrop.classList.remove('show');
-      });
-    }
-
-    if (typeof Chart === 'undefined') { console.warn('Chart.js not loaded'); return; }
-    var DATA = window.HK_DATA || {};
-
-    Chart.defaults.color = '#9CA3AF';
-    Chart.defaults.borderColor = 'rgba(212,175,55,0.10)';
+    var D = window.DASHBOARD_DATA || {};
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(245,158,11,0.1)';
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-    Chart.defaults.font.size = 10;
-
-    var TOOLTIP = {
-      backgroundColor: 'rgba(8,8,18,0.97)',
-      borderColor: 'rgba(212,175,55,0.4)',
-      borderWidth: 1,
-      titleColor: '#fff', bodyColor: '#e5e7eb',
-      padding: 10, cornerRadius: 8,
-      titleFont: { size: 11, weight: '700' },
-      bodyFont: { size: 11 }
-    };
-
-    var GOLD = '#D4AF37', BLUE = '#38BDF8', PINK = '#EC4899', GREEN = '#22C55E';
-
-    function grad(ctx, c1, c2) {
-      var g = ctx.createLinearGradient(0, 0, 0, 320);
-      g.addColorStop(0, c1); g.addColorStop(1, c2);
-      return g;
-    }
-    function empty(el, icon, msg) {
-      if (!el || !el.parentElement) return;
-      el.parentElement.innerHTML =
-        '<div class="hk-empty"><i class="fas ' + icon + '"></i>' + msg + '</div>';
-    }
-
-    // TRENDS
-    (function () {
-      var el = document.getElementById('chart-trends');
-      if (!el) return;
-      var t = DATA.trends;
-      if (!t || !t.labels || !t.labels.length) { empty(el, 'fa-chart-line', 'No data yet.'); return; }
-      var ctx = el.getContext('2d');
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: t.labels,
-          datasets: [
-            { label: 'Total', data: t.total, borderColor: GOLD,
-              backgroundColor: grad(ctx, 'rgba(212,175,55,0.30)', 'rgba(212,175,55,0.01)'),
-              fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 },
-            { label: 'Completed', data: t.completed, borderColor: GREEN, backgroundColor: 'transparent',
-              fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-            { label: 'Pending', data: t.pending, borderColor: PINK, backgroundColor: 'transparent',
-              fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
-            { label: 'In Progress', data: t.in_progress, borderColor: BLUE, backgroundColor: 'transparent',
-              fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { intersect: false, mode: 'index' },
-          plugins: {
-            legend: { position: 'top', align: 'end',
-              labels: { boxWidth: 7, boxHeight: 7, padding: 14, usePointStyle: true, pointStyle: 'circle', font: { size: 11, weight: '600' } } },
-            tooltip: TOOLTIP
-          },
-          scales: {
-            x: { grid: { color: 'rgba(212,175,55,0.05)' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
-            y: { beginAtZero: true, grid: { color: 'rgba(212,175,55,0.06)' }, ticks: { precision: 0 } }
-          }
-        }
-      });
+    Chart.defaults.font.size = 11;
+    var TT = {backgroundColor:'rgba(15,23,42,0.97)', borderColor:'rgba(245,158,11,0.5)',
+        borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:11, cornerRadius:10};
+    var C = {amber:'#f59e0b', green:'#22c55e', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
+    function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
+    function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
+    
+    // 1. Trends Chart
+    (function(){
+        var el = document.getElementById('chartTrends');
+        if(!el) return;
+        var t = D.trends;
+        if(!t || !t.labels || !t.labels.length){em(el,'fa-chart-area','No data available'); return;}
+        var c = el.getContext('2d');
+        new Chart(c, {type:'line', data:{labels:t.labels, datasets:[
+            {label:'Total', data:t.total, borderColor:C.amber, borderWidth:2.5, fill:true,
+                backgroundColor:gr(c,'rgba(245,158,11,0.35)','rgba(245,158,11,0.01)'),
+                tension:0.4, pointRadius:0, pointHoverRadius:6},
+            {label:'Completed', data:t.completed, borderColor:C.green, borderWidth:2.2, fill:true,
+                backgroundColor:gr(c,'rgba(34,197,94,0.2)','rgba(34,197,94,0.01)'),
+                tension:0.4, pointRadius:0, pointHoverRadius:5},
+            {label:'Pending', data:t.pending, borderColor:C.red, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5},
+            {label:'In Progress', data:t.in_progress, borderColor:C.purple, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5}
+        ]}, options:{responsive:true, maintainAspectRatio:false, interaction:{intersect:false, mode:'index'},
+            plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8, boxHeight:8, padding:14, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
+            scales:{x:{grid:{color:'rgba(245,158,11,0.05)'}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:10}},
+                y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
     })();
-
-    // STATUS
-    (function () {
-      var el = document.getElementById('chart-status');
-      if (!el) return;
-      var s = DATA.statuses;
-      if (!s || !s.labels || !s.labels.length) { empty(el, 'fa-circle-notch', 'No status data.'); return; }
-      var map = { 'Pending':'#F59E0B','Approved':'#3B82F6','In Progress':'#38BDF8','Completed':'#22C55E','Closed':'#16A34A','Rejected':'#EF4444' };
-      var colors = s.labels.map(function (l) { return map[l] || '#9CA3AF'; });
-      new Chart(el.getContext('2d'), {
-        type: 'doughnut',
-        data: { labels: s.labels, datasets: [{ data: s.values, backgroundColor: colors, borderColor: '#15152A', borderWidth: 2, hoverOffset: 8 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '66%',
-          plugins: {
-            legend: { position: 'right', labels: { boxWidth: 8, boxHeight: 8, padding: 8, usePointStyle: true, pointStyle: 'circle', font: { size: 10, weight: '600' } } },
-            tooltip: {
-              backgroundColor: TOOLTIP.backgroundColor, borderColor: TOOLTIP.borderColor,
-              borderWidth: 1, titleColor: '#fff', bodyColor: '#e5e7eb', padding: 10, cornerRadius: 8,
-              callbacks: { label: function (ctx) {
-                var total = s.values.reduce(function (a, b) { return a + b; }, 0);
-                var pct = total ? Math.round(ctx.parsed / total * 100) : 0;
-                return ' ' + ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
-              } }
-            }
-          }
-        }
-      });
+    
+    // 2. Status Donut
+    (function(){
+        var el = document.getElementById('chartStatus');
+        if(!el) return;
+        var s = D.statuses;
+        if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;}
+        var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple,
+            'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
+        new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[
+            {data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
+        ]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
+            plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
     })();
-
-    // FLOORS
-    (function () {
-      var el = document.getElementById('chart-floors');
-      if (!el) return;
-      var f = DATA.floors;
-      if (!f || !f.labels || !f.labels.length) { empty(el, 'fa-building', 'No floor data.'); return; }
-      var ctx = el.getContext('2d');
-      new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: f.labels,
-          datasets: [{ label: 'Requests', data: f.values,
-            backgroundColor: grad(ctx, 'rgba(212,175,55,0.9)', 'rgba(212,175,55,0.25)'),
-            borderRadius: 6, borderSkipped: false, maxBarThickness: 34 }]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: TOOLTIP },
-          scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 10, weight: '600' } } },
-            y: { beginAtZero: true, grid: { color: 'rgba(212,175,55,0.06)' }, ticks: { precision: 0 } }
-          }
-        }
-      });
+    
+    // 3. Department Bar
+    (function(){
+        var el = document.getElementById('chartDept');
+        if(!el) return;
+        var d = D.departments;
+        if(!d || !d.labels || !d.labels.length){em(el,'fa-building','No data available'); return;}
+        var c = el.getContext('2d');
+        new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
+            {label:'Requests', data:d.values, backgroundColor:gr(c,'rgba(245,158,11,0.95)','rgba(236,72,153,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
+        ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+            scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
+                y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
     })();
-
-    // CATEGORIES
-    (function () {
-      var el = document.getElementById('chart-categories');
-      if (!el) return;
-      var c = DATA.categories;
-      if (!c || !c.labels || !c.labels.length) { empty(el, 'fa-chart-pie', 'No category data.'); return; }
-      var palette = ['#D4AF37','#E6C65C','#38BDF8','#22C55E','#F59E0B','#EC4899','#8B5CF6','#06B6D4','#F472B6','#10B981'];
-      new Chart(el.getContext('2d'), {
-        type: 'doughnut',
-        data: { labels: c.labels, datasets: [{ data: c.values, backgroundColor: palette, borderColor: '#15152A', borderWidth: 2, hoverOffset: 8 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '66%',
-          plugins: {
-            legend: { position: 'right', labels: { boxWidth: 8, boxHeight: 8, padding: 8, usePointStyle: true, pointStyle: 'circle', font: { size: 10, weight: '600' } } },
-            tooltip: {
-              backgroundColor: TOOLTIP.backgroundColor, borderColor: TOOLTIP.borderColor,
-              borderWidth: 1, titleColor: '#fff', bodyColor: '#e5e7eb', padding: 10, cornerRadius: 8
-            }
-          }
-        }
-      });
+    
+    // 4. Dept Completion
+    (function(){
+        var el = document.getElementById('chartDeptCompletion');
+        if(!el) return;
+        var d = D.dept_completion;
+        if(!d || !d.labels || !d.labels.length){em(el,'fa-check-double','No data available'); return;}
+        var c = el.getContext('2d');
+        new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
+            {label:'Total', data:d.totals, backgroundColor:'rgba(148,163,184,0.35)', borderRadius:8, borderSkipped:false, maxBarThickness:28},
+            {label:'Completed', data:d.completed, backgroundColor:gr(c,'rgba(34,197,94,0.95)','rgba(16,185,129,0.5)'), borderRadius:8, borderSkipped:false, maxBarThickness:28}
+        ]}, options:{responsive:true, maintainAspectRatio:false,
+            plugins:{legend:{position:'top', labels:{boxWidth:8, boxHeight:8, padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
+            scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
+                y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
     })();
-
-    // PRIORITIES
-    (function () {
-      var el = document.getElementById('chart-priorities');
-      if (!el) return;
-      var p = DATA.priorities;
-      if (!p || !p.labels || !p.labels.length) { empty(el, 'fa-fire', 'No priority data.'); return; }
-      var map = { 'URGENT':'#EF4444','HIGH':'#F59E0B','MEDIUM':'#38BDF8','LOW':'#22C55E' };
-      var colors = p.labels.map(function (l) { return map[l] || '#9CA3AF'; });
-      new Chart(el.getContext('2d'), {
-        type: 'doughnut',
-        data: { labels: p.labels, datasets: [{ data: p.values, backgroundColor: colors, borderColor: '#15152A', borderWidth: 2, hoverOffset: 8 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '66%',
-          plugins: {
-            legend: { position: 'right', labels: { boxWidth: 8, boxHeight: 8, padding: 8, usePointStyle: true, pointStyle: 'circle', font: { size: 10, weight: '600' } } },
-            tooltip: {
-              backgroundColor: TOOLTIP.backgroundColor, borderColor: TOOLTIP.borderColor,
-              borderWidth: 1, titleColor: '#fff', bodyColor: '#e5e7eb', padding: 10, cornerRadius: 8
-            }
-          }
-        }
-      });
+    
+    // 5. Priority Donut
+    (function(){
+        var el = document.getElementById('chartPriority');
+        if(!el) return;
+        var p = D.priorities;
+        if(!p || !p.labels || !p.labels.length){em(el,'fa-fire','No data available'); return;}
+        var map = {'URGENT':C.red, 'HIGH':C.amber, 'MEDIUM':C.blue, 'LOW':C.green};
+        new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[
+            {data:p.values, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
+        ]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
+            plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
     })();
-  }
-
-  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
-  else { init(); }
+    
+    // 6. Categories Bar
+    (function(){
+        var el = document.getElementById('chartCategories');
+        if(!el) return;
+        var x = D.categories;
+        if(!x || !x.labels || !x.labels.length){em(el,'fa-tags','No data available'); return;}
+        var c = el.getContext('2d');
+        new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
+            {label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}
+        ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+            scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}},
+                y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+    })();
+    
+    // 7. Floors Bar
+    (function(){
+        var el = document.getElementById('chartFloors');
+        if(!el) return;
+        var x = D.floors;
+        if(!x || !x.labels || !x.labels.length){em(el,'fa-layer-group','No data available'); return;}
+        var c = el.getContext('2d');
+        new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
+            {label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
+        ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
+            scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
+    })();
 })();
+</script>
