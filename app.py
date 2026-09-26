@@ -1,17 +1,15 @@
-# app.py
 import csv, io, json, os, re, sqlite3, uuid, traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text, inspect
 from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-render_template, render_template_string, request, send_file, url_for, Response)
+                   render_template, request, send_file, url_for, Response)
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
-login_user, logout_user)
+                         login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
-import qrcode
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
@@ -40,7 +38,7 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ══════════════════════════════════════════ MODELS
+# ═════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -143,11 +141,10 @@ class MaintenanceRequest(db.Model):
     hk_approval_status = db.Column(db.String(20))
     hk_signature_data = db.Column(db.Text)
     hk_approval_notes = db.Column(db.Text)
-    # ✅ Digital Signature Fields
     signature_name = db.Column(db.String(150), nullable=True)
     signature_status = db.Column(db.String(30), default="SIGNED")
     signature_signed_at = db.Column(db.DateTime, nullable=True)
-    signature_data = db.Column(db.Text, nullable=True)  # ✅ Base64 signature image
+    signature_data = db.Column(db.Text, nullable=True)
 
     room = db.relationship("Room", foreign_keys=[room_id])
     area = db.relationship("Area", foreign_keys=[area_id])
@@ -344,7 +341,7 @@ def create_notification(user_id, request_id, title, message, ntype="General", li
     recent = Notification.query.filter_by(user_id=user_id, request_id=request_id, notification_type=ntype).order_by(Notification.created_at.desc()).first()
     if recent and (datetime.utcnow() - recent.created_at).total_seconds() < 5: return recent
     n = Notification(user_id=user_id, request_id=request_id, work_order_id=work_order_id,
-        title=title, message=message, notification_type=ntype, link=link)
+                     title=title, message=message, notification_type=ntype, link=link)
     db.session.add(n); return n
 
 def notify_users(ids, request_id, title, message, ntype="General", link=None, work_order_id=None):
@@ -358,8 +355,8 @@ def notify_maintenance_staff(req, wo):
     item_name = req.working_item.name if req.working_item else "N/A"
     dept_name = req.department.name if req.department else "N/A"
     msg = ("Request: " + str(req.request_no) + " | WO: " + str(wo.work_order_no) +
-        " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
-        " | Priority: " + str(req.priority) + " | Dept: " + str(dept_name))
+           " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
+           " | Priority: " + str(req.priority) + " | Dept: " + str(dept_name))
     link = url_for("workorder_detail", wo_id=wo.id)
     c = 0
     for s in staff:
@@ -371,8 +368,8 @@ def notify_assigned_staff(req, wo, staff_user):
     title = "📋 Assigned to you: " + str(wo.work_order_no)
     item_name = req.working_item.name if req.working_item else "N/A"
     msg = ("Request: " + str(req.request_no) + " | WO: " + str(wo.work_order_no) +
-        " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
-        " | Priority: " + str(req.priority))
+           " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
+           " | Priority: " + str(req.priority))
     link = url_for("workorder_detail", wo_id=wo.id)
     create_notification(staff_user.id, req.id, title, msg, "Work Order Assigned", link, wo.id)
 
@@ -391,7 +388,6 @@ def allowed_file(fn):
     return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_one(model, ident): return db.session.get(model, ident)
-
 def get_or_404(model, ident):
     obj = db.session.get(model, ident)
     if obj is None: abort(404)
@@ -432,7 +428,6 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","hk_approval_status","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_status VARCHAR(20)")
             add_column_if_missing("maintenance_requests","hk_signature_data","ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT")
             add_column_if_missing("maintenance_requests","hk_approval_notes","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT")
-            # ✅ Digital Signature Schema Migration
             add_column_if_missing("maintenance_requests","signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)")
             add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
             add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
@@ -455,56 +450,59 @@ def ensure_database_schema():
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
-# ══════════════════════════════════════════ PAGE
+# ══════════════════════════════════════════ PAGE HELPER
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
         r = current_user.role
         if r == "DEPARTMENT":
             nav = [('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')),
-                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         elif r == "EMPLOYEE":
             nav = [('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
-                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         elif r in STAFF_ROLES:
             nav = [('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
-                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         else:
             nav = [('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')),
-                ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                ('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')),
-                ('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')),
-                ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
-                ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
-                ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
-                ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
-                ('<i class="fas fa-users"></i> Employees', url_for('employees_list'))]
-            if r == "ADMIN":
-                nav += [('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
+                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
+                   ('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')),
+                   ('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')),
+                   ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
+                   ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
+                   ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
+                   ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
+                   ('<i class="fas fa-users"></i> Employees', url_for('employees_list'))]
+        if r == "ADMIN":
+            nav += [('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
                     ('<i class="fas fa-history"></i> Audit', url_for('audit_logs')),
                     ('<i class="fas fa-archive"></i> Archived', url_for('deleted_requests')),
                     ('<i class="fas fa-archive"></i> Backup', url_for('backup_page'))]
-            nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+        nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
                 ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
                 ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
+    
     nav_html = "".join('<a class="nav-link" href="' + str(u) + '">' + str(l) + '</a>' for l, u in nav)
     bell_html = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
         badge = '<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">' + str(unread) + '</span>' if unread > 0 else ""
         bell_html = '<a class="nav-link" id="nav-bell" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
+    
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
+    
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -598,12 +596,12 @@ def seed_data():
     for s in [
         {"u":"amir","n":"Amir Awel","r":"MANAGER","d":None},
         {"u":"kasahun","n":"Kasahun Girma","r":"MANAGER","d":hk.id if hk else None},
-        {"u":"abebayhu","n":"አበባየሁ ክፍሌ","r":"SUPERVISOR","d":None},
+        {"u":"abebayhu","n":"አበባየሁ ክሌ","r":"SUPERVISOR","d":None},
         {"u":"tesfahun","n":"ተስፋሁን ነከረ","r":"TECHNICIAN","d":None},
         {"u":"simon","n":"ስምዖን ዮሐንስ","r":"TECHNICIAN","d":None},
-        {"u":"chernet","n":"ቸርነት አሞና","r":"TECHNICIAN","d":None},
+        {"u":"chernet","n":"ርነት አሞና","r":"TECHNICIAN","d":None},
         {"u":"wale","n":"ዋ","r":"TECHNICIAN","d":None},
-        {"u":"tsadiku","n":"ፃዲቁ","r":"TECHNICIAN","d":None},
+        {"u":"tsadiku","n":"ፃቁ","r":"TECHNICIAN","d":None},
         {"u":"employee1","n":"Test Employee","r":"EMPLOYEE","d":None},
         {"u":"housekeeping","n":"Kassahun Girma","r":"DEPARTMENT","d":hk.id if hk else None},
     ]:
@@ -632,13 +630,13 @@ def login():
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
-        flash("የተሳተ መለያ ስም ይም የይለፍ ቃል","danger")
+        flash("የተሳተ መለያ ስም ወይም የይለፍ ቃል","danger")
     lh = """<div class="row justify-content-center align-items-center" style="min-height:80vh">
 <div class="col-11 col-md-5"><div class="login-card">
-<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የገና ክፍል መግቢያ</p></div>
-<form method="post"><div class="mb-3"><label class="form-label">መለያ ም</label><input type="text" class="form-control" name="username" required autofocus></div>
-<div class="mb-4"><label class="form-label">የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
-<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግ</button></form>
+<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የገና ክል መግቢያ</p></div>
+<form method="post"><div class="mb-3"><label class="form-label">መለያ ስም</label><input type="text" class="form-control" name="username" required autofocus></div>
+<div class="mb-4"><label class="form-label">የይለፍ ል</label><input type="password" class="form-control" name="password" required></div>
+<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ባ</button></form>
 <hr class="my-4" style="border-color:rgba(245,158,11,0.2)"><div class="text-center small" style="color:#94a3b8">
 <p class="mb-1">Manager (Amir): <b>amir / 123456</b></p>
 <p class="mb-1">HK Manager (Kasahun): <b>kasahun / 123456</b></p>
@@ -660,14 +658,14 @@ def profile():
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
-        db.session.commit(); flash("መረጃዎ ተዘምኗል","success"); return redirect(url_for("profile"))
+        db.session.commit(); flash("መጃዎ ተዘምል","success"); return redirect(url_for("profile"))
     c = ('<h3 style="color:#f59e0b">👤 መገለጫ</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
-        '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
-        '<p>📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
-        '<form method="post"><div class="mb-3"><label class="form-label">ኢል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
-        '<div class="mb-3"><label class="form-label">ስልክ</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
-        '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይለጥም"></div>'
-        '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀም</button></form></div>')
+         '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
+         '<p>📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
+         '<form method="post"><div class="mb-3"><label class="form-label">ኢሜይል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
+         '<div class="mb-3"><label class="form-label">ስልክ</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
+         '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይለጥም"></div>'
+         '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div>')
     return page("Profile", c)
 
 # ══════════════════════════════════════════ REQUESTS
@@ -675,48 +673,44 @@ def profile():
 @login_required
 def requests_list():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if current_user.role in ["MANAGER","ADMIN"]:
-        pass
+    if current_user.role in ["MANAGER","ADMIN"]: pass
     elif current_user.role == "DEPARTMENT":
         if current_user.department_id:
             q = q.filter(db.or_(MaintenanceRequest.department_id == current_user.department_id,
-                MaintenanceRequest.requested_by_id == current_user.id))
-        else:
-            q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
-    elif current_user.role == "EMPLOYEE":
-        q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
-    elif current_user.role in STAFF_ROLES:
-        q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
+                                MaintenanceRequest.requested_by_id == current_user.id))
+        else: q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role == "EMPLOYEE": q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
+    elif current_user.role in STAFF_ROLES: q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
     if request.args.get("status"): q = q.filter(MaintenanceRequest.status == request.args["status"])
     if request.args.get("priority"): q = q.filter(MaintenanceRequest.priority == request.args["priority"])
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
-        "Completed":"success","Verified":"success","Closed":"secondary",
-        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
+                        "Completed":"success","Verified":"success","Closed":"secondary",
+                        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     is_mgr = current_user.role in ["MANAGER","ADMIN"]
     rows = []
     for r in reqs:
         del_html = ""
         if is_mgr:
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" '
-                'onsubmit="return confirm(\'⚠️ እርግጠኛ ዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ውስጥ መለግ ያስልጋል።\');">'
-                '<input type="hidden" name="reason" value="Archived by manager">'
-                '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
+                        'onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ህ ጥያቄ ወ Archived ዝርዝር ይባል። ለመመለስ ከ Admin Menu ውስ መለግ ያስልጋል\');">'
+                        '<input type="hidden" name="reason" value="Archived by manager">'
+                        '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td>'
-            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
-            '<td>' + str(r.department.name if r.department else "—") + '</td>'
-            '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
-            '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
-            + ('<td style="width:60px;text-align:center">' + del_html + '</td>' if is_mgr else '') + '</tr>')
+                    '<td>' + str(r.location_name) + '</td>'
+                    '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
+                    '<td>' + str(r.department.name if r.department else "—") + '</td>'
+                    '<td><span class="badge bg-secondary">' + str(r.priority) + '</span></td>'
+                    '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
+                    '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+                    + ('<td style="width:60px;text-align:center">' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = ('<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>'
-        + ('<th></th>' if is_mgr else '') + '</tr></thead>')
+              + ('<th></th>' if is_mgr else '') + '</tr></thead>')
     c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b"><i class="fas fa-tasks"></i> Maintenance Requests</h3>'
-        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">' + header +
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" class="text-center">No requests found</td></tr>') +
-        '</tbody></table></div></div>')
+         '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
+         '<div class="card"><div class="table-responsive"><table class="table table-hover">' + header +
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" class="text-center">No requests found</td></tr>') +
+         '</tbody></table></div></div>')
     return page("Requests", c)
 
 @app.route("/requests/new", methods=["GET","POST"])
@@ -739,9 +733,7 @@ def request_create():
             prio = request.form.get("priority","MEDIUM")
             fl = request.form.get("floor", type=int)
             did = request.form.get("department_id", type=int)
-            # ✅ የግድ የፍል (Department) መታቂያ እንዲኖር ረጋገጫ (ይህ ስራዎች እንዳይጠ ያደርል)
-            if not did and current_user.department_id:
-                did = current_user.department_id
+            if not did and current_user.department_id: did = current_user.department_id
             if current_user.role == "DEPARTMENT" and current_user.department_id: did = current_user.department_id
             if current_user.role == "EMPLOYEE" and not did and current_user.department_id: did = current_user.department_id
             if lt == "Room" and rid:
@@ -751,19 +743,16 @@ def request_create():
             else: rid = None; aid = None
             if not desc:
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
-            # ✅ እውነተኛ ዲጂታል ርማ - ሰውየው የለውን ፊርማ ከርሙ ይቀበላል
             sig_data = request.form.get("signature_data", "").strip()
             if not sig_data:
-                flash("እባክዎ ፊርማዎን ይስ! (Signature is required)","danger")
+                flash("እባክዎ ፊርማዎን ይስሉ! (Signature is required)","danger")
                 return redirect(url_for("request_create"))
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
                 requested_by_id=current_user.id, department_id=did, awaiting_hk_approval=False,
-                signature_name=current_user.full_name,
-                signature_status="SIGNED",
-                signature_signed_at=datetime.utcnow(),
-                signature_data=sig_data
+                signature_name=current_user.full_name, signature_status="SIGNED",
+                signature_signed_at=datetime.utcnow(), signature_data=sig_data
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
@@ -772,8 +761,8 @@ def request_create():
             log_status_change(req.id,"Pending",notes="Created and signed by " + str(current_user.full_name))
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 New Request",
-                "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending approval",
-                "New Request", link=url_for("request_detail", req_id=req.id))
+                         "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending approval",
+                         "New Request", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
             flash("✅ Request created successfully!","success")
             return redirect(url_for("request_detail", req_id=req.id))
@@ -791,71 +780,69 @@ def request_create():
     if show_d:
         dopt = "".join('<option value="' + str(d.id) + '">' + str(d.name) + '</option>' for d in depts)
         dhtml = ('<div class="col-md-6 mb-3"><label class="form-label">Department</label>'
-            '<select class="form-select" name="department_id"><option value="">-- Select --</option>' + dopt + '</select></div>')
+                 '<select class="form-select" name="department_id"><option value="">-- Select --</option>' + dopt + '</select></div>')
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>'
-        '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
-        '<select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
-        + dhtml +
-        '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label>'
-        '<select class="form-select" name="room_id"><option value="">-- Select Room --</option>' + ro + '</select></div>'
-        '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label>'
-        '<select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
-        '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area</label>'
-        '<select class="form-select" name="area_id"><option value="">-- Select Area --</option>' + ao + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Working Item</label>'
-        '<select class="form-select" name="working_item_id"><option value="">-- Select Item --</option>' + io_ + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Category</label>'
-        '<select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + co + '</select></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label>'
-        '<select class="form-select" name="priority">' + po + '</select></div>'
-        '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
-        '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
-        # ✅ የፊርማ ሳጥን (Signature Pad)
-        '<div class="col-12 mb-3">'
-        '<label class="form-label">እባክዎ ከዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
-        '<div style="border: 2px dashed rgba(245,158,11,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
-        '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
-        '</div>'
-        '<div class="mt-2 d-flex gap-2">'
-        '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያጥ (Clear)</button>'
-        '</div>'
-        '<input type="hidden" name="signature_data" id="signature-data">'
-        '</div>'
-        '<div class="col-12 d-flex gap-2">'
-        '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
-        '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
-        '</div></div></form></div>'
-        # ✅ የርማ JavaScript ኮድ
-        '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
-        '<script>'
-        '(function(){'
-        'var canvas = document.getElementById("signature-pad");'
-        'var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });'
-        'function resizeCanvas(){'
-        'var ratio = Math.max(window.devicePixelRatio || 1, 1);'
-        'canvas.width = canvas.offsetWidth * ratio;'
-        'canvas.height = canvas.offsetHeight * ratio;'
-        'canvas.getContext("2d").scale(ratio, ratio);'
-        'signaturePad.clear();'
-        '}'
-        'window.addEventListener("resize", resizeCanvas);'
-        'resizeCanvas();'
-        'document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); });'
-        'document.querySelector("form").addEventListener("submit", function(e){'
-        'if (signaturePad.isEmpty()){'
-        'e.preventDefault();'
-        'alert("እባክ ፊርማዎን ይስሉ! (Please provide your signature)");'
-        'return false;'
-        '}'
-        'document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");'
-        '});'
-        '})();'
-        '</script>'
-        '<script>(function(){var lt=document.getElementById("locationType");'
-        'var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
-        'function upd(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}'
-        'else{rw.style.display="none";aw.style.display="";fw.style.display="";}}lt.addEventListener("change",upd);upd();})();</script>')
+         '<div class="card"><form method="post"><div class="row">'
+         '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
+         '<select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
+         + dhtml +
+         '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label>'
+         '<select class="form-select" name="room_id"><option value="">-- Select Room --</option>' + ro + '</select></div>'
+         '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label>'
+         '<select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
+         '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area</label>'
+         '<select class="form-select" name="area_id"><option value="">-- Select Area --</option>' + ao + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Working Item</label>'
+         '<select class="form-select" name="working_item_id"><option value="">-- Select Item --</option>' + io_ + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Category</label>'
+         '<select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + co + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label>'
+         '<select class="form-select" name="priority">' + po + '</select></div>'
+         '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
+         '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
+         '<div class="col-12 mb-3">'
+         '<label class="form-label">እባክዎ ዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
+         '<div style="border: 2px dashed rgba(245,158,11,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
+         '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
+         '</div>'
+         '<div class="mt-2 d-flex gap-2">'
+         '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያፉ (Clear)</button>'
+         '</div>'
+         '<input type="hidden" name="signature_data" id="signature-data">'
+         '</div>'
+         '<div class="col-12 d-flex gap-2">'
+         '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+         '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
+         '</div></div></form></div>'
+         '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
+         '<script>'
+         '(function(){'
+         'var canvas = document.getElementById("signature-pad");'
+         'var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });'
+         'function resizeCanvas(){'
+         'var ratio = Math.max(window.devicePixelRatio || 1, 1);'
+         'canvas.width = canvas.offsetWidth * ratio;'
+         'canvas.height = canvas.offsetHeight * ratio;'
+         'canvas.getContext("2d").scale(ratio, ratio);'
+         'signaturePad.clear();'
+         '}'
+         'window.addEventListener("resize", resizeCanvas);'
+         'resizeCanvas();'
+         'document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); });'
+         'document.querySelector("form").addEventListener("submit", function(e){'
+         'if (signaturePad.isEmpty()){'
+         'e.preventDefault();'
+         'alert("እክ ፊርማዎን ስሉ! (Please provide your signature)");'
+         'return false;'
+         '}'
+         'document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");'
+         '});'
+         '})();'
+         '</script>'
+         '<script>(function(){var lt=document.getElementById("locationType");'
+         'var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
+         'function upd(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}'
+         'else{rw.style.display="none";aw.style.display="";fw.style.display="";}}lt.addEventListener("change",upd);upd();})();</script>')
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -871,25 +858,24 @@ def request_detail(req_id):
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     wos = WorkOrder.query.filter_by(request_id=req.id).all()
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
-        "Completed":"success","Verified":"success","Closed":"secondary",
-        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
+                        "Completed":"success","Verified":"success","Closed":"secondary",
+                        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     hist_html = ""
     for h in hist:
         who = h.user.full_name if h.user else "System"
         when = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
         note = (" — " + str(h.notes)) if h.notes else ""
         hist_html += ('<div style="padding:.5rem .75rem;border-left:3px solid #f59e0b;background:rgba(30,41,59,0.5);border-radius:10px;margin-bottom:.4rem">'
-            '<strong style="color:#f59e0b">' + str(h.status) + '</strong> '
-            '<span style="color:#94a3b8;font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
+                      '<strong style="color:#f59e0b">' + str(h.status) + '</strong> '
+                      '<span style="color:#94a3b8;font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
     if not hist_html: hist_html = '<p style="color:#94a3b8">No status history yet.</p>'
     wo_html = ""
     for wo in wos:
         wo_html += ('<div style="padding:.5rem .75rem;background:rgba(30,41,59,0.5);border-radius:10px;margin-bottom:.4rem">'
-            '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#f59e0b;font-weight:600">' + str(wo.work_order_no) + '</a> '
-            '<span class="badge bg-info">' + str(wo.status) + '</span> '
-            '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
+                    '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#f59e0b;font-weight:600">' + str(wo.work_order_no) + '</a> '
+                    '<span class="badge bg-info">' + str(wo.status) + '</span> '
+                    '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
     if not wo_html: wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
-    # ✅ Digital Signature Card - ሰውየው የሳለውን ፊርማ በምስል መልክ ያሳያል
     sig_html = ""
     if req.signature_status == "SIGNED":
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "N/A"
@@ -897,16 +883,16 @@ def request_detail(req_id):
         if req.signature_data:
             sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid #ddd;"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>'
         else:
-            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(ምንም የርማ ምስል አልተኘም)</div>'
+            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(ምንም የፊርማ ምስል አልተጫነም)</div>'
         sig_html = ('<div class="card" style="border: 1px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); margin-top:1rem;">'
-            '<h6 style="color:#22c55e; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE</h6>'
-            '<div style="font-size:1.1rem; font-weight:600; color:#f8fafc; margin-bottom:0.5rem;">' + str(req.signature_name or "Unknown") + '</div>'
-            '<div style="border-bottom: 1px dashed rgba(245,158,11,0.3); margin-bottom:0.75rem;"></div>'
-            + sig_image_html +
-            '<div style="color:#22c55e; font-weight:600; margin-top:1rem; margin-bottom:0.25rem;"><i class="fas fa-check-circle"></i> በይፋ የተፈረመ (Officially Signed)</div>'
-            '<div style="color:#94a3b8; font-size:0.85rem;">Department: ' + str(req.department.name if req.department else "N/A") + '</div>'
-            '<div style="color:#94a3b8; font-size:0.85rem;">Signed: ' + sig_time + '</div>'
-            '</div>')
+                    '<h6 style="color:#22c55e; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE</h6>'
+                    '<div style="font-size:1.1rem; font-weight:600; color:#f8fafc; margin-bottom:0.5rem;">' + str(req.signature_name or "Unknown") + '</div>'
+                    '<div style="border-bottom: 1px dashed rgba(245,158,11,0.3); margin-bottom:0.75rem;"></div>'
+                    + sig_image_html +
+                    '<div style="color:#22c55e; font-weight:600; margin-top:1rem; margin-bottom:0.25rem;"><i class="fas fa-check-circle"></i> በይ የተፈረመ (Officially Signed)</div>'
+                    '<div style="color:#94a3b8; font-size:0.85rem;">Department: ' + str(req.department.name if req.department else "N/A") + '</div>'
+                    '<div style="color:#94a3b8; font-size:0.85rem;">Signed: ' + sig_time + '</div>'
+                    '</div>')
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
@@ -920,29 +906,29 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'️ እርግጠኛ ነዎት? ይ ጥያቄ ወደ Archived ዝርዝር ይባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'⚠️ እርግጠኛ ዎት? ይህ ጥያቄ ወደ Archived ዝርር ይባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
-        '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
-        + ('<div>' + actions_html + '</div>' if actions_html else '') + '</div>'
-        '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:#f59e0b">Request Details</h5>'
-        '<table class="table"><tbody>'
-        '<tr><th style="width:180px;color:#94a3b8">Status</th><td><span class="badge bg-' + bd(req.status) + '">' + str(req.status) + '</span></td></tr>'
-        '<tr><th style="color:#94a3b8">Priority</th><td>' + str(req.priority) + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Location</th><td>' + str(req.location_name) + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Requested By</th><td><strong>' + str(req.requested_by.full_name if req.requested_by else "—") + '</strong></td></tr>'
-        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not Assigned") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Description</th><td>' + str(req.description or "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
-        '</tbody></table>' + sig_html + '</div>'
-        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
-        '</div><div class="col-md-4"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
+         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
+         + ('<div>' + actions_html + '</div>' if actions_html else '') + '</div>'
+         '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:#f59e0b">Request Details</h5>'
+         '<table class="table"><tbody>'
+         '<tr><th style="width:180px;color:#94a3b8">Status</th><td><span class="badge bg-' + bd(req.status) + '">' + str(req.status) + '</span></td></tr>'
+         '<tr><th style="color:#94a3b8">Priority</th><td>' + str(req.priority) + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Location</th><td>' + str(req.location_name) + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Requested By</th><td><strong>' + str(req.requested_by.full_name if req.requested_by else "—") + '</strong></td></tr>'
+         '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not Assigned") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Description</th><td>' + str(req.description or "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
+         '</tbody></table>' + sig_html + '</div>'
+         '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
+         '</div><div class="col-md-4"><div class="card"><h5 style="color:#f59e0b"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
     return page("Request " + str(req.request_no), c)
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
@@ -956,8 +942,8 @@ def request_approve(req_id):
         log_status_change(req.id,"Approved",notes="Approved by " + str(current_user.full_name))
         log_audit("Approve","MaintenanceRequest",req.id,"Pending","Approved")
         notify_users([req.requested_by_id], req.id, "Request Approved",
-            "Your request " + str(req.request_no) + " has been approved",
-            "Approved", link=url_for("request_detail", req_id=req.id))
+                     "Your request " + str(req.request_no) + " has been approved",
+                     "Approved", link=url_for("request_detail", req_id=req.id))
         db.session.commit(); flash("✅ Request approved!","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -978,8 +964,8 @@ def request_verify(req_id):
         log_status_change(req.id,"Verified",notes="Verified by " + str(current_user.full_name))
         log_audit("Verify","MaintenanceRequest",req.id,"Completed","Verified")
         notify_users([req.requested_by_id], req.id, "✅ Work Verified",
-            "Request " + str(req.request_no) + " verified", "Verified",
-            link=url_for("request_detail", req_id=req.id))
+                     "Request " + str(req.request_no) + " verified", "Verified",
+                     link=url_for("request_detail", req_id=req.id))
         db.session.commit(); flash("✅ Work verified!","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -996,7 +982,7 @@ def request_close(req_id):
         log_status_change(req.id,"Closed",notes="Closed by " + str(current_user.full_name))
         log_audit("Close","MaintenanceRequest",req.id,"Verified","Closed")
         notify_users([req.requested_by_id], req.id, "Request Closed",
-            "Request " + str(req.request_no) + " closed", "Closed")
+                     "Request " + str(req.request_no) + " closed", "Closed")
         db.session.commit(); flash("Request closed","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -1023,14 +1009,14 @@ def deleted_requests():
     rows = []
     for r in ds:
         rows.append('<tr><td>' + str(r.request_no) + '</td><td>' + str(r.location_name) + '</td>'
-            '<td>' + str(r.status) + '</td>'
-            '<td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td>'
-            '<td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td>'
-            '<td>' + str(r.deletion_reason or "—") + '</td>'
-            '<td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
+                    '<td>' + str(r.status) + '</td>'
+                    '<td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td>'
+                    '<td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td>'
+                    '<td>' + str(r.deletion_reason or "—") + '</td>'
+                    '<td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
     c = ('<h3 style="color:#f59e0b">🗑️ Archived Requests</h3><div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No archived requests</td></tr>') + '</tbody></table></div></div>')
+         '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No archived requests</td></tr>') + '</tbody></table></div></div>')
     return page("Archived", c)
 
 @app.route("/admin/restore/<int:req_id>", methods=["POST"])
@@ -1100,7 +1086,7 @@ def get_kpis(args):
     avg = _avg_sec([r for r in reqs if r.status in COMPLETED_STATES])
     rate = (completed / total * 100) if total else 0.0
     return {"total": total, "pending": pending, "completed": completed,
-        "completion_rate": round(rate,1), "avg_resolution": format_duration(avg)}
+            "completion_rate": round(rate,1), "avg_resolution": format_duration(avg)}
 
 def get_trends(args):
     reqs = build_filtered_query(args).all()
@@ -1141,11 +1127,11 @@ def get_trends(args):
             elif r.status in PENDING_STATES: counts[k]["pending"] += 1
             elif r.status in INPROGRESS_STATES: counts[k]["in_progress"] += 1
     return {"labels": labels,
-        "total": [counts[k]["total"] for k in keys],
-        "completed": [counts[k]["completed"] for k in keys],
-        "pending": [counts[k]["pending"] for k in keys],
-        "in_progress": [counts[k]["in_progress"] for k in keys],
-        "granularity": gran}
+            "total": [counts[k]["total"] for k in keys],
+            "completed": [counts[k]["completed"] for k in keys],
+            "pending": [counts[k]["pending"] for k in keys],
+            "in_progress": [counts[k]["in_progress"] for k in keys],
+            "granularity": gran}
 
 def get_status_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1157,8 +1143,8 @@ def get_status_stats(args):
     for s, c in counts.items():
         if s not in order and c > 0: items.append((s, c))
     return {"labels": [k for k,_ in items], "values": [v for _,v in items],
-        "percentages": [round(v/total*100,1) if total else 0 for _,v in items],
-        "total": total}
+            "percentages": [round(v/total*100,1) if total else 0 for _,v in items],
+            "total": total}
 
 def get_dept_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1167,8 +1153,8 @@ def get_dept_stats(args):
     items = sorted(counts.items(), key=lambda x: -x[1])
     total = sum(counts.values())
     return {"labels": [k for k,_ in items], "values": [v for _,v in items],
-        "percentages": [round(v/total*100,1) if total else 0 for _,v in items],
-        "total": total}
+            "percentages": [round(v/total*100,1) if total else 0 for _,v in items],
+            "total": total}
 
 def get_dept_completion(args):
     reqs = build_filtered_query(args).all()
@@ -1180,9 +1166,9 @@ def get_dept_completion(args):
         if r.status in COMPLETED_STATES: depts[name]["completed"] += 1
     items = sorted(depts.items(), key=lambda x: -x[1]["total"])
     return {"labels": [k for k,_ in items],
-        "totals": [v["total"] for _,v in items],
-        "completed": [v["completed"] for _,v in items],
-        "percentages": [round(v["completed"]/v["total"]*100,1) if v["total"] else 0 for _,v in items]}
+            "totals": [v["total"] for _,v in items],
+            "completed": [v["completed"] for _,v in items],
+            "percentages": [round(v["completed"]/v["total"]*100,1) if v["total"] else 0 for _,v in items]}
 
 def get_priority_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1192,7 +1178,7 @@ def get_priority_stats(args):
     total = sum(counts.values())
     items = [(p, counts[p]) for p in order if counts.get(p,0) > 0]
     return {"labels": [k for k,_ in items], "values": [v for _,v in items],
-        "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
+            "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_category_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1201,7 +1187,7 @@ def get_category_stats(args):
     items = sorted(counts.items(), key=lambda x: -x[1])
     total = sum(counts.values())
     return {"labels": [k for k,_ in items], "values": [v for _,v in items],
-        "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
+            "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_floor_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1238,8 +1224,8 @@ def get_technician_workload(args):
 def get_recent_activity(limit=10):
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(limit).all()
     return [{"user": l.user.full_name if l.user else "System", "action": l.action or "",
-        "object_type": l.object_type or "", "object_id": l.object_id or "",
-        "time": l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else ""} for l in logs]
+             "object_type": l.object_type or "", "object_id": l.object_id or "",
+             "time": l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else ""} for l in logs]
 
 def get_inventory_summary():
     parts = InventoryPart.query.filter_by(status="Active").all()
@@ -1249,7 +1235,7 @@ def get_inventory_summary():
     val = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
 
-# ══════════════════════════════════════════ DASHBOARD
+# ══════════════════════════════════════════ DASHBOARD ROUTE
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -1276,366 +1262,17 @@ def dashboard():
     all_floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
     if not all_floors: all_floors = sorted({r.floor for r in Room.query.all()})
     chart_data = {"trends": trends, "statuses": statuses, "departments": departments,
-        "dept_completion": dept_completion, "priorities": priorities,
-        "categories": categories, "floors": floors}
-    return render_template_string(DASHBOARD_TEMPLATE,
-        kpis=kpis, work_orders={"total": WorkOrder.query.count()},
-        top_locations=[], staff_stats=tech_workload, inventory=inventory,
-        recent_activity=activity, recent_requests=recent_reqs,
-        all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms,
-        all_areas=all_areas, all_floors=all_floors,
-        chart_data=chart_data, filters={k: v for k, v in args.items()},
-        technician_workload=tech_workload, dept_completion=dept_completion,
-        current_user=current_user)
-
-# ══════════════════════════════════════════ DASHBOARD TEMPLATE
-DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manager Dashboard | Rori Hotel</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23,42,0.88),rgba(30,41,59,0.88)),url('/static/rori_hotel_bg.jpg') center center/cover no-repeat fixed;min-height:100vh;color:#e2e8f0;padding-top:70px}
-.navbar{background:rgba(15,23,42,0.95)!important;backdrop-filter:blur(16px);border-bottom:1px solid rgba(245,158,11,0.25);padding:.75rem 1.5rem}
-.navbar-brand{font-weight:800;font-size:1.3rem;color:#f59e0b!important}
-.nav-link{color:#cbd5e1!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem}
-.nav-link i{color:#f59e0b;margin-right:4px}
-.nav-link:hover{background:rgba(245,158,11,0.12);color:#f59e0b!important}
-.navbar-toggler{border-color:rgba(245,158,11,0.4)}
-.container{max-width:1400px;padding:1.5rem}
-.card{background:rgba(15,23,42,0.75);backdrop-filter:blur(12px);border:1px solid rgba(245,158,11,0.2);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
-.card h5{color:#f59e0b;font-weight:600}
-.metric-card{background:rgba(15,23,42,0.7);backdrop-filter:blur(10px);border:1px solid rgba(245,158,11,0.15);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s}
-.metric-card:hover{transform:translateY(-2px);border-color:rgba(245,158,11,0.3)}
-.metric-value{font-size:2rem;font-weight:800;color:#f8fafc;line-height:1}
-.metric-label{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem}
-.metric-icon{font-size:1.4rem;color:#f59e0b;margin-bottom:.35rem}
-.table{color:#e2e8f0}
-.table thead th{color:#f59e0b;border-bottom:2px solid rgba(245,158,11,0.2);font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap}
-.table td{padding:10px;border-color:rgba(245,158,11,0.08);font-size:.85rem}
-.table-hover tbody tr:hover{background-color:rgba(245,158,11,0.06)}
-.btn{border-radius:40px;font-weight:600;padding:.6rem 1.6rem;border:none}
-.btn-primary{background:linear-gradient(135deg,#f59e0b,#d97706);color:#0f172a}
-.btn-sm{padding:.35rem .8rem;font-size:.78rem}
-.form-control,.form-select{background:rgba(15,23,42,0.6);border:1px solid rgba(245,158,11,0.2);border-radius:12px;color:#e2e8f0;padding:.65rem .9rem}
-.form-control:focus,.form-select:focus{background:rgba(15,23,42,0.9);color:#f8fafc;border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,0.15)}
-.form-label{color:#cbd5e1;font-weight:500;font-size:.82rem}
-.badge{padding:.35rem .75rem;border-radius:20px;font-weight:600;font-size:.72rem}
-.chart-box{position:relative;width:100%;height:280px}
-.chart-box.tall{height:340px}
-.chart-box.donut{height:240px}
-.prog-list{display:flex;flex-direction:column;gap:.7rem}
-.prog-row{display:flex;flex-direction:column;gap:.3rem}
-.prog-top{display:flex;justify-content:space-between;font-size:.78rem}
-.prog-top .nm{color:#e5e7eb;font-weight:600}
-.prog-top .ct{color:#f59e0b;font-weight:800}
-.prog-bar{height:6px;background:rgba(245,158,11,0.1);border-radius:6px;overflow:hidden}
-.prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#f59e0b,#ec4899)}
-.feed{display:flex;flex-direction:column;gap:.4rem}
-.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:rgba(15,23,42,0.4);border-left:2px solid #f59e0b;border-radius:9px;font-size:.78rem}
-.feed-item .tx{color:#e5e7eb}
-.feed-item .tx strong{color:#fff}
-.feed-item .tm{font-size:.65rem;color:#6b7280;margin-top:2px}
-.empty{text-align:center;padding:2rem 1rem;color:#94a3b8;font-size:.85rem}
-.empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
-.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
-.filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
-@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
-</style></head><body>
-<nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
-<a class="navbar-brand" href="{{ url_for('dashboard') }}"><i class="fas fa-hotel"></i> Rori Hotel</a>
-<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
-<div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">
-<a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
-<a class="nav-link" href="{{ url_for('request_create') }}"><i class="fas fa-plus-circle"></i> New</a>
-<a class="nav-link" href="{{ url_for('requests_list') }}"><i class="fas fa-tasks"></i> Requests</a>
-<a class="nav-link" href="{{ url_for('workorders_list') }}"><i class="fas fa-clipboard-list"></i> Work Orders</a>
-<a class="nav-link" href="{{ url_for('rooms_list') }}"><i class="fas fa-door-open"></i> Rooms</a>
-<a class="nav-link" href="{{ url_for('areas_list') }}"><i class="fas fa-map-marked-alt"></i> Areas</a>
-<a class="nav-link" href="{{ url_for('inventory_list') }}"><i class="fas fa-boxes"></i> Inventory</a>
-<a class="nav-link" href="{{ url_for('suppliers_list') }}"><i class="fas fa-truck"></i> Suppliers</a>
-<a class="nav-link" href="{{ url_for('employees_list') }}"><i class="fas fa-users"></i> Employees</a>
-{% if current_user.role == 'ADMIN' %}
-<a class="nav-link" href="{{ url_for('admin_users') }}"><i class="fas fa-user-cog"></i> Users</a>
-<a class="nav-link" href="{{ url_for('audit_logs') }}"><i class="fas fa-history"></i> Audit</a>
-<a class="nav-link" href="{{ url_for('deleted_requests') }}"><i class="fas fa-archive"></i> Archived</a>
-<a class="nav-link" href="{{ url_for('backup_page') }}"><i class="fas fa-archive"></i> Backup</a>
-{% endif %}
-<a class="nav-link" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> Reports</a>
-<a class="nav-link" href="{{ url_for('notifications') }}"><i class="fas fa-bell"></i> Notifications</a>
-<a class="nav-link" href="{{ url_for('profile') }}"><i class="fas fa-user-circle"></i> {{ current_user.full_name or current_user.username }}</a>
-<a class="nav-link" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
-</div></div></div></nav>
-<div class="container mt-4">
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-<div>
-<h2 style="color:#f59e0b;font-weight:800;margin:0"><i class="fas fa-chart-line"></i> Central Maintenance Dashboard</h2>
-<p style="color:#94a3b8;font-size:.85rem;margin:.25rem 0 0">All departments · Real-time analytics</p>
-</div>
-<a href="{{ url_for('request_create') }}" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>
-</div>
-<form method="get" class="filter-bar">
-<div><label class="form-label">From</label><input type="date" class="form-control" name="date_from" value="{{ filters.get('date_from','') }}"></div>
-<div><label class="form-label">To</label><input type="date" class="form-control" name="date_to" value="{{ filters.get('date_to','') }}"></div>
-<div><label class="form-label">Department</label>
-<select class="form-select" name="department">
-<option value="">All</option>
-{% for d in all_departments %}<option value="{{ d.id }}" {% if filters.get('department') == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
-</select></div>
-<div><label class="form-label">Category</label>
-<select class="form-select" name="category">
-<option value="">All</option>
-{% for c in all_categories %}<option value="{{ c.id }}" {% if filters.get('category') == c.id|string %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
-</select></div>
-<div><label class="form-label">Status</label>
-<select class="form-select" name="status">
-<option value="">All</option>
-{% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}
-<option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
-</select></div>
-<div style="flex:0"><button class="btn btn-primary" type="submit"><i class="fas fa-filter"></i> Apply</button></div>
-<div style="flex:0"><a class="btn btn-sm" href="{{ url_for('dashboard') }}" style="background:#475569;color:#fff;padding:.65rem 1.2rem;border-radius:40px;font-weight:600;font-size:.85rem">Reset</a></div>
-</form>
-<div class="row g-3 mb-4">
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clipboard-list"></i></div><div class="metric-value">{{ kpis.total }}</div><div class="metric-label">Total</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#f59e0b"><i class="fas fa-hourglass-half"></i></div><div class="metric-value">{{ kpis.pending }}</div><div class="metric-label">Pending</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#22c55e"><i class="fas fa-circle-check"></i></div><div class="metric-value">{{ kpis.completed }}</div><div class="metric-label">Completed</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-percent"></i></div><div class="metric-value">{{ kpis.completion_rate }}%</div><div class="metric-label">Rate</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-clock"></i></div><div class="metric-value" style="font-size:1.3rem">{{ kpis.avg_resolution }}</div><div class="metric-label">Avg Time</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-toolbox"></i></div><div class="metric-value">{{ work_orders.total }}</div><div class="metric-label">Work Orders</div></div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-8">
-<div class="card"><h5 class="mb-3"><i class="fas fa-chart-area"></i> Request Trends</h5>
-<div class="chart-box tall"><canvas id="chartTrends"></canvas></div>
-</div>
-</div>
-<div class="col-lg-4">
-<div class="card"><h5 class="mb-3"><i class="fas fa-chart-pie"></i> Status Distribution</h5>
-<div class="chart-box donut"><canvas id="chartStatus"></canvas></div>
-</div>
-</div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-6">
-<div class="card"><h5 class="mb-3"><i class="fas fa-building"></i> Requests by Department</h5>
-<div class="chart-box"><canvas id="chartDept"></canvas></div>
-</div>
-</div>
-<div class="col-lg-6">
-<div class="card"><h5 class="mb-3"><i class="fas fa-check-double"></i> Completion % by Department</h5>
-<div class="chart-box"><canvas id="chartDeptCompletion"></canvas></div>
-</div>
-</div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-4">
-<div class="card"><h5 class="mb-3"><i class="fas fa-fire"></i> Priority Distribution</h5>
-<div class="chart-box donut"><canvas id="chartPriority"></canvas></div>
-</div>
-</div>
-<div class="col-lg-4">
-<div class="card"><h5 class="mb-3"><i class="fas fa-tags"></i> Categories</h5>
-<div class="chart-box"><canvas id="chartCategories"></canvas></div>
-</div>
-</div>
-<div class="col-lg-4">
-<div class="card"><h5 class="mb-3"><i class="fas fa-layer-group"></i> By Floor</h5>
-<div class="chart-box"><canvas id="chartFloors"></canvas></div>
-</div>
-</div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-6">
-<div class="card"><h5 class="mb-3"><i class="fas fa-chart-bar"></i> Department Share (%)</h5>
-{% if chart_data.departments.labels|length > 0 %}
-<div class="prog-list">
-{% for i in range(chart_data.departments.labels|length) %}
-<div class="prog-row">
-<div class="prog-top"><span class="nm">{{ chart_data.departments.labels[i] }}</span>
-<span class="ct">{{ chart_data.departments.values[i] }} · {{ chart_data.departments.percentages[i] }}%</span></div>
-<div class="prog-bar"><span style="width:{{ chart_data.departments.percentages[i] }}%"></span></div>
-</div>
-{% endfor %}
-</div>
-{% else %}<div class="empty"><i class="fas fa-inbox"></i>No data available</div>{% endif %}
-</div>
-</div>
-<div class="col-lg-6">
-<div class="card"><h5 class="mb-3"><i class="fas fa-users-gear"></i> Technician Workload</h5>
-{% if technician_workload|length > 0 %}
-<div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Technician</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg Time</th></tr></thead>
-<tbody>{% for t in technician_workload %}
-<tr><td><strong>{{ t.name }}</strong><br><small style="color:#94a3b8">{{ t.role }}</small></td>
-<td><span class="badge" style="background:#3b82f6">{{ t.assigned }}</span></td>
-<td><span class="badge" style="background:#f59e0b">{{ t.in_progress }}</span></td>
-<td><span class="badge" style="background:#22c55e">{{ t.completed }}</span></td>
-<td>{{ t.avg_resolution }}</td></tr>
-{% endfor %}</tbody></table></div>
-{% else %}<div class="empty"><i class="fas fa-users"></i>No technicians</div>{% endif %}
-</div>
-</div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-8">
-<div class="card">
-<div class="d-flex justify-content-between align-items-center mb-3">
-<h5 style="margin:0"><i class="fas fa-clock-rotate-left"></i> Recent Requests</h5>
-<a href="{{ url_for('requests_list') }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.35rem .9rem;border-radius:20px;font-weight:600;font-size:.75rem">View All</a>
-</div>
-{% if recent_requests|length > 0 %}
-<div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Request</th><th>Department</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
-<tbody>{% for r in recent_requests %}
-<tr><td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#f59e0b;font-weight:600">{{ r.request_no }}</a></td>
-<td>{{ r.department.name if r.department else '—' }}</td>
-<td>{{ r.location_name }}</td>
-<td><span class="badge" style="background:{{ '#ef4444' if r.priority=='URGENT' else '#f59e0b' if r.priority=='HIGH' else '#3b82f6' if r.priority=='MEDIUM' else '#22c55e' }}">{{ r.priority }}</span></td>
-<td><span class="badge" style="background:{{ '#22c55e' if r.status in ['Completed','Verified','Closed'] else '#f59e0b' if r.status=='Pending' else '#3b82f6' if r.status=='Approved' else '#8b5cf6' if r.status in ['Assigned','In Progress'] else '#6b7280' }}">{{ r.status }}</span></td>
-<td style="color:#94a3b8;font-size:.78rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
-<td><a href="{{ url_for('request_detail', req_id=r.id) }}" class="btn btn-sm" style="background:#475569;color:#fff;padding:.2rem .6rem;border-radius:8px;font-size:.7rem">Open</a></td></tr>
-{% endfor %}</tbody></table></div>
-{% else %}<div class="empty"><i class="fas fa-inbox"></i>No requests</div>{% endif %}
-</div>
-</div>
-<div class="col-lg-4">
-<div class="card"><h5 class="mb-3"><i class="fas fa-wave-square"></i> Activity</h5>
-{% if recent_activity|length > 0 %}
-<div class="feed">
-{% for a in recent_activity %}
-<div class="feed-item"><i class="fas fa-bolt" style="color:#f59e0b;margin-top:.15rem"></i>
-<div style="flex:1"><div class="tx"><strong>{{ a.user }}</strong> — {{ a.action }}</div>
-<div class="tm">{{ a.time }}</div></div></div>
-{% endfor %}
-</div>
-{% else %}<div class="empty"><i class="fas fa-wave-square"></i>No activity</div>{% endif %}
-</div>
-<div class="card"><h5 class="mb-3"><i class="fas fa-boxes"></i> Inventory Snapshot</h5>
-<div class="prog-list">
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">{{ inventory.total_value }}</span></div></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<script>
-window.DASHBOARD_DATA = {{ chart_data|tojson }};
-(function(){
-'use strict';
-if(typeof Chart === 'undefined') return;
-var D = window.DASHBOARD_DATA || {};
-Chart.defaults.color = '#94a3b8';
-Chart.defaults.borderColor = 'rgba(245,158,11,0.1)';
-Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-Chart.defaults.font.size = 11;
-var TT = {backgroundColor:'rgba(15,23,42,0.97)', borderColor:'rgba(245,158,11,0.5)',
-borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:11, cornerRadius:10};
-var C = {amber:'#f59e0b', green:'#22c55e', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
-function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
-function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
-(function(){
-var el = document.getElementById('chartTrends');
-if(!el) return;
-var t = D.trends;
-if(!t || !t.labels || !t.labels.length){em(el,'fa-chart-area','No data available'); return;}
-var c = el.getContext('2d');
-new Chart(c, {type:'line', data:{labels:t.labels, datasets:[
-{label:'Total', data:t.total, borderColor:C.amber, borderWidth:2.5, fill:true,
-backgroundColor:gr(c,'rgba(245,158,11,0.35)','rgba(245,158,11,0.01)'),
-tension:0.4, pointRadius:0, pointHoverRadius:6},
-{label:'Completed', data:t.completed, borderColor:C.green, borderWidth:2.2, fill:true,
-backgroundColor:gr(c,'rgba(34,197,94,0.2)','rgba(34,197,94,0.01)'),
-tension:0.4, pointRadius:0, pointHoverRadius:5},
-{label:'Pending', data:t.pending, borderColor:C.red, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5},
-{label:'In Progress', data:t.in_progress, borderColor:C.purple, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5}
-]}, options:{responsive:true, maintainAspectRatio:false, interaction:{intersect:false, mode:'index'},
-plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8, boxHeight:8, padding:14, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
-scales:{x:{grid:{color:'rgba(245,158,11,0.05)'}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:10}},
-y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
-})();
-(function(){
-var el = document.getElementById('chartStatus');
-if(!el) return;
-var s = D.statuses;
-if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;}
-var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple,
-'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[
-{data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
-]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
-plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
-})();
-(function(){
-var el = document.getElementById('chartDept');
-if(!el) return;
-var d = D.departments;
-if(!d || !d.labels || !d.labels.length){em(el,'fa-building','No data available'); return;}
-var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
-{label:'Requests', data:d.values, backgroundColor:gr(c,'rgba(245,158,11,0.95)','rgba(236,72,153,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
-]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
-scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
-y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
-})();
-(function(){
-var el = document.getElementById('chartDeptCompletion');
-if(!el) return;
-var d = D.dept_completion;
-if(!d || !d.labels || !d.labels.length){em(el,'fa-check-double','No data available'); return;}
-var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[
-{label:'Total', data:d.totals, backgroundColor:'rgba(148,163,184,0.35)', borderRadius:8, borderSkipped:false, maxBarThickness:28},
-{label:'Completed', data:d.completed, backgroundColor:gr(c,'rgba(34,197,94,0.95)','rgba(16,185,129,0.5)'), borderRadius:8, borderSkipped:false, maxBarThickness:28}
-]}, options:{responsive:true, maintainAspectRatio:false,
-plugins:{legend:{position:'top', labels:{boxWidth:8, boxHeight:8, padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT},
-scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}},
-y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
-})();
-(function(){
-var el = document.getElementById('chartPriority');
-if(!el) return;
-var p = D.priorities;
-if(!p || !p.labels || !p.labels.length){em(el,'fa-fire','No data available'); return;}
-var map = {'URGENT':C.red, 'HIGH':C.amber, 'MEDIUM':C.blue, 'LOW':C.green};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[
-{data:p.values, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}
-]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%',
-plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});
-})();
-(function(){
-var el = document.getElementById('chartCategories');
-if(!el) return;
-var x = D.categories;
-if(!x || !x.labels || !x.labels.length){em(el,'fa-tags','No data available'); return;}
-var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
-{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}
-]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
-scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}},
-y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
-})();
-(function(){
-var el = document.getElementById('chartFloors');
-if(!el) return;
-var x = D.floors;
-if(!x || !x.labels || !x.labels.length){em(el,'fa-layer-group','No data available'); return;}
-var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[
-{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}
-]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT},
-scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});
-})();
-})();
-</script>
-</body></html>"""
+                  "dept_completion": dept_completion, "priorities": priorities,
+                  "categories": categories, "floors": floors}
+    return render_template("dashboard.html",
+                           kpis=kpis, work_orders={"total": WorkOrder.query.count()},
+                           top_locations=[], staff_stats=tech_workload, inventory=inventory,
+                           recent_activity=activity, recent_requests=recent_reqs,
+                           all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms,
+                           all_areas=all_areas, all_floors=all_floors,
+                           chart_data=chart_data, filters={k: v for k, v in args.items()},
+                           technician_workload=tech_workload, dept_completion=dept_completion,
+                           current_user=current_user)
 
 # ══════════════════════════════════════════ DEPARTMENT DASHBOARD
 @app.route("/department")
@@ -1646,7 +1283,7 @@ def department_dashboard():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     if dept_id:
         q = q.filter(db.or_(MaintenanceRequest.department_id == dept_id,
-            MaintenanceRequest.requested_by_id == current_user.id))
+                            MaintenanceRequest.requested_by_id == current_user.id))
     else:
         q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
@@ -1660,29 +1297,29 @@ def department_dashboard():
     rejected = sum(1 for r in reqs if r.status == "Rejected")
     overdue = sum(1 for r in reqs if r.is_overdue)
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
-        "Completed":"success","Verified":"success","Closed":"secondary",
-        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
+                        "Completed":"success","Verified":"success","Closed":"secondary",
+                        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td>'
-            '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
+                    '<td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td>'
+                    '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
+                    '<td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
-        '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-building"></i> ' + str(dept_name) + ' Dashboard</h3>'
-        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-        '<div class="row g-3 mb-4">'
-        '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
-        '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#f59e0b">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-        '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#8b5cf6">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
-        '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#22c55e">' + str(completed + verified + closed) + '</div><div class="metric-label">Done</div></div></div>'
-        '</div>'
-        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
-        '<div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet. <a href="' + url_for("request_create") + '">Create one</a></td></tr>') + '</tbody>'
-        '</table></div></div>')
+         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-building"></i> ' + str(dept_name) + ' Dashboard</h3>'
+         '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
+         '<div class="row g-3 mb-4">'
+         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
+         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#f59e0b">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
+         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#8b5cf6">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
+         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#22c55e">' + str(completed + verified + closed) + '</div><div class="metric-label">Done</div></div></div>'
+         '</div>'
+         '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
+         '<div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet. <a href="' + url_for("request_create") + '">Create one</a></td></tr>') + '</tbody>'
+         '</table></div></div>')
     return page("Department Dashboard", c)
 
 # ══════════════════════════════════════════ EMPLOYEE DASHBOARD
@@ -1692,22 +1329,22 @@ def department_dashboard():
 def employee_dashboard():
     reqs = MaintenanceRequest.query.filter_by(is_deleted=False, requested_by_id=current_user.id).order_by(MaintenanceRequest.created_at.desc()).all()
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
-        "Completed":"success","Verified":"success","Closed":"secondary",
-        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
+                        "Completed":"success","Verified":"success","Closed":"secondary",
+                        "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td>'
-            '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
-            '<td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
+                    '<td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td>'
+                    '<td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td>'
+                    '<td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
-        '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-home"></i> My Dashboard</h3>'
-        '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-        '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
-        '<div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet</td></tr>') + '</tbody>'
-        '</table></div></div>')
+         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-home"></i> My Dashboard</h3>'
+         '<a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
+         '<div class="card"><h5 style="color:#f59e0b"><i class="fas fa-tasks"></i> My Requests</h5>'
+         '<div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet</td></tr>') + '</tbody>'
+         '</table></div></div>')
     return page("Employee Dashboard", c)
 
 # ══════════════════════════════════════════ WORK ORDERS
@@ -1718,7 +1355,7 @@ def workorders_list():
     if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
     if current_user.role in STAFF_ROLES:
         wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id,
-            WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
+                                            WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
     else:
         wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
     rows = []
@@ -1726,16 +1363,16 @@ def workorders_list():
         assigned = wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
         rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#f59e0b">' + str(wo.work_order_no) + '</a></td>'
-            '<td>' + str(wo.request.location_name if wo.request else "—") + '</td>'
-            '<td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td>'
-            '<td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td>'
-            '<td>' + str(wo.request.priority if wo.request else "—") + '</td>'
-            '<td><span class="badge bg-' + badge + '">' + str(wo.status) + '</span></td>'
-            '<td>' + str(assigned) + '</td></tr>')
+                    '<td>' + str(wo.request.location_name if wo.request else "—") + '</td>'
+                    '<td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td>'
+                    '<td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td>'
+                    '<td>' + str(wo.request.priority if wo.request else "—") + '</td>'
+                    '<td><span class="badge bg-' + badge + '">' + str(wo.status) + '</span></td>'
+                    '<td>' + str(assigned) + '</td></tr>')
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-clipboard-list"></i> Work Orders</h3>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No work orders</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No work orders</td></tr>') + '</tbody></table></div></div>')
     return page("Work Orders", c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
@@ -1760,7 +1397,7 @@ def workorder_create():
                 if wp: wo.work_performed = wp
             else:
                 wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id,
-                    assigned_to_id=assigned_to_id, status="Assigned", work_performed=wp)
+                               assigned_to_id=assigned_to_id, status="Assigned", work_performed=wp)
                 db.session.add(wo); db.session.flush()
             log_audit("Create","WorkOrder",wo.id,new_value=wo.work_order_no)
             req.status = "Assigned"; req.assigned_to_id = assigned_to_id
@@ -1769,22 +1406,22 @@ def workorder_create():
             if assigned_user: notify_assigned_staff(req, wo, assigned_user)
             if req.requested_by_id:
                 notify_users([req.requested_by_id], req.id, "Work Assigned",
-                    "Staff assigned to " + str(req.request_no), "Assigned",
-                    link=url_for("workorder_detail", wo_id=wo.id))
+                             "Staff assigned to " + str(req.request_no), "Assigned",
+                             link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Assigned!","success")
             return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e:
             db.session.rollback(); print("WO assign: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_create", request_id=request_id))
     c = ('<h3 style="color:#f59e0b">Assign Staff to Work Order</h3>'
-        '<div class="card"><form method="post">'
-        '<input type="hidden" name="request_id" value="' + str(req.id if req else "") + '">'
-        '<div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="' + str(req.request_no if req else "") + '" disabled></div>'
-        '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
-        '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
-        '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
-        '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
-        '<button class="btn btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
+         '<div class="card"><form method="post">'
+         '<input type="hidden" name="request_id" value="' + str(req.id if req else "") + '">'
+         '<div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="' + str(req.request_no if req else "") + '" disabled></div>'
+         '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
+         '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
+         '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
+         '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
+         '<button class="btn btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
     return page("Assign Work Order", c)
 
 @app.route("/workorders/<int:wo_id>")
@@ -1793,7 +1430,7 @@ def workorder_detail(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
     can_parts = (current_user.role in ["MANAGER","ADMIN"] or
-        (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+                 (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
     pr, pt = [], 0
     for p in parts:
         pname = p.part.part_name if p.part else "Part #" + str(p.part_id)
@@ -1808,10 +1445,10 @@ def workorder_detail(wo_id):
     if can_parts and wo.status in ["Assigned","In Progress"]:
         apb = '<a class="btn btn-sm btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '"><i class="fas fa-plus"></i> Add Part</a>'
     parts_card = ('<div class="card"><div class="d-flex justify-content-between align-items-center mb-2">'
-        '<h5 style="color:#f59e0b;margin:0"><i class="fas fa-boxes"></i> Parts</h5>' + apb + '</div>'
-        '<div class="table-responsive"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead>'
-        '<tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" class="text-center">No parts</td></tr>') + '</tbody></table></div>'
-        '<p class="text-end mb-0"><b>Total: ' + str(pt) + '</b></p></div>')
+                  '<h5 style="color:#f59e0b;margin:0"><i class="fas fa-boxes"></i> Parts</h5>' + apb + '</div>'
+                  '<div class="table-responsive"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead>'
+                  '<tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" class="text-center">No parts</td></tr>') + '</tbody></table></div>'
+                  '<p class="text-end mb-0"><b>Total: ' + str(pt) + '</b></p></div>')
     ch = ""
     if wo.completion_photo:
         ch = '<div class="mt-3"><h6> Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" class="img-fluid rounded" style="max-height:250px"></a></div>'
@@ -1824,21 +1461,21 @@ def workorder_detail(wo_id):
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
         actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify</button></form>'
     c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b">🔧 Work Order ' + str(wo.work_order_no) + '</h3>'
-        '<a href="' + url_for("workorders_list") + '" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>'
-        '<div class="row"><div class="col-md-8"><div class="card"><table class="table">'
-        '<tr><th style="width:150px;color:#94a3b8">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-info">' + str(wo.status) + '</span></td></tr>'
-        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else " Unassigned") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr>'
-        '<tr><th style="color:#94a3b8">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr>'
-        '</table>' + ch + '</div>' + parts_card + '</div>'
-        '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>'
-        + (actions if actions else "<p style='color:#94a3b8'>No actions available</p>") + '</div></div></div>')
+         '<a href="' + url_for("workorders_list") + '" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>'
+         '<div class="row"><div class="col-md-8"><div class="card"><table class="table">'
+         '<tr><th style="width:150px;color:#94a3b8">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-info">' + str(wo.status) + '</span></td></tr>'
+         '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else " Unassigned") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr>'
+         '<tr><th style="color:#94a3b8">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr>'
+         '</table>' + ch + '</div>' + parts_card + '</div>'
+         '<div class="col-md-4"><div class="card"><h5 style="color:#f59e0b">Actions</h5>'
+         + (actions if actions else "<p style='color:#94a3b8'>No actions available</p>") + '</div></div></div>')
     return page("Work Order Detail", c)
 
 @app.route("/workorders/<int:wo_id>/start", methods=["POST"])
@@ -1884,22 +1521,22 @@ def workorder_complete(wo_id):
             log_audit("Complete","WorkOrder",wo.id,"In Progress","Completed")
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()
             notify_users([u.id for u in managers], wo.request_id, "🔔 Work Completed",
-                "WO " + str(wo.work_order_no) + " ready for verification", "Completed",
-                link=url_for("workorder_detail", wo_id=wo.id))
+                         "WO " + str(wo.work_order_no) + " ready for verification", "Completed",
+                         link=url_for("workorder_detail", wo_id=wo.id))
             if wo.request and wo.request.requested_by_id:
                 notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed",
-                    "Request " + str(wo.request.request_no) + " completed", "Completed",
-                    link=url_for("workorder_detail", wo_id=wo.id))
+                             "Request " + str(wo.request.request_no) + " completed", "Completed",
+                             link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Completed! Waiting for verification.","success")
             return redirect(url_for("workorder_detail", wo_id=wo_id))
         except Exception as e:
             db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
     c = ('<h3 style="color:#f59e0b">Complete Work Order ' + str(wo.work_order_no) + '</h3>'
-        '<div class="card"><form method="post" enctype="multipart/form-data">'
-        '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>'
-        '<div class="mb-3"><label class="form-label">Photo</label><input type="file" name="photo" accept="image/*" class="form-control"></div>'
-        '<div class="mb-3"><label class="form-label">Labor Hours</label><input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>'
-        '<button class="btn btn-success btn-lg w-100"><i class="fas fa-check-circle"></i> Complete</button></form></div>')
+         '<div class="card"><form method="post" enctype="multipart/form-data">'
+         '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>'
+         '<div class="mb-3"><label class="form-label">Photo</label><input type="file" name="photo" accept="image/*" class="form-control"></div>'
+         '<div class="mb-3"><label class="form-label">Labor Hours</label><input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>'
+         '<button class="btn btn-success btn-lg w-100"><i class="fas fa-check-circle"></i> Complete</button></form></div>')
     return page("Complete Work Order", c)
 
 @app.route("/workorders/<int:wo_id>/verify", methods=["POST"])
@@ -1916,8 +1553,8 @@ def workorder_verify(wo_id):
         log_audit("Verify","WorkOrder",wo.id,"Completed","Verified")
         if wo.request:
             notify_users([wo.request.requested_by_id], wo.request_id, "✅ Verified",
-                "Request " + str(wo.request.request_no) + " verified", "Verified",
-                link=url_for("request_detail", req_id=wo.request_id))
+                         "Request " + str(wo.request.request_no) + " verified", "Verified",
+                         link=url_for("request_detail", req_id=wo.request_id))
         db.session.commit(); flash("✅ Verified!","success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -1935,18 +1572,18 @@ def supplier_form(s, action, edit):
     a1 = " selected" if act else ""
     a2 = "" if act else " selected"
     return ('<h3 style="color:#f59e0b"><i class="fas fa-truck"></i> ' + ("Edit" if edit else "Add") + ' Supplier</h3>'
-        '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Supplier Name *</label><input type="text" class="form-control" name="company_name" value="' + v("company_name") + '" required></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Contact</label><input type="text" class="form-control" name="contact_person" value="' + v("contact_person") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + v("phone") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + v("email") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Address</label><input type="text" class="form-control" name="address" value="' + v("address") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + a1 + '>Active</option><option value="Inactive"' + a2 + '>Inactive</option></select></div>'
-        '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
-        '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div>'
-        '</div></form></div>')
+            '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
+            '<div class="col-md-6 mb-3"><label class="form-label">Supplier Name *</label><input type="text" class="form-control" name="company_name" value="' + v("company_name") + '" required></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Contact</label><input type="text" class="form-control" name="contact_person" value="' + v("contact_person") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + v("phone") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + v("email") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Address</label><input type="text" class="form-control" name="address" value="' + v("address") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + a1 + '>Active</option><option value="Inactive"' + a2 + '>Inactive</option></select></div>'
+            '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+            '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div>'
+            '</div></form></div>')
 
 @app.route("/suppliers")
 @role_required("ADMIN","MANAGER")
@@ -1961,10 +1598,10 @@ def suppliers_list():
             ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-ban"></i></button></form>'
         rows.append('<tr><td>' + str(s.id) + '</td><td>' + str(s.company_name) + '</td><td>' + str(s.contact_person or "—") + '</td><td>' + str(s.phone or "—") + '</td><td>' + str(s.email or "—") + '</td><td>' + bg + '</td><td>' + ac + '</td></tr>')
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-truck"></i> Suppliers</h3>'
-        '<a class="btn btn-primary mb-3" href="' + url_for("supplier_add") + '"><i class="fas fa-plus-circle"></i> Add</a>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
+         '<a class="btn btn-primary mb-3" href="' + url_for("supplier_add") + '"><i class="fas fa-plus-circle"></i> Add</a>'
+         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
     return page("Suppliers", c)
 
 @app.route("/suppliers/add", methods=["GET","POST"])
@@ -1979,11 +1616,11 @@ def supplier_add():
         try:
             st = request.form.get("status","Active")
             s = Supplier(company_name=name, contact_person=request.form.get("contact_person","").strip(),
-                phone=request.form.get("phone","").strip(), email=email,
-                address=request.form.get("address","").strip(),
-                tax_number=request.form.get("tax_number","").strip(),
-                notes=request.form.get("notes","").strip(),
-                status=st, is_active=(st=="Active"))
+                         phone=request.form.get("phone","").strip(), email=email,
+                         address=request.form.get("address","").strip(),
+                         tax_number=request.form.get("tax_number","").strip(),
+                         notes=request.form.get("notes","").strip(),
+                         status=st, is_active=(st=="Active"))
             db.session.add(s); db.session.flush()
             log_audit("Supplier Created","Supplier",s.id,new_value=name)
             db.session.commit(); flash("✅ Saved","success"); return redirect(url_for("suppliers_list"))
@@ -2041,18 +1678,18 @@ def part_form(p, action):
         sel = ' selected' if p and p.supplier_id == s.id else ''
         so += '<option value="' + str(s.id) + '"' + sel + '>' + str(s.company_name) + '</option>'
     return ('<h3 style="color:#f59e0b"><i class="fas fa-box"></i> ' + ("Edit" if p else "Add") + ' Part</h3>'
-        '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Part Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Category</label><input type="text" class="form-control" name="category" value="' + v("category") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" value="' + v("quantity","0") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Min Stock</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="' + v("minimum_stock","5") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Unit</label><input type="text" class="form-control" name="unit" value="' + v("unit","pcs") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost" value="' + v("unit_cost","0") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Storage</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '"></div>'
-        '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
-        '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div>'
-        '</div></form></div>')
+            '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
+            '<div class="col-md-6 mb-3"><label class="form-label">Part Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Category</label><input type="text" class="form-control" name="category" value="' + v("category") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" value="' + v("quantity","0") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Min Stock</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="' + v("minimum_stock","5") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Unit</label><input type="text" class="form-control" name="unit" value="' + v("unit","pcs") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost" value="' + v("unit_cost","0") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Storage</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
+            '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div>'
+            '</div></form></div>')
 
 @app.route("/inventory/add", methods=["GET","POST"])
 @role_required("ADMIN","MANAGER")
@@ -2063,12 +1700,12 @@ def inventory_add():
         if InventoryPart.query.filter_by(part_name=name).first(): flash("Exists","warning"); return redirect(url_for("inventory_add"))
         try:
             p = InventoryPart(part_name=name, category=request.form.get("category","").strip(),
-                quantity=request.form.get("quantity", type=float) or 0,
-                minimum_stock=request.form.get("minimum_stock", type=float) or 5,
-                unit=request.form.get("unit","pcs").strip() or "pcs",
-                unit_cost=request.form.get("unit_cost", type=float) or 0,
-                storage_location=request.form.get("storage_location","").strip(),
-                status="Active", supplier_id=request.form.get("supplier_id", type=int))
+                              quantity=request.form.get("quantity", type=float) or 0,
+                              minimum_stock=request.form.get("minimum_stock", type=float) or 5,
+                              unit=request.form.get("unit","pcs").strip() or "pcs",
+                              unit_cost=request.form.get("unit_cost", type=float) or 0,
+                              storage_location=request.form.get("storage_location","").strip(),
+                              status="Active", supplier_id=request.form.get("supplier_id", type=int))
             db.session.add(p); db.session.flush()
             log_audit("Inventory Part Created","InventoryPart",p.id,new_value=name)
             db.session.commit(); flash("✅ Saved","success"); return redirect(url_for("inventory_list"))
@@ -2103,7 +1740,7 @@ def inventory_edit(part_id):
 # ══════════════════════════════════════════ WORK ORDER PARTS
 def can_parts(wo):
     return (current_user.role in ["MANAGER","ADMIN"] or
-        (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+            (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
 
 @app.route("/workorders/<int:wo_id>/parts/add", methods=["GET","POST"])
 @login_required
@@ -2131,12 +1768,12 @@ def workorder_part_add(wo_id):
     parts = InventoryPart.query.filter(InventoryPart.status == "Active", InventoryPart.quantity > 0).order_by(InventoryPart.part_name).all()
     po = "".join('<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ')</option>' for p in parts)
     c = ('<h3 style="color:#f59e0b">Add Part — WO ' + str(wo.work_order_no) + '</h3>'
-        '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Part *</label><select class="form-select" name="part_id" required><option value="">-- Select --</option>' + po + '</select></div>'
-        '<div class="col-md-3 mb-3"><label class="form-label">Qty *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
-        '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn btn-secondary">Cancel</a>'
-        '<button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add</button></div></div></form></div>')
+         '<div class="card"><form method="post"><div class="row">'
+         '<div class="col-md-6 mb-3"><label class="form-label">Part *</label><select class="form-select" name="part_id" required><option value="">-- Select --</option>' + po + '</select></div>'
+         '<div class="col-md-3 mb-3"><label class="form-label">Qty *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
+         '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
+         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn btn-secondary">Cancel</a>'
+         '<button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add</button></div></div></form></div>')
     return page("Add Part", c)
 
 @app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
@@ -2164,8 +1801,8 @@ def api_unread():
     c = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
     latest = Notification.query.filter_by(user_id=current_user.id, is_read=False).order_by(Notification.created_at.desc()).first()
     return jsonify({"unread": c, "latest_id": latest.id if latest else None,
-        "latest_title": latest.title if latest else None,
-        "server_time": datetime.utcnow().isoformat()})
+                    "latest_title": latest.title if latest else None,
+                    "server_time": datetime.utcnow().isoformat()})
 
 @app.route("/notifications")
 @login_required
@@ -2178,12 +1815,12 @@ def notifications():
         ra = '<span style="color:#22c55e">✓</span>'
         if not n.is_read: ra = '<a class="btn btn-sm btn-primary" href="/notifications/mark-read/' + str(n.id) + '">Read</a>'
         rows.append('<tr class="' + cls + '"><td><a href="' + link + '" style="color:#f59e0b;font-weight:600">' + str(n.title) + '</a></td>'
-            '<td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td>'
-            '<td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
+                    '<td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td>'
+                    '<td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-bell"></i> Notifications</h3>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
     return page("Notifications", c)
 
 @app.route("/notifications/mark-read/<int:n_id>", methods=["GET","POST"])
@@ -2206,7 +1843,7 @@ def rooms_list():
     rs = Room.query.order_by(Room.room_number).all()
     rows = "".join('<tr><td>' + str(r.room_number) + '</td><td>' + str(r.floor) + '</td><td>' + str(r.status) + '</td></tr>' for r in rs)
     c = ('<h3 style="color:#f59e0b">Rooms</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+         '<thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Rooms", c)
 
 @app.route("/areas")
@@ -2215,7 +1852,7 @@ def areas_list():
     ar = Area.query.order_by(Area.name).all()
     rows = "".join('<tr><td>' + str(a.name) + '</td><td>' + str(a.department or "—") + '</td></tr>' for a in ar)
     c = ('<h3 style="color:#f59e0b">Areas</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+         '<thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Areas", c)
 
 @app.route("/inventory")
@@ -2228,14 +1865,14 @@ def inventory_list():
         label = "Out" if p.quantity <= 0 else "Low" if p.is_low else "OK"
         sn = p.supplier.company_name if p.supplier else "—"
         rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td>'
-            '<td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td>'
-            '<td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td>'
-            '<td><a class="btn btn-sm btn-info" href="' + url_for("inventory_edit", part_id=p.id) + '"><i class="fas fa-edit"></i></a></td></tr>')
+                    '<td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td>'
+                    '<td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td>'
+                    '<td><a class="btn btn-sm btn-info" href="' + url_for("inventory_edit", part_id=p.id) + '"><i class="fas fa-edit"></i></a></td></tr>')
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-boxes"></i> Inventory</h3>'
-        '<a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a>'
-        '<div class="card"><div class="table-responsive"><table class="table table-hover">'
-        '<thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" class="text-center">No parts</td></tr>') + '</tbody></table></div></div>')
+         '<a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a>'
+         '<div class="card"><div class="table-responsive"><table class="table table-hover">'
+         '<thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead>'
+         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" class="text-center">No parts</td></tr>') + '</tbody></table></div></div>')
     return page("Inventory", c)
 
 @app.route("/employees")
@@ -2244,7 +1881,7 @@ def employees_list():
     es = Employee.query.all()
     rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td><td>' + str(e.department or "—") + '</td></tr>' for e in es)
     c = ('<h3 style="color:#f59e0b">Employees</h3><div class="card"><table class="table">'
-        '<thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+         '<thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Employees", c)
 
 @app.route("/admin/users")
@@ -2253,7 +1890,7 @@ def admin_users():
     us = User.query.all()
     rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
     c = ('<h3 style="color:#f59e0b">Users</h3><div class="card"><table class="table">'
-        '<thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+         '<thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Users", c)
 
 @app.route("/admin/audit")
@@ -2262,8 +1899,8 @@ def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
     rows = "".join('<tr><td>' + str(l.user.full_name if l.user else "System") + '</td><td>' + str(l.action) + '</td><td>' + str(l.object_type or "") + '</td><td>' + (l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "") + '</td></tr>' for l in logs)
     c = ('<h3 style="color:#f59e0b">Audit Log</h3><div class="card"><table class="table">'
-        '<thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td colspan="4">No logs</td></tr>') + '</tbody></table></div>')
+         '<thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead>'
+         '<tbody>' + (rows if rows else '<tr><td colspan="4">No logs</td></tr>') + '</tbody></table></div>')
     return page("Audit", c)
 
 @app.route("/admin/backup")
@@ -2272,9 +1909,9 @@ def backup_page():
     bs = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
     rows = "".join('<tr><td>' + str(b) + '</td></tr>' for b in bs)
     c = ('<h3 style="color:#f59e0b">Backups</h3>'
-        '<form method="post" action="/admin/backup/now" class="mb-3"><button class="btn btn-primary">Backup Now</button></form>'
-        '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead>'
-        '<tbody>' + (rows if rows else '<tr><td>None</td></tr>') + '</tbody></table></div>')
+         '<form method="post" action="/admin/backup/now" class="mb-3"><button class="btn btn-primary">Backup Now</button></form>'
+         '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead>'
+         '<tbody>' + (rows if rows else '<tr><td>None</td></tr>') + '</tbody></table></div>')
     return page("Backups", c)
 
 @app.route("/admin/backup/now", methods=["GET","POST"])
@@ -2299,11 +1936,11 @@ def reports():
     completed = base.filter_by(status="Completed").count()
     verified = base.filter_by(status="Verified").count()
     c = ('<h3 style="color:#f59e0b">Reports</h3><div class="row g-3 mb-4">'
-        '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
-        '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-        '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
-        '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(verified) + '</div><div class="metric-label">Verified</div></div></div>'
-        '</div>')
+         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
+         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
+         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
+         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(verified) + '</div><div class="metric-label">Verified</div></div></div>'
+         '</div>')
     return page("Reports", c)
 
 # ══════════════════════════════════════════ DEBUG
@@ -2316,15 +1953,15 @@ def debug():
         "work_orders": WorkOrder.query.count(),
         "notifications": Notification.query.count(),
         "managers": [{"username": u.username, "full_name": u.full_name, "role": u.role,
-            "dept": u.department.name if u.department else None}
-            for u in User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()],
+                      "dept": u.department.name if u.department else None}
+                     for u in User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()],
     })
 
 # ══════════════════════════════════════════ PWA / LOGO
 @app.route("/manifest.json")
 def manifest():
     return jsonify({"name": "Rori Hotel Maintenance","short_name": "RoriMaint","start_url": "/dashboard",
-        "display": "standalone","background_color": "#0f172a","theme_color": "#f59e0b","icons": []})
+                    "display": "standalone","background_color": "#0f172a","theme_color": "#f59e0b","icons": []})
 
 @app.route("/sw.js")
 def sw():
@@ -2339,13 +1976,10 @@ def logo():
 # ══════════════════════════════════════════ ERRORS
 @app.errorhandler(403)
 def e403(e): return page("Forbidden",'<div class="alert alert-danger">Access denied.</div>'), 403
-
 @app.errorhandler(404)
 def e404(e): return page("Not Found",'<div class="alert alert-warning">Page not found.</div>'), 404
-
 @app.errorhandler(405)
 def e405(e): return page("Method Not Allowed",'<div class="alert alert-danger">Method not allowed.</div>'), 405
-
 @app.errorhandler(500)
 def e500(e):
     tb = traceback.format_exc(); print("500 ERROR: " + tb)
