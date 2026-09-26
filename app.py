@@ -143,12 +143,11 @@ class MaintenanceRequest(db.Model):
     hk_approval_status = db.Column(db.String(20))
     hk_signature_data = db.Column(db.Text)
     hk_approval_notes = db.Column(db.Text)
-    
     # ✅ Digital Signature Fields
     signature_name = db.Column(db.String(150), nullable=True)
     signature_status = db.Column(db.String(30), default="SIGNED")
     signature_signed_at = db.Column(db.DateTime, nullable=True)
-    signature_data = db.Column(db.Text, nullable=True)  # ✅ ለእውነተኛ የተሳለ ፊርማ ምስል (Base64)
+    signature_data = db.Column(db.Text, nullable=True)  # ✅ Base64 signature image
 
     room = db.relationship("Room", foreign_keys=[room_id])
     area = db.relationship("Area", foreign_keys=[area_id])
@@ -433,13 +432,11 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","hk_approval_status","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_status VARCHAR(20)")
             add_column_if_missing("maintenance_requests","hk_signature_data","ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT")
             add_column_if_missing("maintenance_requests","hk_approval_notes","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT")
-            
             # ✅ Digital Signature Schema Migration
             add_column_if_missing("maintenance_requests","signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)")
             add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
             add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
-            add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT") # ✅ ፊርማ ምስል
-            
+            add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT")
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
@@ -501,22 +498,19 @@ def page(title, content):
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
-    
     nav_html = "".join('<a class="nav-link" href="' + str(u) + '">' + str(l) + '</a>' for l, u in nav)
     bell_html = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
         badge = '<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">' + str(unread) + '</span>' if unread > 0 else ""
         bell_html = '<a class="nav-link" id="nav-bell" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
-    
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
-    
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);min-height:100vh;color:#e2e8f0;padding-top:70px}
+body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23,42,0.88),rgba(30,41,59,0.88)),url('/static/rori_hotel_bg.jpg') center center/cover no-repeat fixed;min-height:100vh;color:#e2e8f0;padding-top:70px}
 .navbar{background:rgba(15,23,42,0.95)!important;backdrop-filter:blur(16px);border-bottom:1px solid rgba(245,158,11,0.25);padding:.75rem 1.5rem}
 .navbar-brand{font-weight:800;font-size:1.3rem;color:#f59e0b!important}
 .nav-link{color:#cbd5e1!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem}
@@ -524,8 +518,8 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 .nav-link:hover{background:rgba(245,158,11,0.12);color:#f59e0b!important}
 .navbar-toggler{border-color:rgba(245,158,11,0.4)}
 .container{max-width:1400px;padding:1.5rem}
-.card{background:rgba(30,41,59,0.7);border:1px solid rgba(245,158,11,0.15);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
-.metric-card{background:rgba(30,41,59,0.5);border:1px solid rgba(245,158,11,0.12);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%}
+.card{background:rgba(15,23,42,0.75);backdrop-filter:blur(12px);border:1px solid rgba(245,158,11,0.2);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
+.metric-card{background:rgba(15,23,42,0.7);backdrop-filter:blur(10px);border:1px solid rgba(245,158,11,0.15);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%}
 .metric-value{font-size:2rem;font-weight:700;color:#f8fafc}
 .metric-label{font-size:.8rem;color:#94a3b8;text-transform:uppercase}
 .table{color:#e2e8f0}
@@ -593,7 +587,7 @@ def seed_data():
         if not Category.query.filter_by(name=c).first(): db.session.add(Category(name=c))
     for i in ["Light","Switch","Window","Door Key","Door Lock","Paint","Mirror","Drainage Cover","Frame","Background Frame","Spot Light","Plumbing","AC","Electrical","Other"]:
         if not WorkingItem.query.filter_by(name=i).first(): db.session.add(WorkingItem(name=i))
-    for eid, n, t in [(1,"ተስፋሁን ነከረ","General Mechanic"),(2,"ቸርነት አሞና","General Mechanic"),(3,"ስምዖን ዮሐንስ","General Mechanic"),(4,"አበባየሁ ክፍሌ","Supervisor"),(5,"አሚር አወል","Manager")]:
+    for eid, n, t in [(1,"ተስሁን ነከረ","General Mechanic"),(2,"ቸርነት አሞና","General Mechanic"),(3,"ስምዖን ዮሐንስ","General Mechanic"),(4,"አበባየ ክፍሌ","Supervisor"),(5,"አሚር አወል","Manager")]:
         if not db.session.get(Employee, eid): db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
     if Supplier.query.count() == 0:
         for s in ["ABC Maintenance Supply","Hawassa Engineering Supply","Rori Hotel Approved Supplier"]:
@@ -608,7 +602,7 @@ def seed_data():
         {"u":"tesfahun","n":"ተስፋሁን ነከረ","r":"TECHNICIAN","d":None},
         {"u":"simon","n":"ስምዖን ዮሐንስ","r":"TECHNICIAN","d":None},
         {"u":"chernet","n":"ቸርነት አሞና","r":"TECHNICIAN","d":None},
-        {"u":"wale","n":"ዋሌ","r":"TECHNICIAN","d":None},
+        {"u":"wale","n":"ዋ","r":"TECHNICIAN","d":None},
         {"u":"tsadiku","n":"ፃዲቁ","r":"TECHNICIAN","d":None},
         {"u":"employee1","n":"Test Employee","r":"EMPLOYEE","d":None},
         {"u":"housekeeping","n":"Kassahun Girma","r":"DEPARTMENT","d":hk.id if hk else None},
@@ -638,13 +632,13 @@ def login():
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
-        flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል","danger")
+        flash("የተሳተ መለያ ስም ይም የይለፍ ቃል","danger")
     lh = """<div class="row justify-content-center align-items-center" style="min-height:80vh">
 <div class="col-11 col-md-5"><div class="login-card">
-<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የጥገና ክፍል መግቢያ</p></div>
-<form method="post"><div class="mb-3"><label class="form-label">መለያ ስም</label><input type="text" class="form-control" name="username" required autofocus></div>
+<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የገና ክፍል መግቢያ</p></div>
+<form method="post"><div class="mb-3"><label class="form-label">መለያ ም</label><input type="text" class="form-control" name="username" required autofocus></div>
 <div class="mb-4"><label class="form-label">የይለፍ ቃል</label><input type="password" class="form-control" name="password" required></div>
-<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግባ</button></form>
+<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ግ</button></form>
 <hr class="my-4" style="border-color:rgba(245,158,11,0.2)"><div class="text-center small" style="color:#94a3b8">
 <p class="mb-1">Manager (Amir): <b>amir / 123456</b></p>
 <p class="mb-1">HK Manager (Kasahun): <b>kasahun / 123456</b></p>
@@ -670,10 +664,10 @@ def profile():
     c = ('<h3 style="color:#f59e0b">👤 መገለጫ</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
         '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
         '<p>📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
-        '<form method="post"><div class="mb-3"><label class="form-label">ኢሜል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
+        '<form method="post"><div class="mb-3"><label class="form-label">ኢል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
         '<div class="mb-3"><label class="form-label">ስልክ</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
-        '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ባዶ ከሆነ አይለወጥም"></div>'
-        '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀምጥ</button></form></div>')
+        '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ቃል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይለጥም"></div>'
+        '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀም</button></form></div>')
     return page("Profile", c)
 
 # ══════════════════════════════════════════ REQUESTS
@@ -704,9 +698,8 @@ def requests_list():
     for r in reqs:
         del_html = ""
         if is_mgr:
-            # ✅ ጠንካራ የማረጋገጫ መልእክት (በስህተት እንዳይሰረዝ)
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" '
-                'onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ውስጥ መፈለግ ያስፈልጋል።\');">'
+                'onsubmit="return confirm(\'⚠️ እርግጠኛ ዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ውስጥ መለግ ያስልጋል።\');">'
                 '<input type="hidden" name="reason" value="Archived by manager">'
                 '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
@@ -735,7 +728,6 @@ def request_create():
     rooms = Room.query.order_by(Room.room_number).all()
     areas = Area.query.order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
-    
     if request.method == "POST":
         try:
             lt = request.form.get("location_type","Room").strip() or "Room"
@@ -747,29 +739,23 @@ def request_create():
             prio = request.form.get("priority","MEDIUM")
             fl = request.form.get("floor", type=int)
             did = request.form.get("department_id", type=int)
-            
-            # ✅ የግድ የክፍል (Department) መታወቂያ እንዲኖር ማረጋገጫ (ይህ ስራዎች እንዳይጠፉ ያደርጋል)
+            # ✅ የግድ የፍል (Department) መታቂያ እንዲኖር ረጋገጫ (ይህ ስራዎች እንዳይጠ ያደርል)
             if not did and current_user.department_id:
                 did = current_user.department_id
-            
             if current_user.role == "DEPARTMENT" and current_user.department_id: did = current_user.department_id
             if current_user.role == "EMPLOYEE" and not did and current_user.department_id: did = current_user.department_id
-            
             if lt == "Room" and rid:
                 rm = get_one(Room, rid)
                 if rm: fl = rm.floor
             elif lt == "Area": rid = None
             else: rid = None; aid = None
-            
             if not desc:
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
-                
-            # ✅ እውነተኛ ዲጂታል ፊርማ - ሰውየው የሳለውን ፊርማ ከፎርሙ ይቀበላል
+            # ✅ እውነተኛ ዲጂታል ርማ - ሰውየው የለውን ፊርማ ከርሙ ይቀበላል
             sig_data = request.form.get("signature_data", "").strip()
             if not sig_data:
-                flash("እባክዎ ፊርማዎን ይስሉ! (Signature is required)","danger")
+                flash("እባክዎ ፊርማዎን ይስ! (Signature is required)","danger")
                 return redirect(url_for("request_create"))
-
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
@@ -777,41 +763,35 @@ def request_create():
                 signature_name=current_user.full_name,
                 signature_status="SIGNED",
                 signature_signed_at=datetime.utcnow(),
-                signature_data=sig_data  # ✅ የተሳለውን ፊርማ ምስል ያስቀምጣል
+                signature_data=sig_data
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
-            
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
             log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=current_user.full_name)
             log_status_change(req.id,"Pending",notes="Created and signed by " + str(current_user.full_name))
-            
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 New Request",
                 "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending approval",
                 "New Request", link=url_for("request_detail", req_id=req.id))
-            
             db.session.commit()
             flash("✅ Request created successfully!","success")
             return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
-
     fo = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
     ro = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
     ao = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
     io_ = "".join('<option value="' + str(i.id) + '">' + str(i.name) + '</option>' for i in items)
     co = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in cats)
     po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
-    
     show_d = current_user.role not in ["DEPARTMENT"] and not (current_user.role=="EMPLOYEE" and current_user.department_id)
     dhtml = ""
     if show_d:
         dopt = "".join('<option value="' + str(d.id) + '">' + str(d.name) + '</option>' for d in depts)
         dhtml = ('<div class="col-md-6 mb-3"><label class="form-label">Department</label>'
             '<select class="form-select" name="department_id"><option value="">-- Select --</option>' + dopt + '</select></div>')
-            
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
@@ -831,7 +811,6 @@ def request_create():
         '<select class="form-select" name="priority">' + po + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
         '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
-        
         # ✅ የፊርማ ሳጥን (Signature Pad)
         '<div class="col-12 mb-3">'
         '<label class="form-label">እባክዎ ከዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
@@ -839,17 +818,15 @@ def request_create():
         '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
         '</div>'
         '<div class="mt-2 d-flex gap-2">'
-        '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያጥፉ (Clear)</button>'
+        '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያጥ (Clear)</button>'
         '</div>'
         '<input type="hidden" name="signature_data" id="signature-data">'
         '</div>'
-        
         '<div class="col-12 d-flex gap-2">'
         '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
         '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
         '</div></div></form></div>'
-        
-        # ✅ የፊርማ JavaScript ኮድ
+        # ✅ የርማ JavaScript ኮድ
         '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
         '<script>'
         '(function(){'
@@ -868,14 +845,13 @@ def request_create():
         'document.querySelector("form").addEventListener("submit", function(e){'
         'if (signaturePad.isEmpty()){'
         'e.preventDefault();'
-        'alert("እባክዎ ፊርማዎን ይስሉ! (Please provide your signature)");'
+        'alert("እባክ ፊርማዎን ይስሉ! (Please provide your signature)");'
         'return false;'
         '}'
         'document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");'
         '});'
         '})();'
         '</script>'
-        
         '<script>(function(){var lt=document.getElementById("locationType");'
         'var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
         'function upd(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}'
@@ -892,13 +868,11 @@ def request_detail(req_id):
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
-    
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     wos = WorkOrder.query.filter_by(request_id=req.id).all()
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
         "Completed":"success","Verified":"success","Closed":"secondary",
         "Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
-    
     hist_html = ""
     for h in hist:
         who = h.user.full_name if h.user else "System"
@@ -908,7 +882,6 @@ def request_detail(req_id):
             '<strong style="color:#f59e0b">' + str(h.status) + '</strong> '
             '<span style="color:#94a3b8;font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
     if not hist_html: hist_html = '<p style="color:#94a3b8">No status history yet.</p>'
-    
     wo_html = ""
     for wo in wos:
         wo_html += ('<div style="padding:.5rem .75rem;background:rgba(30,41,59,0.5);border-radius:10px;margin-bottom:.4rem">'
@@ -916,7 +889,6 @@ def request_detail(req_id):
             '<span class="badge bg-info">' + str(wo.status) + '</span> '
             '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
     if not wo_html: wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
-    
     # ✅ Digital Signature Card - ሰውየው የሳለውን ፊርማ በምስል መልክ ያሳያል
     sig_html = ""
     if req.signature_status == "SIGNED":
@@ -925,8 +897,7 @@ def request_detail(req_id):
         if req.signature_data:
             sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid #ddd;"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>'
         else:
-            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(ምንም የፊርማ ምስል አልተገኘም)</div>'
-            
+            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(ምንም የርማ ምስል አልተኘም)</div>'
         sig_html = ('<div class="card" style="border: 1px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); margin-top:1rem;">'
             '<h6 style="color:#22c55e; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE</h6>'
             '<div style="font-size:1.1rem; font-weight:600; color:#f8fafc; margin-bottom:0.5rem;">' + str(req.signature_name or "Unknown") + '</div>'
@@ -936,7 +907,6 @@ def request_detail(req_id):
             '<div style="color:#94a3b8; font-size:0.85rem;">Department: ' + str(req.department.name if req.department else "N/A") + '</div>'
             '<div style="color:#94a3b8; font-size:0.85rem;">Signed: ' + sig_time + '</div>'
             '</div>')
-            
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
@@ -950,10 +920,8 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            # ✅ ጠንካራ Confirmation ለ Archive
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'⚠️ እርግጠኛ ነዎት? ይህ ጥያቄ ወደ Archived ዝርዝር ይገባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'️ እርግጠኛ ነዎት? ይ ጥያቄ ወደ Archived ዝርዝር ይባል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
-    
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
         '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
         + ('<div>' + actions_html + '</div>' if actions_html else '') + '</div>'
@@ -1330,7 +1298,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);min-height:100vh;color:#e2e8f0;padding-top:70px}
+body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23,42,0.88),rgba(30,41,59,0.88)),url('/static/rori_hotel_bg.jpg') center center/cover no-repeat fixed;min-height:100vh;color:#e2e8f0;padding-top:70px}
 .navbar{background:rgba(15,23,42,0.95)!important;backdrop-filter:blur(16px);border-bottom:1px solid rgba(245,158,11,0.25);padding:.75rem 1.5rem}
 .navbar-brand{font-weight:800;font-size:1.3rem;color:#f59e0b!important}
 .nav-link{color:#cbd5e1!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem}
@@ -1338,9 +1306,9 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 .nav-link:hover{background:rgba(245,158,11,0.12);color:#f59e0b!important}
 .navbar-toggler{border-color:rgba(245,158,11,0.4)}
 .container{max-width:1400px;padding:1.5rem}
-.card{background:rgba(30,41,59,0.7);border:1px solid rgba(245,158,11,0.15);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
+.card{background:rgba(15,23,42,0.75);backdrop-filter:blur(12px);border:1px solid rgba(245,158,11,0.2);border-radius:20px;color:#e2e8f0;padding:1.25rem;margin-bottom:1.5rem}
 .card h5{color:#f59e0b;font-weight:600}
-.metric-card{background:rgba(30,41,59,0.55);border:1px solid rgba(245,158,11,0.12);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s}
+.metric-card{background:rgba(15,23,42,0.7);backdrop-filter:blur(10px);border:1px solid rgba(245,158,11,0.15);border-radius:20px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s}
 .metric-card:hover{transform:translateY(-2px);border-color:rgba(245,158,11,0.3)}
 .metric-value{font-size:2rem;font-weight:800;color:#f8fafc;line-height:1}
 .metric-label{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem}
@@ -1373,7 +1341,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f172a,#1
 .feed-item .tm{font-size:.65rem;color:#6b7280;margin-top:2px}
 .empty{text-align:center;padding:2rem 1rem;color:#94a3b8;font-size:.85rem}
 .empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
-.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.4);border-radius:16px;border:1px solid rgba(245,158,11,0.12);margin-bottom:1.5rem}
+.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
 .filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
 @media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
 </style></head><body>
@@ -1571,7 +1539,6 @@ Chart.defaults.font.size = 11;
 var TT = {backgroundColor:'rgba(15,23,42,0.97)', borderColor:'rgba(245,158,11,0.5)',
 borderWidth:1, titleColor:'#fff', bodyColor:'#e5e7eb', padding:11, cornerRadius:10};
 var C = {amber:'#f59e0b', green:'#22c55e', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
-var PALETTE = [C.amber, C.blue, C.green, C.purple, C.cyan, C.pink, C.red, '#84cc16', '#f97316', '#a855f7', '#0ea5e9', C.gray];
 function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
 function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
 (function(){
@@ -1847,7 +1814,7 @@ def workorder_detail(wo_id):
         '<p class="text-end mb-0"><b>Total: ' + str(pt) + '</b></p></div>')
     ch = ""
     if wo.completion_photo:
-        ch = '<div class="mt-3"><h6>📸 Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" class="img-fluid rounded" style="max-height:250px"></a></div>'
+        ch = '<div class="mt-3"><h6> Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" class="img-fluid rounded" style="max-height:250px"></a></div>'
     actions = ""
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
         if wo.status == "Assigned":
@@ -1865,7 +1832,7 @@ def workorder_detail(wo_id):
         '<tr><th style="color:#94a3b8">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Status</th><td><span class="badge bg-info">' + str(wo.status) + '</span></td></tr>'
-        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned") + '</td></tr>'
+        '<tr><th style="color:#94a3b8">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else " Unassigned") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr>'
         '<tr><th style="color:#94a3b8">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr>'
