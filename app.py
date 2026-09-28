@@ -1,4 +1,4 @@
-# app.py - Rori Hotel Maintenance System (FULL COMPLETE VERSION)
+# app.py - Rori Hotel Premium Dark Dashboard
 import csv, io, json, os, re, sqlite3, uuid, traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -39,7 +39,7 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ══════════════════════════════════════════ MODELS
+# ══════════════════════════════════════════ MODELS (UNCHANGED)
 class User(UserMixin, db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -325,7 +325,7 @@ class ChecklistTemplate(db.Model):
 @login_manager.user_loader
 def load_user(user_id): return db.session.get(User, int(user_id))
 
-# ══════════════════════════════════════════ HELPERS
+# ══════════════════════════════════════════ HELPERS (UNCHANGED)
 def role_required(*roles):
     def dec(fn):
         @wraps(fn)
@@ -366,7 +366,7 @@ def notify_users(ids, request_id, title, message, ntype="General", link=None, wo
 
 def notify_assigned_staff(req, wo, staff_user):
     if not staff_user: return
-    title = "📋 Assigned to you: " + str(wo.work_order_no)
+    title = " Assigned to you: " + str(wo.work_order_no)
     item_name = req.working_item.name if req.working_item else "N/A"
     msg = ("Request: " + str(req.request_no) + " | WO: " + str(wo.work_order_no) +
            " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
@@ -473,151 +473,687 @@ def ensure_database_schema():
             add_column_if_missing("suppliers","updated_at","ALTER TABLE suppliers ADD COLUMN updated_at " + dt)
             add_column_if_missing("inventory_parts","supplier_id","ALTER TABLE inventory_parts ADD COLUMN supplier_id INTEGER")
             print("✅ Schema OK")
-        except Exception as e: print("⚠️ Schema error: " + str(e))
+        except Exception as e: print("️ Schema error: " + str(e))
 
+# ══════════════════════════════════════════ PREMIUM DARK PAGE TEMPLATE
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
         r = current_user.role
         if r == "DEPARTMENT":
-            nav = [('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')),
-                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
-        elif r == "EMPLOYEE":
-            nav = [('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
-                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
-        elif r in STAFF_ROLES:
-            nav = [('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
-                   ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                   ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                   ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
-        else:
-            nav = [('<i class="fas fa-home"></i> Dashboard', url_for('dashboard')),
-                   ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
-                   ('<i class="fas fa-tasks"></i> Requests', url_for('requests_list')),
-                   ('<i class="fas fa-clipboard-list"></i> Work Orders', url_for('workorders_list')),
-                   ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
-                   ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
-                   ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
-                   ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
-                   ('<i class="fas fa-users"></i> Employees', url_for('employees_list'))]
-        if r == "ADMIN":
-            nav += [('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
-                    ('<i class="fas fa-history"></i> Audit', url_for('audit_logs')),
-                    ('<i class="fas fa-archive"></i> Archived', url_for('deleted_requests')),
-                    ('<i class="fas fa-archive"></i> Backup', url_for('backup_page')),
-                    ('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
-        elif r == "MANAGER":
-            nav += [('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
-        nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+            nav = [
+                ('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')),
+                ('<i class="fas fa-clipboard-list"></i> My Requests', url_for('requests_list')),
                 ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
                 ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))
+            ]
+        elif r == "EMPLOYEE":
+            nav = [
+                ('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')),
+                ('<i class="fas fa-clipboard-list"></i> My Requests', url_for('requests_list')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))
+            ]
+        elif r in STAFF_ROLES:
+            nav = [
+                ('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
+                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))
+            ]
+        else:
+            nav = [
+                ('<i class="fas fa-tachometer-alt"></i> Dashboard', url_for('dashboard')),
+                ('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')),
+                ('<i class="fas fa-clipboard-list"></i> Requests', url_for('requests_list')),
+                ('<i class="fas fa-tasks"></i> Work Orders', url_for('workorders_list')),
+                ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
+                ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
+                ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
+                ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
+                ('<i class="fas fa-users"></i> Employees', url_for('employees_list'))
+            ]
+        if r == "ADMIN":
+            nav += [
+                ('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
+                ('<i class="fas fa-history"></i> Audit Log', url_for('audit_logs')),
+                ('<i class="fas fa-archive"></i> Archived', url_for('deleted_requests')),
+                ('<i class="fas fa-database"></i> Backup', url_for('backup_page')),
+                ('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))
+            ]
+        elif r == "MANAGER":
+            nav += [
+                ('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))
+            ]
+        nav += [
+            ('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+            ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+            ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+            ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))
+        ]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
-    nav_html = "".join('<a class="nav-link" href="' + str(u) + '">' + str(l) + '</a>' for l, u in nav)
+    
+    nav_html = "".join('<li><a class="nav-link" href="' + str(u) + '">' + str(l) + '</a></li>' for l, u in nav)
+    
     bell_html = ""
     sound_toggle = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
-        badge = '<span class="badge bg-danger" style="position:absolute;top:-5px;right:-5px;font-size:0.7rem;">' + str(unread) + '</span>' if unread > 0 else ""
-        bell_html = '<a class="nav-link" id="nav-bell" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
+        badge = '<span class="notif-badge">' + str(unread) + '</span>' if unread > 0 else ""
+        bell_html = '<a class="header-icon" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
+        
         if current_user.role in ["ADMIN", "MANAGER"]:
             sound_toggle = '''
-            <div class="dropdown d-inline-block ms-2">
-                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="soundDropdown" data-bs-toggle="dropdown" style="border-radius:20px; font-size:0.8rem; padding:0.3rem 0.8rem;">
-                    <i class="fas fa-volume-up"></i> Sound
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li><a class="dropdown-item" href="#" onclick="roriToggleSound(true)"><i class="fas fa-volume-up"></i> Sound ON</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="roriToggleSound(false)"><i class="fas fa-volume-mute"></i> Sound OFF</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="#" onclick="roriTestSound()"><i class="fas fa-play"></i> Test Sound</a></li>
-                </ul>
+            <div class="sound-control">
+                <button class="btn-icon" onclick="roriToggleSound(true)" title="Sound ON"><i class="fas fa-volume-up"></i></button>
+                <button class="btn-icon" onclick="roriToggleSound(false)" title="Sound OFF"><i class="fas fa-volume-mute"></i></button>
+                <button class="btn-icon" onclick="roriTestSound()" title="Test Sound"><i class="fas fa-play"></i></button>
             </div>
             '''
+    
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
+    
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:#f8fafc;color:#111827;padding-top:70px}
-.navbar{background:#ffffff!important;border-bottom:1px solid #e2e8f0;padding:.75rem 1.5rem;box-shadow:0 2px 10px rgba(0,0,0,0.05)}
-.navbar-brand{font-weight:800;font-size:1.3rem;color:#c5a059!important}
-.nav-link{color:#64748b!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem;font-weight:500}
-.nav-link i{color:#c5a059;margin-right:4px}
-.nav-link:hover{background:#fffbeb;color:#c5a059!important}
-.navbar-toggler{border-color:#e2e8f0}
-.container{max-width:1400px;padding:1.5rem}
-.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;color:#1e293b;padding:1.25rem;margin-bottom:1.5rem;box-shadow:0 4px 15px rgba(15, 23, 42, 0.04)}
-.card h5{color:#c5a059;font-weight:600}
-.metric-card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s;box-shadow:0 4px 15px rgba(15, 23, 42, 0.04)}
-.metric-card:hover{transform:translateY(-2px);border-color:#c5a059}
-.metric-value{font-size:2rem;font-weight:800;color:#111827;line-height:1}
-.metric-label{font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem;font-weight:600}
-.metric-icon{font-size:1.4rem;color:#c5a059;margin-bottom:.35rem}
-.table{color:#1e293b;background:#ffffff}
-.table thead th{color:#111827;border-bottom:2px solid #e2e8f0;font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap;font-weight:700}
-.table td{padding:10px;border-color:#f1f5f9;font-size:.85rem}
-.table-hover tbody tr:hover{background-color:#f8fafc}
-.btn{border-radius:10px;font-weight:600;padding:.6rem 1.6rem;border:none}
-.btn-primary{background:#c5a059;color:#ffffff;}
-.btn-primary:hover{background:#a98745;color:#ffffff;}
-.btn-success{background:#10b981;color:#fff;}
-.btn-warning{background:#f59e0b;color:#fff;}
-.btn-danger{background:#ef4444;color:#fff;}
-.btn-info{background:#3b82f6;color:#fff;}
-.btn-secondary{background:#64748b;color:#fff;}
-.btn-sm{padding:.35rem .8rem;font-size:.78rem;}
-.form-control,.form-select{background:#ffffff;color:#111827;border:1px solid #cbd5e1;border-radius:10px;padding:.65rem .9rem;}
-.form-control:focus,.form-select:focus{background:#ffffff;color:#111827;border-color:#c5a059;box-shadow:0 0 0 3px rgba(197, 160, 89, 0.15);}
-.form-label{color:#334155;font-weight:500;font-size:.82rem;}
-.badge{padding:.35rem .75rem;border-radius:20px;font-weight:600;font-size:.72rem;}
-.chart-box{position:relative;width:100%;height:280px;}
-.chart-box.tall{height:340px;}
-.chart-box.donut{height:240px;}
-.prog-list{display:flex;flex-direction:column;gap:.7rem;}
-.prog-row{display:flex;flex-direction:column;gap:.3rem;}
-.prog-top{display:flex;justify-content:space-between;font-size:.78rem;}
-.prog-top .nm{color:#334155;font-weight:600;}
-.prog-top .ct{color:#c5a059;font-weight:800;}
-.prog-bar{height:6px;background:#f1f5f9;border-radius:6px;overflow:hidden;}
-.prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#c5a059,#d97706);}
-.feed{display:flex;flex-direction:column;gap:.4rem;}
-.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:#f8fafc;border-left:2px solid #c5a059;border-radius:9px;font-size:.78rem;border:1px solid #e2e8f0;}
-.feed-item .tx{color:#334155;}
-.feed-item .tx strong{color:#111827;}
-.feed-item .tm{font-size:.65rem;color:#64748b;margin-top:2px;}
-.empty{text-align:center;padding:2rem 1rem;color:#64748b;font-size:.85rem;}
-.empty i{font-size:1.6rem;color:#c5a059;opacity:.4;display:block;margin-bottom:.5rem;}
-.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;margin-bottom:1.5rem;box-shadow:0 2px 10px rgba(0,0,0,0.03);}
-.filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px;}
-@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
+:root {
+    --rori-gold: #C5A059;
+    --rori-gold-dark: #A8873F;
+    --bg-primary: #0B0B12;
+    --bg-secondary: #11111B;
+    --bg-card: #151522;
+    --bg-card-hover: #1B1B2A;
+    --border-color: rgba(197,160,89,0.20);
+    --text-primary: #FFFFFF;
+    --text-secondary: #A7A7B3;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --info: #38BDF8;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding-top: 70px;
+}
+
+/* HEADER */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--rori-gold);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.logo i { font-size: 1.8rem; }
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.header-icon {
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    text-decoration: none;
+    position: relative;
+    transition: color 0.3s;
+}
+
+.header-icon:hover { color: var(--rori-gold); }
+
+.notif-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: white;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.user-role {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.sound-control {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-icon:hover {
+    background: var(--bg-card-hover);
+    color: var(--rori-gold);
+    border-color: var(--rori-gold);
+}
+
+/* SIDEBAR */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 70px;
+    bottom: 0;
+    width: 260px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    padding: 1.5rem 0;
+    overflow-y: auto;
+    z-index: 999;
+    transition: transform 0.3s;
+}
+
+.sidebar-nav {
+    list-style: none;
+}
+
+.sidebar-nav li {
+    margin: 0.25rem 0;
+}
+
+.sidebar-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.5rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-left: 3px solid transparent;
+}
+
+.sidebar-nav .nav-link:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-left-color: var(--rori-gold);
+}
+
+.sidebar-nav .nav-link.active {
+    background: rgba(197,160,89,0.1);
+    color: var(--rori-gold);
+    border-left-color: var(--rori-gold);
+}
+
+.sidebar-nav .nav-link i {
+    width: 20px;
+    text-align: center;
+}
+
+/* MAIN CONTENT */
+.main-content {
+    margin-left: 260px;
+    padding: 2rem;
+    min-height: calc(100vh - 70px);
+}
+
+/* PAGE TITLE */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.page-title h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.page-title h1 span {
+    color: var(--rori-gold);
+}
+
+.page-title p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(197,160,89,0.3);
+}
+
+/* KPI CARDS */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.kpi-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--rori-gold);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--rori-gold), transparent);
+}
+
+.kpi-icon {
+    font-size: 2rem;
+    color: var(--rori-gold);
+    margin-bottom: 1rem;
+}
+
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.kpi-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.kpi-trend {
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    color: var(--success);
+}
+
+.kpi-trend.negative { color: var(--danger); }
+
+/* CARDS */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-title i { color: var(--rori-gold); }
+
+/* CHART CONTAINERS */
+.chart-container {
+    position: relative;
+    height: 300px;
+}
+
+.chart-container.tall { height: 400px; }
+
+/* TABLES */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead th {
+    background: var(--bg-secondary);
+    color: var(--rori-gold);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.table tbody td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.table tbody tr:hover {
+    background: var(--bg-card-hover);
+}
+
+/* BADGES */
+.badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-success { background: rgba(34,197,94,0.2); color: var(--success); }
+.badge-warning { background: rgba(245,158,11,0.2); color: var(--warning); }
+.badge-danger { background: rgba(239,68,68,0.2); color: var(--danger); }
+.badge-info { background: rgba(56,189,248,0.2); color: var(--info); }
+.badge-secondary { background: rgba(167,167,179,0.2); color: var(--text-secondary); }
+
+/* ALERTS */
+.alert {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.alert-success { border-left: 4px solid var(--success); }
+.alert-danger { border-left: 4px solid var(--danger); }
+.alert-warning { border-left: 4px solid var(--warning); }
+.alert-info { border-left: 4px solid var(--info); }
+
+/* FORMS */
+.form-control, .form-select {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+}
+
+.form-control:focus, .form-select:focus {
+    background: var(--bg-card-hover);
+    border-color: var(--rori-gold);
+    box-shadow: 0 0 0 3px rgba(197,160,89,0.15);
+    color: var(--text-primary);
+}
+
+.form-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+/* MOBILE MENU TOGGLE */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    
+    .main-content {
+        margin-left: 0;
+    }
+    
+    .menu-toggle {
+        display: block;
+    }
+}
+
+@media (max-width: 768px) {
+    .header {
+        padding: 0 1rem;
+    }
+    
+    .user-info {
+        display: none;
+    }
+    
+    .main-content {
+        padding: 1rem;
+    }
+    
+    .kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1rem;
+    }
+    
+    .kpi-value {
+        font-size: 2rem;
+    }
+    
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* ANIMATIONS */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: slideIn 0.5s ease-out;
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rori-gold);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rori-gold-dark);
+}
 </style></head><body>
-<nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
-<a class="navbar-brand" href=""" + (url_for('dashboard') if current_user.is_authenticated else url_for('login')) + """"><i class="fas fa-hotel"></i> Rori Hotel</a>
-<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
-<div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">""" + nav_html + bell_html + sound_toggle + """</div></div>
-</div></nav>
-<div class="container mt-4">""" + flash_html + content + """</div>
+
+<!-- HEADER -->
+<header class="header">
+    <div class="header-left">
+        <button class="menu-toggle" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+        <a href="/" class="logo">
+            <i class="fas fa-hotel"></i>
+            <span>RORI HOTEL</span>
+        </a>
+    </div>
+    <div class="header-right">
+        """ + sound_toggle + bell_html + """
+        <div class="user-profile">
+            <div class="user-avatar">""" + (current_user.full_name[0].upper() if current_user.full_name else current_user.username[0].upper()) + """</div>
+            <div class="user-info">
+                <div class="user-name">""" + str(current_user.full_name or current_user.username) + """</div>
+                <div class="user-role">""" + str(current_user.role) + """</div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+    <ul class="sidebar-nav">
+        """ + nav_html + """
+    </ul>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main class="main-content">
+    """ + flash_html + content + """
+</main>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-(function(){
-'use strict';
-if (!window.NotifState) window.NotifState = { lastUnread: null, audioCtx: null, armed: false };
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('active');
+}
+
+// Notification Sound System
 let roriAudioCtx = null;
 let roriSoundEnabled = localStorage.getItem('rori_sound_enabled') === 'true';
 let roriAlertedRequests = JSON.parse(sessionStorage.getItem('rori_alerted_requests') || '[]');
 
 function roriInitAudio() {
-    if (!roriAudioCtx) { roriAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    if (roriAudioCtx.state === 'suspended') { roriAudioCtx.resume(); }
+    if (!roriAudioCtx) {
+        roriAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (roriAudioCtx.state === 'suspended') {
+        roriAudioCtx.resume();
+    }
 }
 
 function roriPlayAlert(priority) {
@@ -626,6 +1162,7 @@ function roriPlayAlert(priority) {
     const gain = roriAudioCtx.createGain();
     osc.connect(gain);
     gain.connect(roriAudioCtx.destination);
+    
     if (priority === 'URGENT') {
         osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime);
         osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime + 0.15);
@@ -633,8 +1170,10 @@ function roriPlayAlert(priority) {
     } else {
         osc.frequency.setValueAtTime(660, roriAudioCtx.currentTime);
     }
+    
     gain.gain.setValueAtTime(0.1, roriAudioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, roriAudioCtx.currentTime + 0.5);
+    
     osc.start(roriAudioCtx.currentTime);
     osc.stop(roriAudioCtx.currentTime + 0.5);
 }
@@ -652,43 +1191,43 @@ window.roriTestSound = function() {
     roriPlayAlert('HIGH');
 };
 
-function playChime(){try{var C=window.AudioContext||window.webkitAudioContext;if(!C)return;if(!window.NotifState.audioCtx)window.NotifState.audioCtx=new C();var ctx=window.NotifState.audioCtx;if(ctx.state==='suspended')ctx.resume();[880,1108.73,1318.51].forEach(function(f,i){var o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime+i*0.15;o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0.0001,t);g.gain.linearRampToValueAtTime(0.28,t+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+0.6);});}catch(e){}}
-function vibrate(){try{if(navigator.vibrate)navigator.vibrate([250,120,250,120,400]);}catch(e){}}
-function flashBell(){var b=document.getElementById('nav-bell');if(!b)return;b.classList.add('bell-alert');setTimeout(function(){b.classList.remove('bell-alert');},2000);}
-function flashTitle(n){var o=document.title,c=0,iv=setInterval(function(){document.title=(c%2===0)?('🔔 ('+n+') '+o):o;c++;if(c>6){clearInterval(iv);document.title=o;}},700);}
-
-function poll(){
-    fetch('/api/notifications/unread',{credentials:'same-origin',cache:'no-store'})
-    .then(function(r){return r.ok?r.json():null;})
-    .then(function(d){
-        if(!d)return;
-        var p=window.NotifState.lastUnread, c=d.unread;
-        if(p===null){window.NotifState.lastUnread=c;return;}
-        if(c>p){
-            playChime(); vibrate(); flashBell(); flashTitle(c);
-            if (d.latest_title && d.latest_title.includes('NEW MAINTENANCE REQUEST')) {
-                let priority = 'MEDIUM';
-                if (d.latest_title.includes('URGENT')) priority = 'URGENT';
-                else if (d.latest_title.includes('HIGH')) priority = 'HIGH';
-                if (!roriAlertedRequests.includes(d.latest_id)) {
-                    roriInitAudio(); roriPlayAlert(priority);
-                    roriAlertedRequests.push(d.latest_id);
-                    sessionStorage.setItem('rori_alerted_requests', JSON.stringify(roriAlertedRequests));
+// Poll for notifications
+function pollNotifications() {
+    fetch('/api/notifications/unread', {credentials: 'same-origin', cache: 'no-store'})
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+        if (!d) return;
+        if (d.latest_title && d.latest_title.includes('NEW MAINTENANCE REQUEST')) {
+            let priority = 'MEDIUM';
+            if (d.latest_title.includes('URGENT')) priority = 'URGENT';
+            else if (d.latest_title.includes('HIGH')) priority = 'HIGH';
+            
+            if (!roriAlertedRequests.includes(d.latest_id)) {
+                roriInitAudio();
+                roriPlayAlert(priority);
+                roriAlertedRequests.push(d.latest_id);
+                sessionStorage.setItem('rori_alerted_requests', JSON.stringify(roriAlertedRequests));
+                
+                // Visual notification
+                const badge = document.querySelector('.notif-badge');
+                if (badge) {
+                    badge.classList.add('pulse');
+                    setTimeout(() => badge.classList.remove('pulse'), 2000);
                 }
             }
         }
-        window.NotifState.lastUnread=c;
-    }).catch(function(){});
+    })
+    .catch(() => {});
 }
-function arm(){
-    if(window.NotifState.armed)return;
-    try{var C=window.AudioContext||window.webkitAudioContext;if(C){if(!window.NotifState.audioCtx)window.NotifState.audioCtx=new C();if(window.NotifState.audioCtx.state==='suspended')window.NotifState.audioCtx.resume();}window.NotifState.armed=true;}catch(e){}
-}
-document.addEventListener('click',arm);document.addEventListener('touchstart',arm);document.addEventListener('keydown',arm);
-if(document.getElementById('nav-bell')){poll();setInterval(poll,10000);}
-})();
-</script></body></html>"""
 
+if (document.querySelector('.header-icon')) {
+    pollNotifications();
+    setInterval(pollNotifications, 10000);
+}
+</script>
+</body></html>"""
+
+# ══════════════════════════════════════════ SEED DATA (UNCHANGED)
 def seed_data():
     for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other","SPA","GM"]:
         if not Department.query.filter_by(name=name).first():
@@ -736,7 +1275,6 @@ def seed_data():
             db.session.add(u)
         else:
             ex.full_name = s["n"]; ex.role = s["r"]; ex.department_id = s["d"]
-            
     dept_map = {
         "it": {"n": "To be configured later", "dept": "IT"},
         "fnb": {"n": "Bahilu Boja", "dept": "Food & Beverage"},
@@ -757,7 +1295,6 @@ def seed_data():
         else:
             ex.full_name = info["n"]; ex.role = "DEPARTMENT"; ex.department_id = dept.id
     db.session.flush()
-    
     sig_configs = [
         {"dept": "IT", "name": "To be configured"},
         {"dept": "Food & Beverage", "name": "Bahilu Boja"},
@@ -779,6 +1316,7 @@ def seed_data():
     db.session.commit()
     print("✅ Seed data loaded")
 
+# ══════════════════════════════════════════ ROUTES (UNCHANGED - keeping all existing routes)
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -796,18 +1334,50 @@ def login():
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
         flash("Incorrect username or password","danger")
-    lh = """<div class="row justify-content-center align-items-center" style="min-height:80vh">
-<div class="col-11 col-md-5"><div style="background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:2rem;box-shadow:0 10px 30px rgba(0,0,0,0.05);max-width:440px;margin:0 auto;">
-<div class="text-center mb-4"><h3 class="fw-bold" style="color:#c5a059"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#64748b">Maintenance Management System</p></div>
-<form method="post"><div class="mb-3"><label class="form-label">Username</label><input type="text" class="form-control" name="username" required autofocus></div>
-<div class="mb-4"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required></div>
-<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> Login</button></form>
-<hr class="my-4" style="border-color:#e2e8f0"><div class="text-center small" style="color:#64748b">
-<p class="mb-1">Manager: <b>amir / 123456</b></p>
-<p class="mb-1">F&B: <b>fnb / 123456</b></p>
-<p class="mb-1">GM: <b>gm / 123456</b></p>
-<p class="mb-0">Admin: <b>admin / admin123</b></p></div>
-</div></div></div>"""
+    lh = """<div class="login-container">
+<div class="login-card">
+<div class="text-center mb-4">
+<i class="fas fa-hotel" style="font-size:3rem;color:var(--rori-gold);margin-bottom:1rem;"></i>
+<h3 class="fw-bold" style="color:var(--rori-gold)">RORI HOTEL</h3>
+<p style="color:var(--text-secondary)">Maintenance Management System</p>
+</div>
+<form method="post">
+<div class="mb-3">
+<label class="form-label">Username</label>
+<input type="text" class="form-control" name="username" required autofocus>
+</div>
+<div class="mb-4">
+<label class="form-label">Password</label>
+<input type="password" class="form-control" name="password" required>
+</div>
+<button class="btn-primary w-100"><i class="fas fa-sign-in-alt"></i> Login</button>
+</form>
+<hr style="border-color:var(--border-color);margin:1.5rem 0">
+<div class="text-center small" style="color:var(--text-secondary)">
+<p class="mb-1">Manager: <b style="color:var(--rori-gold)">amir / 123456</b></p>
+<p class="mb-1">F&B: <b style="color:var(--rori-gold)">fnb / 123456</b></p>
+<p class="mb-0">Admin: <b style="color:var(--rori-gold)">admin / admin123</b></p>
+</div>
+</div>
+</div>
+<style>
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 70px);
+    padding: 2rem;
+}
+.login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 2.5rem;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+</style>"""
     return page("Login", lh)
 
 @app.route("/logout")
@@ -824,16 +1394,1061 @@ def profile():
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
-    c = ('<h3 style="color:#c5a059">👤 Profile</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
-         '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
-         '<p>📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p>'
-         '<p>🏢 Department: <strong>' + str(u.department.name if u.department else "Not assigned") + '</strong></p><hr>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1></div></div>'
+         '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name) + '</h4>'
+         '<p>@' + str(u.username) + ' · <span class="badge badge-warning">' + str(u.role) + '</span></p>'
+         '<p style="color:var(--text-secondary);">📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p>'
+         '<p style="color:var(--text-secondary);">🏢 Department: <strong style="color:var(--text-primary);">' + str(u.department.name if u.department else "Not assigned") + '</strong></p><hr style="border-color:var(--border-color);">'
          '<form method="post"><div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
          '<div class="mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
          '<div class="mb-3"><label class="form-label">New Password</label><input type="password" class="form-control" name="new_password" placeholder="Leave blank to keep current"></div>'
-         '<button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
+         '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
 
+# ══════════════════════════════════════════ DASHBOARD (PREMIUM REDESIGN)
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    if current_user.role in STAFF_ROLES: return redirect(url_for("workorders_list"))
+    if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
+    if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
+    
+    # Get real data from database
+    total_requests = MaintenanceRequest.query.filter_by(is_deleted=False).count()
+    pending = MaintenanceRequest.query.filter_by(is_deleted=False, status="Pending").count()
+    in_progress = MaintenanceRequest.query.filter_by(is_deleted=False, status="In Progress").count()
+    completed = MaintenanceRequest.query.filter_by(is_deleted=False, status="Completed").count()
+    verified = MaintenanceRequest.query.filter_by(is_deleted=False, status="Verified").count()
+    urgent = MaintenanceRequest.query.filter_by(is_deleted=False, priority="URGENT").count()
+    
+    # Calculate work hours
+    work_orders = WorkOrder.query.all()
+    total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
+    
+    # Active staff
+    active_staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).count()
+    
+    # Get recent requests for alert
+    recent_requests = MaintenanceRequest.query.filter_by(is_deleted=False).order_by(MaintenanceRequest.created_at.desc()).limit(5).all()
+    
+    # Get chart data
+    from_date = datetime.utcnow() - timedelta(days=30)
+    daily_data = db.session.query(
+        db.func.date(MaintenanceRequest.created_at).label('date'),
+        db.func.count(MaintenanceRequest.id).label('count')
+    ).filter(
+        MaintenanceRequest.created_at >= from_date,
+        MaintenanceRequest.is_deleted == False
+    ).group_by(db.func.date(MaintenanceRequest.created_at)).all()
+    
+    chart_labels = [d.date for d in daily_data]
+    chart_values = [d.count for d in daily_data]
+    
+    # Department distribution
+    dept_stats = db.session.query(
+        Department.name,
+        db.func.count(MaintenanceRequest.id).label('count')
+    ).join(
+        MaintenanceRequest, Department.id == MaintenanceRequest.department_id
+    ).filter(
+        MaintenanceRequest.is_deleted == False
+    ).group_by(Department.name).all()
+    
+    dept_labels = [d.name for d in dept_stats]
+    dept_values = [d.count for d in dept_stats]
+    
+    # Status distribution
+    status_stats = db.session.query(
+        MaintenanceRequest.status,
+        db.func.count(MaintenanceRequest.id).label('count')
+    ).filter(
+        MaintenanceRequest.is_deleted == False
+    ).group_by(MaintenanceRequest.status).all()
+    
+    status_labels = [s.status for s in status_stats]
+    status_values = [s.count for s in status_stats]
+    
+    # Staff workload
+    staff_workload = db.session.query(
+        User.full_name,
+        db.func.count(WorkOrder.id).label('assigned'),
+        db.func.sum(db.case((WorkOrder.status == 'In Progress', 1), else_=0)).label('in_progress'),
+        db.func.sum(db.case((WorkOrder.status.in_(['Completed', 'Verified']), 1), else_=0)).label('completed')
+    ).join(
+        WorkOrder, User.id == WorkOrder.assigned_to_id
+    ).filter(
+        User.role.in_(STAFF_ROLES),
+        User.active == True
+    ).group_by(User.full_name).all()
+    
+    chart_data = {
+        "daily": {"labels": chart_labels, "values": chart_values},
+        "departments": {"labels": dept_labels, "values": dept_values},
+        "status": {"labels": status_labels, "values": status_values},
+        "staff": [{"name": s.full_name, "assigned": s.assigned, "in_progress": s.in_progress or 0, "completed": s.completed or 0} for s in staff_workload]
+    }
+    
+    return render_template_string(DASHBOARD_TEMPLATE,
+        total_requests=total_requests,
+        pending=pending,
+        in_progress=in_progress,
+        completed=completed,
+        verified=verified,
+        urgent=urgent,
+        total_hours=total_hours,
+        active_staff=active_staff,
+        recent_requests=recent_requests,
+        chart_data=chart_data,
+        current_user=current_user
+    )
+
+DASHBOARD_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rori Hotel Command Center</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+    --rori-gold: #C5A059;
+    --rori-gold-dark: #A8873F;
+    --bg-primary: #0B0B12;
+    --bg-secondary: #11111B;
+    --bg-card: #151522;
+    --bg-card-hover: #1B1B2A;
+    --border-color: rgba(197,160,89,0.20);
+    --text-primary: #FFFFFF;
+    --text-secondary: #A7A7B3;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --info: #38BDF8;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding-top: 70px;
+}
+
+/* HEADER */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.header-left { display: flex; align-items: center; gap: 1rem; }
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--rori-gold);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.logo i { font-size: 1.8rem; }
+
+.header-right { display: flex; align-items: center; gap: 1.5rem; }
+
+.header-icon {
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    text-decoration: none;
+    position: relative;
+    transition: color 0.3s;
+}
+
+.header-icon:hover { color: var(--rori-gold); }
+
+.notif-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.user-profile { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: white;
+}
+
+.user-info { display: flex; flex-direction: column; }
+
+.user-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+.user-role { font-size: 0.75rem; color: var(--text-secondary); }
+
+.sound-control { display: flex; gap: 0.5rem; }
+
+.btn-icon {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-icon:hover {
+    background: var(--bg-card-hover);
+    color: var(--rori-gold);
+    border-color: var(--rori-gold);
+}
+
+/* SIDEBAR */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 70px;
+    bottom: 0;
+    width: 260px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    padding: 1.5rem 0;
+    overflow-y: auto;
+    z-index: 999;
+    transition: transform 0.3s;
+}
+
+.sidebar-nav { list-style: none; }
+.sidebar-nav li { margin: 0.25rem 0; }
+
+.sidebar-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.5rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-left: 3px solid transparent;
+}
+
+.sidebar-nav .nav-link:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-left-color: var(--rori-gold);
+}
+
+.sidebar-nav .nav-link.active {
+    background: rgba(197,160,89,0.1);
+    color: var(--rori-gold);
+    border-left-color: var(--rori-gold);
+}
+
+.sidebar-nav .nav-link i { width: 20px; text-align: center; }
+
+/* MAIN CONTENT */
+.main-content {
+    margin-left: 260px;
+    padding: 2rem;
+    min-height: calc(100vh - 70px);
+}
+
+/* PAGE TITLE */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.page-title h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.page-title h1 span { color: var(--rori-gold); }
+
+.page-title p { font-size: 0.9rem; color: var(--text-secondary); }
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(197,160,89,0.3);
+}
+
+/* KPI CARDS */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.kpi-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--rori-gold);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--rori-gold), transparent);
+}
+
+.kpi-icon { font-size: 2rem; color: var(--rori-gold); margin-bottom: 1rem; }
+.kpi-value { font-size: 2.5rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.5rem; }
+.kpi-label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.kpi-trend { font-size: 0.8rem; margin-top: 0.5rem; color: var(--success); }
+.kpi-trend.negative { color: var(--danger); }
+
+/* CARDS */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-title i { color: var(--rori-gold); }
+
+/* CHART CONTAINERS */
+.chart-container { position: relative; height: 300px; }
+.chart-container.tall { height: 400px; }
+
+/* TABLES */
+.table { width: 100%; border-collapse: collapse; }
+
+.table thead th {
+    background: var(--bg-secondary);
+    color: var(--rori-gold);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.table tbody td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.table tbody tr:hover { background: var(--bg-card-hover); }
+
+/* BADGES */
+.badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-success { background: rgba(34,197,94,0.2); color: var(--success); }
+.badge-warning { background: rgba(245,158,11,0.2); color: var(--warning); }
+.badge-danger { background: rgba(239,68,68,0.2); color: var(--danger); }
+.badge-info { background: rgba(56,189,248,0.2); color: var(--info); }
+.badge-secondary { background: rgba(167,167,179,0.2); color: var(--text-secondary); }
+
+/* ALERTS */
+.alert {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.alert-success { border-left: 4px solid var(--success); }
+.alert-danger { border-left: 4px solid var(--danger); }
+.alert-warning { border-left: 4px solid var(--warning); }
+.alert-info { border-left: 4px solid var(--info); }
+
+/* NEW REQUEST ALERT */
+.new-request-alert {
+    background: linear-gradient(135deg, rgba(197,160,89,0.1), rgba(197,160,89,0.05));
+    border: 2px solid var(--rori-gold);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    animation: slideIn 0.5s ease-out;
+}
+
+.new-request-alert h3 {
+    color: var(--rori-gold);
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.new-request-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    transition: all 0.3s;
+}
+
+.new-request-item:hover {
+    border-color: var(--rori-gold);
+    transform: translateX(4px);
+}
+
+/* MOBILE MENU TOGGLE */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.active { transform: translateX(0); }
+    .main-content { margin-left: 0; }
+    .menu-toggle { display: block; }
+}
+
+@media (max-width: 768px) {
+    .header { padding: 0 1rem; }
+    .user-info { display: none; }
+    .main-content { padding: 1rem; }
+    .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
+    .kpi-value { font-size: 2rem; }
+    .page-header { flex-direction: column; align-items: flex-start; }
+}
+
+/* ANIMATIONS */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.pulse { animation: pulse 2s infinite; }
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.card { animation: slideIn 0.5s ease-out; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--rori-gold); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--rori-gold-dark); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+    <div class="header-left">
+        <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+        <a href="/" class="logo"><i class="fas fa-hotel"></i><span>RORI HOTEL</span></a>
+    </div>
+    <div class="header-right">
+        <div class="sound-control">
+            <button class="btn-icon" onclick="roriToggleSound(true)" title="Sound ON"><i class="fas fa-volume-up"></i></button>
+            <button class="btn-icon" onclick="roriToggleSound(false)" title="Sound OFF"><i class="fas fa-volume-mute"></i></button>
+            <button class="btn-icon" onclick="roriTestSound()" title="Test Sound"><i class="fas fa-play"></i></button>
+        </div>
+        <a class="header-icon" href="/notifications" style="position:relative;">
+            <i class="fas fa-bell"></i>
+            <span class="notif-badge">3</span>
+        </a>
+        <div class="user-profile">
+            <div class="user-avatar">{{ current_user.full_name[0].upper() if current_user.full_name else current_user.username[0].upper() }}</div>
+            <div class="user-info">
+                <div class="user-name">{{ current_user.full_name or current_user.username }}</div>
+                <div class="user-role">{{ current_user.role }}</div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+    <ul class="sidebar-nav">
+        <li><a class="nav-link active" href="/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+        <li><a class="nav-link" href="/requests"><i class="fas fa-clipboard-list"></i> Requests</a></li>
+        <li><a class="nav-link" href="/workorders"><i class="fas fa-tasks"></i> Work Orders</a></li>
+        <li><a class="nav-link" href="/requests/new"><i class="fas fa-plus-circle"></i> New Request</a></li>
+        <li><a class="nav-link" href="/inventory"><i class="fas fa-boxes"></i> Inventory</a></li>
+        <li><a class="nav-link" href="/notifications"><i class="fas fa-bell"></i> Notifications</a></li>
+        <li><a class="nav-link" href="/reports"><i class="fas fa-chart-bar"></i> Reports</a></li>
+        <li><a class="nav-link" href="/management/reports"><i class="fas fa-chart-line"></i> Management</a></li>
+        <li><a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a></li>
+        <li><a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+    </ul>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main class="main-content">
+    <div class="page-header">
+        <div class="page-title">
+            <h1><span>Rori Hotel</span> Maintenance Command Center</h1>
+            <p>Real-time maintenance operations and hotel service monitoring</p>
+        </div>
+        <a href="/requests/new" class="btn-primary"><i class="fas fa-plus"></i> New Request</a>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div>
+            <div class="kpi-value">{{ total_requests }}</div>
+            <div class="kpi-label">Total Requests</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div>
+            <div class="kpi-value">{{ pending }}</div>
+            <div class="kpi-label">Pending</div>
+            <div class="kpi-trend negative">Requires attention</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div>
+            <div class="kpi-value">{{ in_progress }}</div>
+            <div class="kpi-label">In Progress</div>
+            <div class="kpi-trend">Currently being handled</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div>
+            <div class="kpi-value">{{ completed }}</div>
+            <div class="kpi-label">Completed</div>
+            <div class="kpi-trend">This reporting period</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-double"></i></div>
+            <div class="kpi-value">{{ verified }}</div>
+            <div class="kpi-label">Verified</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:var(--danger);"><i class="fas fa-exclamation-triangle"></i></div>
+            <div class="kpi-value">{{ urgent }}</div>
+            <div class="kpi-label">Urgent</div>
+            <div class="kpi-trend negative">High priority</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fas fa-clock"></i></div>
+            <div class="kpi-value">{{ "%.1f"|format(total_hours) }}</div>
+            <div class="kpi-label">Work Hours</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fas fa-users"></i></div>
+            <div class="kpi-value">{{ active_staff }}</div>
+            <div class="kpi-label">Active Staff</div>
+        </div>
+    </div>
+
+    <!-- NEW REQUEST ALERTS -->
+    {% if recent_requests %}
+    <div class="new-request-alert">
+        <h3><i class="fas fa-bell"></i> Recent Requests</h3>
+        {% for req in recent_requests[:3] %}
+        <div class="new-request-item">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+                <div>
+                    <strong style="color:var(--rori-gold);">{{ req.request_no }}</strong>
+                    <span class="badge badge-{{ 'danger' if req.priority == 'URGENT' else 'warning' if req.priority == 'HIGH' else 'info' }}" style="margin-left:0.5rem;">{{ req.priority }}</span>
+                </div>
+                <div style="color:var(--text-secondary);font-size:0.85rem;">
+                    <i class="fas fa-building"></i> {{ req.department.name if req.department else 'N/A' }}
+                    <i class="fas fa-map-marker-alt" style="margin-left:1rem;"></i> {{ req.location_name }}
+                </div>
+                <a href="/requests/{{ req.id }}" class="btn-primary" style="padding:0.5rem 1rem;font-size:0.85rem;">View</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- CHARTS ROW 1 -->
+    <div class="row" style="margin-bottom:2rem;">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-chart-line"></i> Maintenance Activity</div>
+                </div>
+                <div class="chart-container tall">
+                    <canvas id="activityChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-chart-pie"></i> By Department</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="deptChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHARTS ROW 2 -->
+    <div class="row" style="margin-bottom:2rem;">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-tasks"></i> Work Status</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-users"></i> Staff Workload</div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Staff</th>
+                                <th>Assigned</th>
+                                <th>In Progress</th>
+                                <th>Completed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for staff in chart_data.staff %}
+                            <tr>
+                                <td><strong>{{ staff.name }}</strong></td>
+                                <td><span class="badge badge-info">{{ staff.assigned }}</span></td>
+                                <td><span class="badge badge-warning">{{ staff.in_progress }}</span></td>
+                                <td><span class="badge badge-success">{{ staff.completed }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RECENT REQUESTS TABLE -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title"><i class="fas fa-clock"></i> Recent Requests</div>
+            <a href="/requests" class="btn-primary" style="padding:0.5rem 1rem;font-size:0.85rem;">View All</a>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Request ID</th>
+                        <th>Department</th>
+                        <th>Location</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in recent_requests %}
+                    <tr>
+                        <td><strong style="color:var(--rori-gold);">{{ req.request_no[:20] }}...</strong></td>
+                        <td>{{ req.department.name if req.department else 'N/A' }}</td>
+                        <td>{{ req.location_name }}</td>
+                        <td><span class="badge badge-{{ 'danger' if req.priority == 'URGENT' else 'warning' if req.priority == 'HIGH' else 'info' }}">{{ req.priority }}</span></td>
+                        <td><span class="badge badge-{{ 'success' if req.status in ['Completed','Verified'] else 'warning' if req.status == 'Pending' else 'info' }}">{{ req.status }}</span></td>
+                        <td style="color:var(--text-secondary);font-size:0.85rem;">{{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else 'N/A' }}</td>
+                        <td><a href="/requests/{{ req.id }}" class="btn-primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;">View</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<script>
+// Chart Configuration
+Chart.defaults.color = '#A7A7B3';
+Chart.defaults.borderColor = 'rgba(197,160,89,0.1)';
+Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+
+const chartData = {{ chart_data|tojson }};
+
+// Activity Chart
+const activityCtx = document.getElementById('activityChart').getContext('2d');
+new Chart(activityCtx, {
+    type: 'line',
+    data: {
+        labels: chartData.daily.labels,
+        datasets: [{
+            label: 'Requests',
+            data: chartData.daily.values,
+            borderColor: '#C5A059',
+            backgroundColor: 'rgba(197,160,89,0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointBackgroundColor: '#C5A059'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(197,160,89,0.05)' }
+            },
+            x: {
+                grid: { display: false }
+            }
+        }
+    }
+});
+
+// Department Chart
+const deptCtx = document.getElementById('deptChart').getContext('2d');
+new Chart(deptCtx, {
+    type: 'doughnut',
+    data: {
+        labels: chartData.departments.labels,
+        datasets: [{
+            data: chartData.departments.values,
+            backgroundColor: [
+                '#C5A059', '#22C55E', '#38BDF8', '#F59E0B',
+                '#EF4444', '#8B5CF6', '#EC4899', '#10B981'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    color: '#A7A7B3',
+                    padding: 15,
+                    usePointStyle: true
+                }
+            }
+        }
+    }
+});
+
+// Status Chart
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+new Chart(statusCtx, {
+    type: 'bar',
+    data: {
+        labels: chartData.status.labels,
+        datasets: [{
+            label: 'Count',
+            data: chartData.status.values,
+            backgroundColor: [
+                'rgba(245,158,11,0.8)',
+                'rgba(56,189,248,0.8)',
+                'rgba(139,92,246,0.8)',
+                'rgba(34,197,94,0.8)',
+                'rgba(197,160,89,0.8)'
+            ],
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(197,160,89,0.05)' }
+            },
+            x: {
+                grid: { display: false }
+            }
+        }
+    }
+});
+
+// Sidebar Toggle
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('active');
+}
+
+// Notification Sound System
+let roriAudioCtx = null;
+let roriSoundEnabled = localStorage.getItem('rori_sound_enabled') === 'true';
+let roriAlertedRequests = JSON.parse(sessionStorage.getItem('rori_alerted_requests') || '[]');
+
+function roriInitAudio() {
+    if (!roriAudioCtx) {
+        roriAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (roriAudioCtx.state === 'suspended') {
+        roriAudioCtx.resume();
+    }
+}
+
+function roriPlayAlert(priority) {
+    if (!roriSoundEnabled || !roriAudioCtx) return;
+    const osc = roriAudioCtx.createOscillator();
+    const gain = roriAudioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(roriAudioCtx.destination);
+    
+    if (priority === 'URGENT') {
+        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime);
+        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime + 0.3);
+    } else {
+        osc.frequency.setValueAtTime(660, roriAudioCtx.currentTime);
+    }
+    
+    gain.gain.setValueAtTime(0.1, roriAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, roriAudioCtx.currentTime + 0.5);
+    
+    osc.start(roriAudioCtx.currentTime);
+    osc.stop(roriAudioCtx.currentTime + 0.5);
+}
+
+window.roriToggleSound = function(enable) {
+    roriSoundEnabled = enable;
+    localStorage.setItem('rori_sound_enabled', roriSoundEnabled);
+    if (enable) roriInitAudio();
+};
+
+window.roriTestSound = function() {
+    roriInitAudio();
+    roriSoundEnabled = true;
+    roriPlayAlert('HIGH');
+};
+
+// Poll for notifications
+function pollNotifications() {
+    fetch('/api/notifications/unread', {credentials: 'same-origin', cache: 'no-store'})
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+        if (!d) return;
+        if (d.latest_title && d.latest_title.includes('NEW MAINTENANCE REQUEST')) {
+            let priority = 'MEDIUM';
+            if (d.latest_title.includes('URGENT')) priority = 'URGENT';
+            else if (d.latest_title.includes('HIGH')) priority = 'HIGH';
+            
+            if (!roriAlertedRequests.includes(d.latest_id)) {
+                roriInitAudio();
+                roriPlayAlert(priority);
+                roriAlertedRequests.push(d.latest_id);
+                sessionStorage.setItem('rori_alerted_requests', JSON.stringify(roriAlertedRequests));
+                
+                const badge = document.querySelector('.notif-badge');
+                if (badge) {
+                    badge.classList.add('pulse');
+                    setTimeout(() => badge.classList.remove('pulse'), 2000);
+                }
+            }
+        }
+    })
+    .catch(() => {});
+}
+
+pollNotifications();
+setInterval(pollNotifications, 10000);
+</script>
+</body>
+</html>"""
+
+# ══════════════════════════════════════════ MANAGEMENT REPORTS
+@app.route("/management/reports")
+@role_required("ADMIN", "MANAGER")
+def management_reports():
+    period = request.args.get("period", "daily")
+    dept_filter = request.args.get("department", "")
+    
+    q = MaintenanceRequest.query.filter_by(is_deleted=False)
+    if dept_filter:
+        dept = Department.query.filter_by(name=dept_filter).first()
+        if dept: q = q.filter_by(department_id=dept.id)
+    
+    now = datetime.utcnow()
+    if period == "daily":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    elif period == "weekly":
+        start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    elif period == "monthly":
+        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    
+    reqs = q.all()
+    total = len(reqs)
+    completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
+    pending = sum(1 for r in reqs if r.status in ["Pending","Approved"])
+    
+    work_orders = WorkOrder.query.filter(WorkOrder.request_id.in_([r.id for r in reqs])).all()
+    total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
+    
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-chart-line"></i> <span>Management</span> Reports</h1>'
+         '<p>Detailed analytics and performance metrics</p></div>'
+         '<div style="display:flex;gap:1rem;"><a href="/management/reports/export?period=' + period + '" class="btn-primary"><i class="fas fa-file-excel"></i> Export</a>'
+         '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print</button></div></div>'
+         
+         '<div class="card" style="margin-bottom:2rem;"><form method="get" class="row g-3 align-items-end">'
+         '<div class="col-md-4"><label class="form-label">Period</label><select name="period" class="form-select"><option value="daily" ' + ('selected' if period=="daily" else '') + '>Daily</option><option value="weekly" ' + ('selected' if period=="weekly" else '') + '>Weekly</option><option value="monthly" ' + ('selected' if period=="monthly" else '') + '>Monthly</option></select></div>'
+         '<div class="col-md-4"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">All Departments</option>' + "".join('<option value="' + d.name + '"' + (' selected' if dept_filter==d.name else '') + '>' + d.name + '</option>' for d in Department.query.all()) + '</select></div>'
+         '<div class="col-md-4"><button type="submit" class="btn-primary w-100"><i class="fas fa-filter"></i> Apply</button></div></form></div>'
+         
+         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total Requests</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Completed</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(total_hours) + ' hrs</div><div class="kpi-label">Work Hours</div></div></div>')
+    
+    return page("Management Reports", c)
+
+@app.route("/management/reports/export")
+@role_required("ADMIN", "MANAGER")
+def export_report():
+    period = request.args.get("period", "daily")
+    dept_filter = request.args.get("department", "")
+    
+    q = MaintenanceRequest.query.filter_by(is_deleted=False)
+    if dept_filter:
+        dept = Department.query.filter_by(name=dept_filter).first()
+        if dept: q = q.filter_by(department_id=dept.id)
+    
+    now = datetime.utcnow()
+    if period == "daily":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    elif period == "weekly":
+        start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    elif period == "monthly":
+        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(MaintenanceRequest.created_at >= start_date)
+    
+    reqs = q.all()
+    
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerow(["Rori Hotel Maintenance Report"])
+    cw.writerow(["Period", period, "Generated", now.strftime("%Y-%m-%d %H:%M")])
+    cw.writerow([])
+    cw.writerow(["Request No", "Department", "Location", "Priority", "Status", "Completed Date", "Work Hours"])
+    
+    for r in reqs:
+        wo = WorkOrder.query.filter_by(request_id=r.id).first()
+        cw.writerow([r.request_no, r.department.name if r.department else "N/A", r.location_name, r.priority, r.status, 
+                    r.completed_date.strftime("%Y-%m-%d") if r.completed_date else "N/A", wo.labor_hours if wo else 0])
+    
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=maintenance_report.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
+# ══════════════════════════════════════════ REMAINING ROUTES (UNCHANGED)
 @app.route("/requests")
 @login_required
 def requests_list():
@@ -853,12 +2468,12 @@ def requests_list():
     for r in reqs:
         del_html = ""
         if is_mgr:
-            del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\');">'
-                        '<input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-archive"></i></button></form>')
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#c5a059;font-weight:600">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge bg-secondary">' + str(r.priority) + '</span></td><td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td style="width:60px;text-align:center">' + del_html + '</td>' if is_mgr else '') + '</tr>')
+            del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');">'
+                        '<input type="hidden" name="reason" value="Archived"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>' + ('<th></th>' if is_mgr else '') + '</tr></thead>'
-    c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#c5a059"><i class="fas fa-tasks"></i> Maintenance Requests</h3><a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-         '<div class="card"><div class="table-responsive"><table class="table table-hover">' + header + '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" class="text-center">No requests found</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table">' + header + '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" style="text-align:center;color:var(--text-secondary);">No requests found</td></tr>') + '</tbody></table></div></div>')
     return page("Requests", c)
 
 @app.route("/requests/new", methods=["GET","POST"])
@@ -899,7 +2514,7 @@ def request_create():
                 return redirect(url_for("request_create"))
             if sig_profile and sig_name_from_form:
                 if sig_name_from_form != sig_profile.authorized_name:
-                    flash("Signature name mismatch. You cannot impersonate another department's authorized signature.", "danger")
+                    flash("Signature name mismatch.", "danger")
                     return redirect(url_for("request_create"))
             authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
             req = MaintenanceRequest(
@@ -920,7 +2535,7 @@ def request_create():
                          "New Request", link=url_for("request_detail", req_id=req.id))
             create_notification(current_user.id, req.id, "Request Submitted", f"Your request {req.request_no} has been submitted successfully.", "Success", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
-            flash("✅ Request created successfully with verified digital signature!","success")
+            flash("✅ Request created successfully!","success")
             return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
@@ -933,12 +2548,12 @@ def request_create():
     po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
     sig_authorized_name = sig_profile.authorized_name if sig_profile else "Not configured"
     sig_dept_display = user_dept_name or "Not assigned"
-    sig_warning = "" if sig_profile else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin before submitting requests.</div>'
+    sig_warning = "" if sig_profile else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department.</div>'
     sig_configured_class = "border-success" if sig_profile else "border-danger"
-    c = ('<h3 style="color:#c5a059"><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>' + sig_warning +
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>New</span> Maintenance Request</h1></div></div>' + sig_warning +
          '<div class="card"><form method="post" id="requestForm"><div class="row">'
          '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label><select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Department (Auto-detected)</label><input type="text" class="form-control" value="' + str(sig_dept_display) + '" readonly style="background:#f0fdf4;border-color:#10b981;color:#10b981;font-weight:600"><input type="hidden" name="department_id" value="' + str(user_dept_id or "") + '"></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Department (Auto-detected)</label><input type="text" class="form-control" value="' + str(sig_dept_display) + '" readonly style="background:rgba(34,197,94,0.1);border-color:var(--success);color:var(--success);font-weight:600"><input type="hidden" name="department_id" value="' + str(user_dept_id or "") + '"></div>'
          '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label><select class="form-select" name="room_id"><option value="">-- Select Room --</option>' + ro + '</select></div>'
          '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label><select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
          '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area</label><select class="form-select" name="area_id"><option value="">-- Select Area --</option>' + ao + '</select></div>'
@@ -946,24 +2561,24 @@ def request_create():
          '<div class="col-md-6 mb-3"><label class="form-label">Category</label><select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + co + '</select></div>'
          '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority">' + po + '</select></div>'
          '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
-         '<div class="col-12 mb-3"><div class="card ' + sig_configured_class + '" style="background:#f0fdf4;border-width:2px">'
-         '<h5 style="color:#10b981;margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature</h5>'
+         '<div class="col-12 mb-3"><div class="card ' + sig_configured_class + '" style="background:rgba(34,197,94,0.05);border-width:2px">'
+         '<h5 style="color:var(--success);margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature</h5>'
          '<div class="row g-3">'
-         '<div class="col-md-6"><div style="padding:.75rem;background:#fff;border-radius:10px;border:1px solid #e2e8f0"><div style="font-size:.75rem;color:#64748b;text-transform:uppercase">Signed By (Authorized)</div><div style="font-size:1.1rem;font-weight:700;color:#111827;margin-top:.25rem">' + str(sig_authorized_name) + '</div><input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '"></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:#fff;border-radius:10px;border:1px solid #e2e8f0"><div style="font-size:.75rem;color:#64748b;text-transform:uppercase">Department</div><div style="font-size:1.1rem;font-weight:700;color:#111827;margin-top:.25rem">' + str(sig_dept_display) + '</div></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:#ecfdf5;border-radius:10px;border:1px solid #10b981"><div style="font-size:.75rem;color:#64748b;text-transform:uppercase">Signature Status</div><div id="sigStatusText" style="font-size:1rem;font-weight:700;color:#c5a059;margin-top:.25rem"><i class="fas fa-hourglass-half"></i> Awaiting Signature</div></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:#fff;border-radius:10px;border:1px solid #e2e8f0"><div style="font-size:.75rem;color:#64748b;text-transform:uppercase">Requester</div><div style="font-size:1rem;font-weight:600;color:#111827;margin-top:.25rem">' + str(current_user.full_name or current_user.username) + ' (@' + str(current_user.username) + ')</div></div></div>'
-         '</div><hr style="border-color:#10b981;margin:1rem 0">'
-         '<label class="form-label" style="color:#10b981;font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below *</label>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signed By (Authorized)</div><div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_authorized_name) + '</div><input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '"></div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_dept_display) + '</div></div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid var(--success)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signature Status</div><div id="sigStatusText" style="font-size:1rem;font-weight:700;color:var(--rori-gold);margin-top:.25rem"><i class="fas fa-hourglass-half"></i> Awaiting Signature</div></div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Requester</div><div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:.25rem">' + str(current_user.full_name or current_user.username) + ' (@' + str(current_user.username) + ')</div></div></div>'
+         '</div><hr style="border-color:var(--success);margin:1rem 0">'
+         '<label class="form-label" style="color:var(--success);font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below *</label>'
          '<div style="border: 2px dashed rgba(197,160,89,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
          '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
          '</div>'
-         '<div class="mt-2 d-flex gap-2"><button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button><span id="sigHint" style="color:#64748b;font-size:.85rem;margin-left:.5rem">Please draw your signature above</span></div>'
+         '<div class="mt-2 d-flex gap-2"><button type="button" class="btn-icon" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button><span id="sigHint" style="color:var(--text-secondary);font-size:.85rem;margin-left:.5rem">Please draw your signature above</span></div>'
          '<input type="hidden" name="signature_data" id="signature-data">'
          '</div></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn btn-primary" id="submitBtn" disabled><i class="fas fa-paper-plane"></i> Submit Request</button></div></div></form></div>'
+         '<div class="col-12 d-flex gap-2"><a href="' + url_for("index") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary" id="submitBtn" disabled><i class="fas fa-paper-plane"></i> Submit Request</button></div></div></form></div>'
          '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
-         '<script>(function(){var canvas = document.getElementById("signature-pad");var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });var submitBtn = document.getElementById("submitBtn");var sigStatusText = document.getElementById("sigStatusText");var sigHint = document.getElementById("sigHint");function resizeCanvas(){var ratio = Math.max(window.devicePixelRatio || 1, 1);canvas.width = canvas.offsetWidth * ratio;canvas.height = canvas.offsetHeight * ratio;canvas.getContext("2d").scale(ratio, ratio);signaturePad.clear();}window.addEventListener("resize", resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); updateSigStatus(); });signaturePad.addEventListener("endStroke", updateSigStatus);function updateSigStatus(){if (signaturePad.isEmpty()){sigStatusText.innerHTML = \'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color = "#c5a059";sigHint.textContent = "Please draw your signature above";submitBtn.disabled = true;} else {sigStatusText.innerHTML = \'<i class="fas fa-check-circle"></i> Signature Verified\';sigStatusText.style.color = "#10b981";sigHint.textContent = "✓ Signature captured - ready to submit";submitBtn.disabled = false;}}document.querySelector("#requestForm").addEventListener("submit", function(e){if (signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required. Your request cannot be submitted without a verified department signature.");return false;}document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");});})();</script>'
+         '<script>(function(){var canvas = document.getElementById("signature-pad");var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });var submitBtn = document.getElementById("submitBtn");var sigStatusText = document.getElementById("sigStatusText");var sigHint = document.getElementById("sigHint");function resizeCanvas(){var ratio = Math.max(window.devicePixelRatio || 1, 1);canvas.width = canvas.offsetWidth * ratio;canvas.height = canvas.offsetHeight * ratio;canvas.getContext("2d").scale(ratio, ratio);signaturePad.clear();}window.addEventListener("resize", resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); updateSigStatus(); });signaturePad.addEventListener("endStroke", updateSigStatus);function updateSigStatus(){if (signaturePad.isEmpty()){sigStatusText.innerHTML = \'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color = "var(--rori-gold)";sigHint.textContent = "Please draw your signature above";submitBtn.disabled = true;} else {sigStatusText.innerHTML = \'<i class="fas fa-check-circle"></i> Signature Verified\';sigStatusText.style.color = "var(--success)";sigHint.textContent = "✓ Signature captured - ready to submit";submitBtn.disabled = false;}}document.querySelector("#requestForm").addEventListener("submit", function(e){if (signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");});})();</script>'
          '<script>(function(){var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");function upd(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}lt.addEventListener("change",upd);upd();})();</script>')
     return page("New Request", c)
 
@@ -985,68 +2600,67 @@ def request_detail(req_id):
         who = h.user.full_name if h.user else "System"
         when = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
         note = (" — " + str(h.notes)) if h.notes else ""
-        hist_html += ('<div style="padding:.5rem .75rem;border-left:3px solid #c5a059;background:#f8fafc;border-radius:10px;margin-bottom:.4rem;border:1px solid #e2e8f0">'
-                      '<strong style="color:#c5a059">' + str(h.status) + '</strong> '
-                      '<span style="color:#64748b;font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
-    if not hist_html: hist_html = '<p style="color:#64748b">No status history yet.</p>'
+        hist_html += ('<div style="padding:.75rem 1rem;border-left:3px solid var(--rori-gold);background:var(--bg-card);border-radius:10px;margin-bottom:.5rem;border:1px solid var(--border-color);border-left-width:3px;">'
+                      '<strong style="color:var(--rori-gold)">' + str(h.status) + '</strong> '
+                      '<span style="color:var(--text-secondary);font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
+    if not hist_html: hist_html = '<p style="color:var(--text-secondary)">No status history yet.</p>'
     wo_html = ""
     for wo in wos:
-        wo_html += ('<div style="padding:.5rem .75rem;background:#f8fafc;border-radius:10px;margin-bottom:.4rem;border:1px solid #e2e8f0">'
-                    '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#c5a059;font-weight:600">' + str(wo.work_order_no) + '</a> '
-                    '<span class="badge bg-info">' + str(wo.status) + '</span> '
-                    '<span style="color:#64748b;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
-    if not wo_html: wo_html = '<p style="color:#64748b">No work orders yet.</p>'
+        wo_html += ('<div style="padding:.75rem 1rem;background:var(--bg-card);border-radius:10px;margin-bottom:.5rem;border:1px solid var(--border-color);">'
+                    '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);font-weight:600;">' + str(wo.work_order_no) + '</a> '
+                    '<span class="badge badge-info">' + str(wo.status) + '</span> '
+                    '<span style="color:var(--text-secondary);font-size:.85rem;">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
+    if not wo_html: wo_html = '<p style="color:var(--text-secondary)">No work orders yet.</p>'
     sig_html = ""
     if req.signature_status == "SIGNED":
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "N/A"
-        sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid #e2e8f0;"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>' if req.signature_data else '<div style="margin-top:10px; color:#64748b;">(No signature image stored)</div>'
-        verified_badge = '<span class="badge" style="background:#10b981;color:#fff;margin-left:.5rem"><i class="fas fa-check-circle"></i> Verified</span>' if req.signature_verified else '<span class="badge" style="background:#f59e0b;color:#000;margin-left:.5rem"><i class="fas fa-exclamation"></i> Unverified</span>'
-        sig_html = ('<div class="card" style="border: 1px solid rgba(16, 185, 129, 0.3); background: #f0fdf4; margin-top:1rem;">'
-                    '<h6 style="color:#10b981; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE ' + verified_badge + '</h6>'
+        sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid var(--border-color);"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>' if req.signature_data else '<div style="margin-top:10px; color:var(--text-secondary);">(No signature image stored)</div>'
+        verified_badge = '<span class="badge badge-success" style="margin-left:.5rem"><i class="fas fa-check-circle"></i> Verified</span>' if req.signature_verified else '<span class="badge badge-warning" style="margin-left:.5rem"><i class="fas fa-exclamation"></i> Unverified</span>'
+        sig_html = ('<div class="card" style="border: 1px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); margin-top:1rem;">'
+                    '<h6 style="color:var(--success); margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE ' + verified_badge + '</h6>'
                     '<div class="row g-3">'
-                    '<div class="col-md-6"><div style="padding:.6rem;background:#fff;border-radius:8px;border:1px solid #e2e8f0"><div style="font-size:.7rem;color:#64748b;text-transform:uppercase">Signed By</div><div style="font-size:1rem;font-weight:700;color:#111827">' + str(req.signature_name or "Unknown") + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.6rem;background:#fff;border-radius:8px;border:1px solid #e2e8f0"><div style="font-size:.7rem;color:#64748b;text-transform:uppercase">Department</div><div style="font-size:1rem;font-weight:700;color:#111827">' + str(req.signature_department or req.department.name if req.department else "N/A") + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.6rem;background:#fff;border-radius:8px;border:1px solid #e2e8f0"><div style="font-size:.7rem;color:#64748b;text-transform:uppercase">Signed At</div><div style="font-size:.95rem;font-weight:600;color:#111827">' + sig_time + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.6rem;background:#fff;border-radius:8px;border:1px solid #e2e8f0"><div style="font-size:.7rem;color:#64748b;text-transform:uppercase">Verification Status</div><div style="font-size:.95rem;font-weight:600;color:' + ('#10b981' if req.signature_verified else '#f59e0b') + '">' + ('✓ Verified' if req.signature_verified else '⚠ Unverified') + '</div></div></div>'
+                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Signed By</div><div style="font-size:1rem;font-weight:700;color:var(--text-primary)">' + str(req.signature_name or "Unknown") + '</div></div></div>'
+                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1rem;font-weight:700;color:var(--text-primary)">' + str(req.signature_department or req.department.name if req.department else "N/A") + '</div></div></div>'
+                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Signed At</div><div style="font-size:.95rem;font-weight:600;color:var(--text-primary)">' + sig_time + '</div></div></div>'
+                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Verification Status</div><div style="font-size:.95rem;font-weight:600;color:' + ('var(--success)' if req.signature_verified else 'var(--warning)') + '">' + ('✓ Verified' if req.signature_verified else ' Unverified') + '</div></div></div>'
                     '</div>' + sig_image_html + '</div>')
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
-            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary"><i class="fas fa-user-plus"></i> Assign Staff</a>')
+            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary"><i class="fas fa-user-plus"></i> Assign Staff</a>')
         elif req.status in ["Approved","Assigned"]:
-            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn btn-primary"><i class="fas fa-user-edit"></i> Reassign</a>')
+            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary"><i class="fas fa-user-edit"></i> Reassign</a>')
         if req.status == "Pending":
-            actions.append('<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);"><i class="fas fa-check"></i> Approve</button></form>')
         if req.status == "Completed":
-            actions.append('<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-info"><i class="fas fa-check-double"></i> Verify</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--info);"><i class="fas fa-check-double"></i> Verify</button></form>')
         if req.status == "Verified":
-            actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\')"><input type="hidden" name="reason" value="Archived"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
-    c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
-         '<h3 style="color:#c5a059;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
-         + ('<div>' + actions_html + '</div>' if actions_html else '') + '</div>'
-         '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:#c5a059">Request Details</h5>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1></div><div>' + actions_html + '</div></div>'
+         '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;">Request Details</h5>'
          '<table class="table"><tbody>'
-         '<tr><th style="width:180px;color:#64748b">Status</th><td><span class="badge bg-' + bd(req.status) + '">' + str(req.status) + '</span></td></tr>'
-         '<tr><th style="color:#64748b">Priority</th><td>' + str(req.priority) + '</td></tr>'
-         '<tr><th style="color:#64748b">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Location</th><td>' + str(req.location_name) + '</td></tr>'
-         '<tr><th style="color:#64748b">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Requested By</th><td><strong>' + str(req.requested_by.full_name if req.requested_by else "—") + '</strong></td></tr>'
-         '<tr><th style="color:#64748b">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not Assigned") + '</td></tr>'
-         '<tr><th style="color:#64748b">Description</th><td>' + str(req.description or "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
-         '<tr><th style="color:#64748b">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
+         '<tr><th style="width:180px;color:var(--text-secondary);">Status</th><td><span class="badge badge-' + bd(req.status) + '">' + str(req.status) + '</span></td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Priority</th><td>' + str(req.priority) + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Location</th><td>' + str(req.location_name) + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Requested By</th><td><strong>' + str(req.requested_by.full_name if req.requested_by else "—") + '</strong></td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not Assigned") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Description</th><td>' + str(req.description or "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
+         '<tr><th style="color:var(--text-secondary);">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
          '</tbody></table>' + sig_html + '</div>'
-         '<div class="card"><h5 style="color:#c5a059"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
-         '</div><div class="col-md-4"><div class="card"><h5 style="color:#c5a059"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
+         '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
     return page("Request " + str(req.request_no), c)
 
+# ══════════════════════════════════════════ REMAINING ROUTES (UNCHANGED)
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER","ADMIN")
 def request_approve(req_id):
@@ -1111,10 +2725,9 @@ def deleted_requests():
     ds = MaintenanceRequest.query.filter_by(is_deleted=True).order_by(MaintenanceRequest.deleted_at.desc()).all()
     rows = []
     for r in ds:
-        rows.append('<tr><td>' + str(r.request_no) + '</td><td>' + str(r.location_name) + '</td><td>' + str(r.status) + '</td><td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td><td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td><td>' + str(r.deletion_reason or "—") + '</td><td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
-    c = ('<h3 style="color:#c5a059">🗑️ Archived Requests</h3><div class="card"><div class="table-responsive"><table class="table table-hover">'
-         '<thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead>'
-         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No archived requests</td></tr>') + '</tbody></table></div></div>')
+        rows.append('<tr><td>' + str(r.request_no) + '</td><td>' + str(r.location_name) + '</td><td>' + str(r.status) + '</td><td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td><td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td><td>' + str(r.deletion_reason or "—") + '</td><td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn-primary" style="background:var(--success);padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-archive"></i> <span>Archived</span> Requests</h1></div></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No archived requests</td></tr>') + '</tbody></table></div></div>')
     return page("Archived", c)
 
 @app.route("/admin/restore/<int:req_id>", methods=["POST"])
@@ -1128,6 +2741,7 @@ def request_restore(req_id):
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("deleted_requests"))
 
+# ══════════════════════════════════════════ ANALYTICS HELPERS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
 PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
@@ -1302,209 +2916,7 @@ def get_inventory_summary():
     val = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    if current_user.role in STAFF_ROLES: return redirect(url_for("workorders_list"))
-    if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
-    if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
-    args = request.args
-    kpis = get_kpis(args); trends = get_trends(args); statuses = get_status_stats(args)
-    departments = get_dept_stats(args); dept_completion = get_dept_completion(args)
-    priorities = get_priority_stats(args); categories = get_category_stats(args); floors = get_floor_stats(args)
-    tech_workload = get_technician_workload(args); activity = get_recent_activity(10); inventory = get_inventory_summary()
-    recent_reqs = build_filtered_query(args).order_by(MaintenanceRequest.created_at.desc()).limit(15).all()
-    all_depts = Department.query.order_by(Department.name).all()
-    all_cats = Category.query.order_by(Category.name).all()
-    all_rooms = Room.query.order_by(Room.room_number).all()
-    all_areas = Area.query.order_by(Area.name).all()
-    all_floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
-    if not all_floors: all_floors = sorted({r.floor for r in Room.query.all()})
-    chart_data = {"trends": trends, "statuses": statuses, "departments": departments, "dept_completion": dept_completion, "priorities": priorities, "categories": categories, "floors": floors}
-    return render_template_string(DASHBOARD_TEMPLATE, kpis=kpis, work_orders={"total": WorkOrder.query.count()}, top_locations=[], staff_stats=tech_workload, inventory=inventory, recent_activity=activity, recent_requests=recent_reqs, all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms, all_areas=all_areas, all_floors=all_floors, chart_data=chart_data, filters={k: v for k, v in args.items()}, technician_workload=tech_workload, dept_completion=dept_completion, current_user=current_user)
-
-DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manager Dashboard | Rori Hotel</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:#f8fafc;color:#111827;padding-top:70px}
-.navbar{background:#ffffff!important;border-bottom:1px solid #e2e8f0;padding:.75rem 1.5rem;box-shadow:0 2px 10px rgba(0,0,0,0.05)}
-.navbar-brand{font-weight:800;font-size:1.3rem;color:#c5a059!important}
-.nav-link{color:#64748b!important;padding:.5rem 1rem!important;border-radius:40px;font-size:.9rem;font-weight:500}
-.nav-link i{color:#c5a059;margin-right:4px}
-.nav-link:hover{background:#fffbeb;color:#c5a059!important}
-.navbar-toggler{border-color:#e2e8f0}
-.container{max-width:1400px;padding:1.5rem}
-.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;color:#1e293b;padding:1.25rem;margin-bottom:1.5rem;box-shadow:0 4px 15px rgba(15, 23, 42, 0.04)}
-.card h5{color:#c5a059;font-weight:600}
-.metric-card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:1.2rem 1rem;text-align:center;height:100%;transition:transform .15s;box-shadow:0 4px 15px rgba(15, 23, 42, 0.04)}
-.metric-card:hover{transform:translateY(-2px);border-color:#c5a059}
-.metric-value{font-size:2rem;font-weight:800;color:#111827;line-height:1}
-.metric-label{font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem;font-weight:600}
-.metric-icon{font-size:1.4rem;color:#c5a059;margin-bottom:.35rem}
-.table{color:#1e293b;background:#ffffff}
-.table thead th{color:#111827;border-bottom:2px solid #e2e8f0;font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap;font-weight:700}
-.table td{padding:10px;border-color:#f1f5f9;font-size:.85rem}
-.table-hover tbody tr:hover{background-color:#f8fafc}
-.btn{border-radius:10px;font-weight:600;padding:.6rem 1.6rem;border:none}
-.btn-primary{background:#c5a059;color:#ffffff;}
-.btn-primary:hover{background:#a98745;color:#ffffff;}
-.btn-sm{padding:.35rem .8rem;font-size:.78rem;}
-.form-control,.form-select{background:#ffffff;color:#111827;border:1px solid #cbd5e1;border-radius:10px;padding:.65rem .9rem;}
-.form-control:focus,.form-select:focus{background:#ffffff;color:#111827;border-color:#c5a059;box-shadow:0 0 0 3px rgba(197, 160, 89, 0.15);}
-.form-label{color:#334155;font-weight:500;font-size:.82rem;}
-.badge{padding:.35rem .75rem;border-radius:20px;font-weight:600;font-size:.72rem;}
-.chart-box{position:relative;width:100%;height:280px;}
-.chart-box.tall{height:340px;}
-.chart-box.donut{height:240px;}
-.prog-list{display:flex;flex-direction:column;gap:.7rem;}
-.prog-row{display:flex;flex-direction:column;gap:.3rem;}
-.prog-top{display:flex;justify-content:space-between;font-size:.78rem;}
-.prog-top .nm{color:#334155;font-weight:600;}
-.prog-top .ct{color:#c5a059;font-weight:800;}
-.prog-bar{height:6px;background:#f1f5f9;border-radius:6px;overflow:hidden;}
-.prog-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#c5a059,#d97706);}
-.feed{display:flex;flex-direction:column;gap:.4rem;}
-.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:#f8fafc;border-left:2px solid #c5a059;border-radius:9px;font-size:.78rem;border:1px solid #e2e8f0;}
-.feed-item .tx{color:#334155;}
-.feed-item .tx strong{color:#111827;}
-.feed-item .tm{font-size:.65rem;color:#64748b;margin-top:2px;}
-.empty{text-align:center;padding:2rem 1rem;color:#64748b;font-size:.85rem;}
-.empty i{font-size:1.6rem;color:#c5a059;opacity:.4;display:block;margin-bottom:.5rem;}
-.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;margin-bottom:1.5rem;box-shadow:0 2px 10px rgba(0,0,0,0.03);}
-.filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px;}
-@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
-</style></head><body>
-<nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
-<a class="navbar-brand" href="{{ url_for('dashboard') }}"><i class="fas fa-hotel"></i> Rori Hotel</a>
-<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
-<div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">
-<a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
-<a class="nav-link" href="{{ url_for('request_create') }}"><i class="fas fa-plus-circle"></i> New</a>
-<a class="nav-link" href="{{ url_for('requests_list') }}"><i class="fas fa-tasks"></i> Requests</a>
-<a class="nav-link" href="{{ url_for('workorders_list') }}"><i class="fas fa-clipboard-list"></i> Work Orders</a>
-<a class="nav-link" href="{{ url_for('inventory_list') }}"><i class="fas fa-boxes"></i> Inventory</a>
-{% if current_user.role == 'ADMIN' %}
-<a class="nav-link" href="{{ url_for('admin_users') }}"><i class="fas fa-user-cog"></i> Users</a>
-<a class="nav-link" href="{{ url_for('audit_logs') }}"><i class="fas fa-history"></i> Audit</a>
-<a class="nav-link" href="{{ url_for('management_reports') }}"><i class="fas fa-chart-line"></i> Reports</a>
-{% endif %}
-<a class="nav-link" href="{{ url_for('notifications') }}"><i class="fas fa-bell"></i> Notifications</a>
-<a class="nav-link" href="{{ url_for('profile') }}"><i class="fas fa-user-circle"></i> {{ current_user.full_name or current_user.username }}</a>
-<a class="nav-link" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
-</div></div></div></nav>
-<div class="container mt-4">
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-<div><h2 style="color:#c5a059;font-weight:800;margin:0"><i class="fas fa-chart-line"></i> Central Maintenance Dashboard</h2>
-<p style="color:#64748b;font-size:.85rem;margin:.25rem 0 0">All departments · Real-time analytics</p></div>
-<a href="{{ url_for('request_create') }}" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a>
-</div>
-<form method="get" class="filter-bar">
-<div><label class="form-label">From</label><input type="date" class="form-control" name="date_from" value="{{ filters.get('date_from','') }}"></div>
-<div><label class="form-label">To</label><input type="date" class="form-control" name="date_to" value="{{ filters.get('date_to','') }}"></div>
-<div><label class="form-label">Department</label><select class="form-select" name="department"><option value="">All</option>{% for d in all_departments %}<option value="{{ d.id }}" {% if filters.get('department') == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
-<div><label class="form-label">Category</label><select class="form-select" name="category"><option value="">All</option>{% for c in all_categories %}<option value="{{ c.id }}" {% if filters.get('category') == c.id|string %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
-<div><label class="form-label">Status</label><select class="form-select" name="status"><option value="">All</option>{% for s in ['Pending','Approved','Assigned','In Progress','Completed','Verified','Closed','Rejected'] %}<option value="{{ s }}" {% if filters.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
-<div style="flex:0"><button class="btn btn-primary" type="submit"><i class="fas fa-filter"></i> Apply</button></div>
-<div style="flex:0"><a class="btn btn-sm" href="{{ url_for('dashboard') }}" style="background:#64748b;color:#fff;padding:.65rem 1.2rem;border-radius:40px;font-weight:600;font-size:.85rem">Reset</a></div>
-</form>
-<div class="row g-3 mb-4">
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon"><i class="fas fa-clipboard-list"></i></div><div class="metric-value">{{ kpis.total }}</div><div class="metric-label">Total</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#f59e0b"><i class="fas fa-hourglass-half"></i></div><div class="metric-value">{{ kpis.pending }}</div><div class="metric-label">Pending</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#10b981"><i class="fas fa-circle-check"></i></div><div class="metric-value">{{ kpis.completed }}</div><div class="metric-label">Completed</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#3b82f6"><i class="fas fa-percent"></i></div><div class="metric-value">{{ kpis.completion_rate }}%</div><div class="metric-label">Rate</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#06b6d4"><i class="fas fa-clock"></i></div><div class="metric-value" style="font-size:1.3rem">{{ kpis.avg_resolution }}</div><div class="metric-label">Avg Time</div></div></div>
-<div class="col-6 col-md-2"><div class="metric-card"><div class="metric-icon" style="color:#ef4444"><i class="fas fa-toolbox"></i></div><div class="metric-value">{{ work_orders.total }}</div><div class="metric-label">Work Orders</div></div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-8"><div class="card"><h5 class="mb-3"><i class="fas fa-chart-area"></i> Request Trends</h5><div class="chart-box tall"><canvas id="chartTrends"></canvas></div></div></div>
-<div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-chart-pie"></i> Status Distribution</h5><div class="chart-box donut"><canvas id="chartStatus"></canvas></div></div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-building"></i> Requests by Department</h5><div class="chart-box"><canvas id="chartDept"></canvas></div></div></div>
-<div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-check-double"></i> Completion % by Department</h5><div class="chart-box"><canvas id="chartDeptCompletion"></canvas></div></div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-fire"></i> Priority Distribution</h5><div class="chart-box donut"><canvas id="chartPriority"></canvas></div></div></div>
-<div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-tags"></i> Categories</h5><div class="chart-box"><canvas id="chartCategories"></canvas></div></div></div>
-<div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-layer-group"></i> By Floor</h5><div class="chart-box"><canvas id="chartFloors"></canvas></div></div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-chart-bar"></i> Department Share (%)</h5>
-{% if chart_data.departments.labels|length > 0 %}<div class="prog-list">{% for i in range(chart_data.departments.labels|length) %}
-<div class="prog-row"><div class="prog-top"><span class="nm">{{ chart_data.departments.labels[i] }}</span><span class="ct">{{ chart_data.departments.values[i] }} · {{ chart_data.departments.percentages[i] }}%</span></div>
-<div class="prog-bar"><span style="width:{{ chart_data.departments.percentages[i] }}%"></span></div></div>{% endfor %}</div>
-{% else %}<div class="empty"><i class="fas fa-inbox"></i>No data available</div>{% endif %}</div></div>
-<div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-users-gear"></i> Technician Workload</h5>
-{% if technician_workload|length > 0 %}<div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Technician</th><th>Assigned</th><th>In Progress</th><th>Completed</th><th>Avg Time</th></tr></thead>
-<tbody>{% for t in technician_workload %}<tr><td><strong>{{ t.name }}</strong><br><small style="color:#64748b">{{ t.role }}</small></td>
-<td><span class="badge" style="background:#3b82f6;color:#fff">{{ t.assigned }}</span></td>
-<td><span class="badge" style="background:#f59e0b;color:#fff">{{ t.in_progress }}</span></td>
-<td><span class="badge" style="background:#10b981;color:#fff">{{ t.completed }}</span></td>
-<td>{{ t.avg_resolution }}</td></tr>{% endfor %}</tbody></table></div>
-{% else %}<div class="empty"><i class="fas fa-users"></i>No technicians</div>{% endif %}</div></div>
-</div>
-<div class="row g-3 mb-4">
-<div class="col-lg-8"><div class="card"><div class="d-flex justify-content-between align-items-center mb-3">
-<h5 style="margin:0"><i class="fas fa-clock-rotate-left"></i> Recent Requests</h5>
-<a href="{{ url_for('requests_list') }}" class="btn btn-sm" style="background:#64748b;color:#fff;padding:.35rem .9rem;border-radius:20px;font-weight:600;font-size:.75rem">View All</a></div>
-{% if recent_requests|length > 0 %}<div class="table-responsive"><table class="table table-hover">
-<thead><tr><th>Request</th><th>Department</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
-<tbody>{% for r in recent_requests %}<tr><td><a href="{{ url_for('request_detail', req_id=r.id) }}" style="color:#c5a059;font-weight:600">{{ r.request_no }}</a></td>
-<td>{{ r.department.name if r.department else '—' }}</td><td>{{ r.location_name }}</td>
-<td><span class="badge" style="background:{{ '#ef4444' if r.priority=='URGENT' else '#f59e0b' if r.priority=='HIGH' else '#3b82f6' if r.priority=='MEDIUM' else '#10b981' }}">{{ r.priority }}</span></td>
-<td><span class="badge" style="background:{{ '#10b981' if r.status in ['Completed','Verified','Closed'] else '#f59e0b' if r.status=='Pending' else '#3b82f6' if r.status=='Approved' else '#8b5cf6' if r.status in ['Assigned','In Progress'] else '#64748b' }}">{{ r.status }}</span></td>
-<td style="color:#64748b;font-size:.78rem">{{ r.created_at.strftime('%b %d') if r.created_at else '—' }}</td>
-<td><a href="{{ url_for('request_detail', req_id=r.id) }}" class="btn btn-sm" style="background:#64748b;color:#fff;padding:.2rem .6rem;border-radius:8px;font-size:.7rem">Open</a></td></tr>{% endfor %}</tbody></table></div>
-{% else %}<div class="empty"><i class="fas fa-inbox"></i>No requests</div>{% endif %}</div></div>
-<div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-wave-square"></i> Activity</h5>
-{% if recent_activity|length > 0 %}<div class="feed">{% for a in recent_activity %}
-<div class="feed-item"><i class="fas fa-bolt" style="color:#c5a059;margin-top:.15rem"></i><div style="flex:1"><div class="tx"><strong>{{ a.user }}</strong> — {{ a.action }}</div><div class="tm">{{ a.time }}</div></div></div>{% endfor %}</div>
-{% else %}<div class="empty"><i class="fas fa-wave-square"></i>No activity</div>{% endif %}</div>
-<div class="card"><h5 class="mb-3"><i class="fas fa-boxes"></i> Inventory Snapshot</h5><div class="prog-list">
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div></div>
-<script>
-window.DASHBOARD_DATA = {{ chart_data|tojson }};
-(function(){
-'use strict';
-if(typeof Chart === 'undefined') return;
-var D = window.DASHBOARD_DATA || {};
-Chart.defaults.color = '#64748b'; Chart.defaults.borderColor = '#e2e8f0'; Chart.defaults.font.family = "'Inter', system-ui, sans-serif"; Chart.defaults.font.size = 11;
-var TT = {backgroundColor:'#ffffff', borderColor:'#e2e8f0', borderWidth:1, titleColor:'#111827', bodyColor:'#334155', padding:11, cornerRadius:10};
-var C = {amber:'#f59e0b', green:'#10b981', blue:'#3b82f6', purple:'#8b5cf6', cyan:'#06b6d4', pink:'#ec4899', red:'#ef4444', gray:'#9ca3af'};
-function gr(c, a, b){var g = c.createLinearGradient(0,0,0,340); g.addColorStop(0,a); g.addColorStop(1,b); return g;}
-function em(el, i, m){if(!el || !el.parentElement) return; el.parentElement.innerHTML='<div class="empty"><i class="fas '+i+'"></i>'+m+'</div>';}
-(function(){var el = document.getElementById('chartTrends'); if(!el) return; var t = D.trends; if(!t || !t.labels || !t.labels.length){em(el,'fa-chart-area','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'line', data:{labels:t.labels, datasets:[
-{label:'Total', data:t.total, borderColor:C.amber, borderWidth:2.5, fill:true, backgroundColor:gr(c,'rgba(245,158,11,0.2)','rgba(245,158,11,0.01)'), tension:0.4, pointRadius:0, pointHoverRadius:6},
-{label:'Completed', data:t.completed, borderColor:C.green, borderWidth:2.2, fill:true, backgroundColor:gr(c,'rgba(16,185,129,0.2)','rgba(16,185,129,0.01)'), tension:0.4, pointRadius:0, pointHoverRadius:5},
-{label:'Pending', data:t.pending, borderColor:C.red, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5},
-{label:'In Progress', data:t.in_progress, borderColor:C.purple, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5}
-]}, options:{responsive:true, maintainAspectRatio:false, interaction:{intersect:false, mode:'index'}, plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8, boxHeight:8, padding:14, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}, scales:{x:{grid:{color:'#f1f5f9'}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:10}}, y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{precision:0}}}}});})();
-(function(){var el = document.getElementById('chartStatus'); if(!el) return; var s = D.statuses; if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;} var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple, 'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[{data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#ffffff', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
-(function(){var el = document.getElementById('chartDept'); if(!el) return; var d = D.departments; if(!d || !d.labels || !d.labels.length){em(el,'fa-building','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[{label:'Requests', data:d.values, backgroundColor:gr(c,'rgba(197,160,89,0.9)','rgba(217,119,6,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}}, y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{precision:0}}}}});})();
-(function(){var el = document.getElementById('chartDeptCompletion'); if(!el) return; var d = D.dept_completion; if(!d || !d.labels || !d.labels.length){em(el,'fa-check-double','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[{label:'Total', data:d.totals, backgroundColor:'#e2e8f0', borderRadius:8, borderSkipped:false, maxBarThickness:28}, {label:'Completed', data:d.completed, backgroundColor:gr(c,'rgba(16,185,129,0.9)','rgba(5,150,105,0.5)'), borderRadius:8, borderSkipped:false, maxBarThickness:28}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'top', labels:{boxWidth:8, boxHeight:8, padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}}, y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{precision:0}}}}});})();
-(function(){var el = document.getElementById('chartPriority'); if(!el) return; var p = D.priorities; if(!p || !p.labels || !p.labels.length){em(el,'fa-fire','No data available'); return;} var map = {'URGENT':C.red, 'HIGH':C.amber, 'MEDIUM':C.blue, 'LOW':C.green};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[{data:p.values, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#ffffff', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
-(function(){var el = document.getElementById('chartCategories'); if(!el) return; var x = D.categories; if(!x || !x.labels || !x.labels.length){em(el,'fa-tags','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(59,130,246,0.9)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}}, y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{precision:0}}}}});})();
-(function(){var el = document.getElementById('chartFloors'); if(!el) return; var x = D.floors; if(!x || !x.labels || !x.labels.length){em(el,'fa-layer-group','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(139,92,246,0.9)','rgba(59,130,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{precision:0}}}}});})();
-})();
-</script></body></html>"""
-
+# ══════════════════════════════════════════ DEPARTMENT DASHBOARD
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -1521,14 +2933,14 @@ def department_dashboard():
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#c5a059">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
-    c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"><h3 style="color:#c5a059;margin:0"><i class="fas fa-building"></i> ' + str(dept_name) + ' Dashboard</h3><a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-         '<div class="row g-3 mb-4"><div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
-         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#f59e0b">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#8b5cf6">' + str(in_progress) + '</div><div class="metric-label">In Progress</div></div></div>'
-         '<div class="col-6 col-md-3"><div class="metric-card"><div class="metric-value" style="color:#10b981">' + str(completed) + '</div><div class="metric-label">Done</div></div></div></div>'
-         '<div class="card"><h5 style="color:#c5a059"><i class="fas fa-tasks"></i> My Requests</h5><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet.</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
+         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No requests yet.</td></tr>') + '</tbody></table></div></div>')
     return page("Department Dashboard", c)
 
 @app.route("/employee/dashboard")
@@ -1539,9 +2951,9 @@ def employee_dashboard():
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#c5a059">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge bg-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
-    c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"><h3 style="color:#c5a059;margin:0"><i class="fas fa-home"></i> My Dashboard</h3><a href="' + url_for("request_create") + '" class="btn btn-primary"><i class="fas fa-plus-circle"></i> New Request</a></div>'
-         '<div class="card"><h5 style="color:#c5a059"><i class="fas fa-tasks"></i> My Requests</h5><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">No requests yet</td></tr>') + '</tbody></table></div></div>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-home"></i> <span>My</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No requests yet</td></tr>') + '</tbody></table></div></div>')
     return page("Employee Dashboard", c)
 
 @app.route("/workorders")
@@ -1555,8 +2967,9 @@ def workorders_list():
     for wo in wos:
         assigned = wo.assigned_to.full_name if wo.assigned_to else "🔴 Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
-        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:#c5a059">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge bg-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td></tr>')
-    c = ('<h3 style="color:#c5a059"><i class="fas fa-clipboard-list"></i> Work Orders</h3><div class="card"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">No work orders</td></tr>') + '</tbody></table></div></div>')
+        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td></tr>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No work orders</td></tr>') + '</tbody></table></div></div>')
     return page("Work Orders", c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
@@ -1584,13 +2997,14 @@ def workorder_create():
             if req.requested_by_id: notify_users([req.requested_by_id], req.id, "Work Assigned", "Staff assigned to " + str(req.request_no), "Assigned", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Assigned!","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_create", request_id=request_id))
-    c = ('<h3 style="color:#c5a059">Assign Staff to Work Order</h3><div class="card"><form method="post"><input type="hidden" name="request_id" value="' + str(req.id if req else "") + '">'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-plus"></i> <span>Assign</span> Staff</h1></div></div>'
+         '<div class="card"><form method="post"><input type="hidden" name="request_id" value="' + str(req.id if req else "") + '">'
          '<div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="' + str(req.request_no if req else "") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
          '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
-         '<button class="btn btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
+         '<button class="btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
     return page("Assign Work Order", c)
 
 @app.route("/workorders/<int:wo_id>")
@@ -1605,20 +3019,20 @@ def workorder_detail(wo_id):
         psupp = p.part.supplier.company_name if p.part and p.part.supplier else "—"
         pun = p.part.unit if p.part else "pcs"
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
-        rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i></button></form>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
+        rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
         pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + rem + '</td></tr>')
-    apb = '<a class="btn btn-sm btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '"><i class="fas fa-plus"></i> Add Part</a>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
-    parts_card = ('<div class="card"><div class="d-flex justify-content-between align-items-center mb-2"><h5 style="color:#c5a059;margin:0"><i class="fas fa-boxes"></i> Parts</h5>' + apb + '</div>'
-                  '<div class="table-responsive"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" class="text-center">No parts</td></tr>') + '</tbody></table></div><p class="text-end mb-0"><b>Total: ' + str(pt) + '</b></p></div>')
-    ch = '<div class="mt-3"><h6>Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" class="img-fluid rounded" style="max-height:250px"></a></div>' if wo.completion_photo else ""
+    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
+    parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts</div>' + apb + '</div>'
+                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
+    ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
     actions = ""
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
-        if wo.status == "Assigned": actions += '<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '"><button type="submit" class="btn btn-warning mb-2 w-100"><i class="fas fa-play"></i> Start Work</button></form>'
-        if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn btn-success mb-2 w-100"><i class="fas fa-check"></i> Complete Work</a>'
+        if wo.status == "Assigned": actions += '<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--warning);margin-bottom:0.75rem;"><i class="fas fa-play"></i> Start Work</button></form>'
+        if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--success);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-check"></i> Complete Work</a>'
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
-        actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify</button></form>'
-    c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#c5a059">Work Order ' + str(wo.work_order_no) + '</h3><a href="' + url_for("workorders_list") + '" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>'
-         '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th style="width:150px;color:#64748b">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th style="color:#64748b">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr><tr><th style="color:#64748b">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th style="color:#64748b">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th style="color:#64748b">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr><tr><th style="color:#64748b">Status</th><td><span class="badge bg-info">' + str(wo.status) + '</span></td></tr><tr><th style="color:#64748b">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th style="color:#64748b">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th style="color:#64748b">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th style="color:#64748b">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:#c5a059">Actions</h5>' + (actions if actions else "<p style='color:#64748b'>No actions available</p>") + '</div></div></div>')
+        actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;"><i class="fas fa-check-double"></i> Verify</button></form>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> Work Order <span>' + str(wo.work_order_no) + '</span></h1></div><a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a></div>'
+         '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th style="width:150px;color:var(--text-secondary);">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Status</th><td><span class="badge badge-info">' + str(wo.status) + '</span></td></tr><tr><th style="color:var(--text-secondary);">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th style="color:var(--text-secondary);">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;">Actions</h5>' + (actions if actions else "<p style='color:var(--text-secondary);'>No actions available</p>") + '</div></div></div>')
     return page("Work Order Detail", c)
 
 @app.route("/workorders/<int:wo_id>/start", methods=["POST"])
@@ -1665,11 +3079,12 @@ def workorder_complete(wo_id):
             if wo.request and wo.request.requested_by_id: notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed", "Request " + str(wo.request.request_no) + " completed", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Completed! Waiting for verification.","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
-    c = ('<h3 style="color:#c5a059">Complete Work Order ' + str(wo.work_order_no) + '</h3><div class="card"><form method="post" enctype="multipart/form-data">'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-check-circle"></i> <span>Complete</span> Work Order ' + str(wo.work_order_no) + '</h1></div></div>'
+         '<div class="card"><form method="post" enctype="multipart/form-data">'
          '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>'
          '<div class="mb-3"><label class="form-label">Photo</label><input type="file" name="photo" accept="image/*" class="form-control"></div>'
          '<div class="mb-3"><label class="form-label">Labor Hours</label><input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>'
-         '<button class="btn btn-success btn-lg w-100"><i class="fas fa-check-circle"></i> Complete</button></form></div>')
+         '<button class="btn-primary w-100" style="background:var(--success);"><i class="fas fa-check-circle"></i> Complete</button></form></div>')
     return page("Complete Work Order", c)
 
 @app.route("/workorders/<int:wo_id>/verify", methods=["POST"])
@@ -1698,7 +3113,8 @@ def supplier_form(s, action, edit):
     act = supplier_active(s)
     a1 = " selected" if act else ""
     a2 = "" if act else " selected"
-    return ('<h3 style="color:#c5a059"><i class="fas fa-truck"></i> ' + ("Edit" if edit else "Add") + ' Supplier</h3><div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
+    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-truck"></i> <span>' + ("Edit" if edit else "Add") + '</span> Supplier</h1></div></div>'
+            '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier Name *</label><input type="text" class="form-control" name="company_name" value="' + v("company_name") + '" required></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Contact</label><input type="text" class="form-control" name="contact_person" value="' + v("contact_person") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + v("phone") + '"></div>'
@@ -1707,7 +3123,7 @@ def supplier_form(s, action, edit):
             '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + a1 + '>Active</option><option value="Inactive"' + a2 + '>Inactive</option></select></div>'
             '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/suppliers")
 @role_required("ADMIN","MANAGER")
@@ -1716,11 +3132,12 @@ def suppliers_list():
     rows = []
     for s in ss:
         act = supplier_active(s)
-        bg = '<span class="badge bg-success">Active</span>' if act else '<span class="badge bg-secondary">Inactive</span>'
-        ac = '<a class="btn btn-sm btn-info" href="' + url_for("supplier_edit", supplier_id=s.id) + '"><i class="fas fa-edit"></i> Edit</a> '
-        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-ban"></i></button></form>'
+        bg = '<span class="badge badge-success">Active</span>' if act else '<span class="badge badge-secondary">Inactive</span>'
+        ac = '<a class="btn-primary" href="' + url_for("supplier_edit", supplier_id=s.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-edit"></i> Edit</a> '
+        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-ban"></i></button></form>'
         rows.append('<tr><td>' + str(s.id) + '</td><td>' + str(s.company_name) + '</td><td>' + str(s.contact_person or "—") + '</td><td>' + str(s.phone or "—") + '</td><td>' + str(s.email or "—") + '</td><td>' + bg + '</td><td>' + ac + '</td></tr>')
-    c = ('<h3 style="color:#c5a059"><i class="fas fa-truck"></i> Suppliers</h3><a class="btn btn-primary mb-3" href="' + url_for("supplier_add") + '"><i class="fas fa-plus-circle"></i> Add</a><div class="card"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-truck"></i> <span>Suppliers</span></h1></div><a class="btn-primary" href="' + url_for("supplier_add") + '"><i class="fas fa-plus"></i> Add</a></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div></div>')
     return page("Suppliers", c)
 
 @app.route("/suppliers/add", methods=["GET","POST"])
@@ -1771,7 +3188,8 @@ def part_form(p, action):
     sups = Supplier.query.filter_by(is_active=True).order_by(Supplier.company_name).all()
     so = '<option value="">-- Select --</option>'
     for s in sups: so += '<option value="' + str(s.id) + '"' + (' selected' if p and p.supplier_id == s.id else '') + '>' + str(s.company_name) + '</option>'
-    return ('<h3 style="color:#c5a059"><i class="fas fa-box"></i> ' + ("Edit" if p else "Add") + ' Part</h3><div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
+    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-box"></i> <span>' + ("Edit" if p else "Add") + '</span> Part</h1></div></div>'
+            '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
             '<div class="col-md-6 mb-3"><label class="form-label">Part Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Category</label><input type="text" class="form-control" name="category" value="' + v("category") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" value="' + v("quantity","0") + '"></div>'
@@ -1780,7 +3198,7 @@ def part_form(p, action):
             '<div class="col-md-6 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost" value="' + v("unit_cost","0") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Storage</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/inventory/add", methods=["GET","POST"])
 @role_required("ADMIN","MANAGER")
@@ -1837,11 +3255,12 @@ def workorder_part_add(wo_id):
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
     parts = InventoryPart.query.filter(InventoryPart.status == "Active", InventoryPart.quantity > 0).order_by(InventoryPart.part_name).all()
     po = "".join('<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ')</option>' for p in parts)
-    c = ('<h3 style="color:#c5a059">Add Part — WO ' + str(wo.work_order_no) + '</h3><div class="card"><form method="post"><div class="row">'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus"></i> <span>Add Part</span> — WO ' + str(wo.work_order_no) + '</h1></div></div>'
+         '<div class="card"><form method="post"><div class="row">'
          '<div class="col-md-6 mb-3"><label class="form-label">Part *</label><select class="form-select" name="part_id" required><option value="">-- Select --</option>' + po + '</select></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Qty *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn btn-secondary">Cancel</a><button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add</button></div></div></form></div>')
+         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Add</button></div></div></form></div>')
     return page("Add Part", c)
 
 @app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
@@ -1876,9 +3295,10 @@ def notifications():
     for n in ns:
         cls = "" if n.is_read else "table-warning"
         link = n.link or "#"
-        ra = '<span style="color:#10b981">✓</span>' if n.is_read else '<a class="btn btn-sm btn-primary" href="/notifications/mark-read/' + str(n.id) + '">Read</a>'
-        rows.append('<tr class="' + cls + '"><td><a href="' + link + '" style="color:#c5a059;font-weight:600">' + str(n.title) + '</a></td><td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td><td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
-    c = ('<h3 style="color:#c5a059"><i class="fas fa-bell"></i> Notifications</h3><div class="card"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" class="text-center">None</td></tr>') + '</tbody></table></div></div>')
+        ra = '<span style="color:var(--success);">✓</span>' if n.is_read else '<a class="btn-primary" href="/notifications/mark-read/' + str(n.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Read</a>'
+        rows.append('<tr class="' + cls + '"><td><a href="' + link + '" style="color:var(--rori-gold);font-weight:600;">' + str(n.title) + '</a></td><td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td><td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-bell"></i> <span>Notifications</span></h1></div></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div></div>')
     return page("Notifications", c)
 
 @app.route("/notifications/mark-read/<int:n_id>", methods=["GET","POST"])
@@ -1898,7 +3318,8 @@ def notification_mark_read(n_id):
 def rooms_list():
     rs = Room.query.order_by(Room.room_number).all()
     rows = "".join('<tr><td>' + str(r.room_number) + '</td><td>' + str(r.floor) + '</td><td>' + str(r.status) + '</td></tr>' for r in rs)
-    c = ('<h3 style="color:#c5a059">Rooms</h3><div class="card"><table class="table"><thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span></h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Rooms", c)
 
 @app.route("/areas")
@@ -1906,7 +3327,8 @@ def rooms_list():
 def areas_list():
     ar = Area.query.order_by(Area.name).all()
     rows = "".join('<tr><td>' + str(a.name) + '</td><td>' + str(a.department or "—") + '</td></tr>' for a in ar)
-    c = ('<h3 style="color:#c5a059">Areas</h3><div class="card"><table class="table"><thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span></h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Areas", c)
 
 @app.route("/inventory")
@@ -1915,11 +3337,12 @@ def inventory_list():
     ps = InventoryPart.query.order_by(InventoryPart.part_name).all()
     rows = []
     for p in ps:
-        bg = 'bg-danger' if p.quantity <= 0 else 'bg-warning text-dark' if p.is_low else 'bg-success'
+        bg = 'badge-danger' if p.quantity <= 0 else 'badge-warning' if p.is_low else 'badge-success'
         label = "Out" if p.quantity <= 0 else "Low" if p.is_low else "OK"
         sn = p.supplier.company_name if p.supplier else "—"
-        rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td><a class="btn btn-sm btn-info" href="' + url_for("inventory_edit", part_id=p.id) + '"><i class="fas fa-edit"></i></a></td></tr>')
-    c = ('<h3 style="color:#c5a059"><i class="fas fa-boxes"></i> Inventory</h3><a class="btn btn-primary mb-3" href="' + url_for("inventory_add") + '"><i class="fas fa-plus-circle"></i> Add Part</a><div class="card"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" class="text-center">No parts</td></tr>') + '</tbody></table></div></div>')
+        rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td><a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-edit"></i></a></td></tr>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-boxes"></i> <span>Inventory</span></h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '"><i class="fas fa-plus"></i> Add Part</a></div>'
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div></div>')
     return page("Inventory", c)
 
 @app.route("/employees")
@@ -1927,7 +3350,8 @@ def inventory_list():
 def employees_list():
     es = Employee.query.all()
     rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td><td>' + str(e.department or "—") + '</td></tr>' for e in es)
-    c = ('<h3 style="color:#c5a059">Employees</h3><div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-users"></i> <span>Employees</span></h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Employees", c)
 
 @app.route("/admin/users")
@@ -1935,7 +3359,8 @@ def employees_list():
 def admin_users():
     us = User.query.all()
     rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
-    c = ('<h3 style="color:#c5a059">Users</h3><div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-cog"></i> <span>Users</span></h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Users", c)
 
 @app.route("/admin/audit")
@@ -1943,7 +3368,8 @@ def admin_users():
 def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
     rows = "".join('<tr><td>' + str(l.user.full_name if l.user else "System") + '</td><td>' + str(l.action) + '</td><td>' + str(l.object_type or "") + '</td><td>' + (l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "") + '</td></tr>' for l in logs)
-    c = ('<h3 style="color:#c5a059">Audit Log</h3><div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>' + (rows if rows else '<tr><td colspan="4">No logs</td></tr>') + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-history"></i> <span>Audit</span> Log</h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>' + (rows if rows else '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);">No logs</td></tr>') + '</tbody></table></div>')
     return page("Audit", c)
 
 @app.route("/admin/backup")
@@ -1951,7 +3377,9 @@ def audit_logs():
 def backup_page():
     bs = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
     rows = "".join('<tr><td>' + str(b) + '</td></tr>' for b in bs)
-    c = ('<h3 style="color:#c5a059">Backups</h3><form method="post" action="/admin/backup/now" class="mb-3"><button class="btn btn-primary">Backup Now</button></form><div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>' + (rows if rows else '<tr><td>None</td></tr>') + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-database"></i> <span>Backups</span></h1></div></div>'
+         '<form method="post" action="/admin/backup/now" style="margin-bottom:1.5rem;"><button class="btn-primary">Backup Now</button></form>'
+         '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>' + (rows if rows else '<tr><td style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div>')
     return page("Backups", c)
 
 @app.route("/admin/backup/now", methods=["GET","POST"])
@@ -1967,111 +3395,17 @@ def backup_now():
     except Exception as e: flash("Error: " + str(e),"danger")
     return redirect(url_for("backup_page"))
 
-@app.route("/management/reports")
-@role_required("ADMIN", "MANAGER")
-def management_reports():
-    period = request.args.get("period", "daily")
-    dept_filter = request.args.get("department", "")
-    status_filter = request.args.get("status", "")
-    q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if dept_filter:
-        dept = Department.query.filter_by(name=dept_filter).first()
-        if dept: q = q.filter_by(department_id=dept.id)
-    if status_filter: q = q.filter_by(status=status_filter)
-    now = datetime.utcnow()
-    if period == "daily":
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
-        q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Daily Report - " + start_date.strftime("%Y-%m-%d")
-    elif period == "weekly":
-        start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=7)
-        q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Weekly Report - Wk " + start_date.strftime("%Y-%m-%d")
-    elif period == "monthly":
-        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        next_month = start_date.replace(day=28) + timedelta(days=4)
-        end_date = next_month.replace(day=1)
-        q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Monthly Report - " + start_date.strftime("%B %Y")
-    else:
-        start_date = now - timedelta(days=30)
-        end_date = now
-        q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at <= end_date)
-        period_label = "Custom Range - " + start_date.strftime("%Y-%m-%d") + " to " + end_date.strftime("%Y-%m-%d")
-    reqs = q.all()
-    total = len(reqs)
-    completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
-    pending = sum(1 for r in reqs if r.status in ["Pending","Approved"])
-    in_progress = sum(1 for r in reqs if r.status in ["Assigned","In Progress"])
-    work_orders = WorkOrder.query.filter(WorkOrder.request_id.in_([r.id for r in reqs])).all()
-    total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
-    dept_counts = defaultdict(int)
-    for r in reqs: dept_counts[r.department.name if r.department else "Unspecified"] += 1
-    c = ('<div class="d-flex justify-content-between align-items-center mb-3"><h3 style="color:#c5a059"><i class="fas fa-chart-line"></i> Management Reports</h3>'
-         '<div class="d-flex gap-2"><a href="' + url_for("export_report", period=period, department=dept_filter, status=status_filter) + '" class="btn btn-success"><i class="fas fa-file-excel"></i> Download Excel</a><button onclick="window.print()" class="btn btn-secondary"><i class="fas fa-print"></i> Print / PDF</button></div></div>'
-         '<div class="card mb-3"><form method="get" class="row g-3 align-items-end">'
-         '<div class="col-md-3"><label class="form-label">Period</label><select name="period" class="form-select"><option value="daily" ' + ('selected' if period=="daily" else '') + '>Daily</option><option value="weekly" ' + ('selected' if period=="weekly" else '') + '>Weekly</option><option value="monthly" ' + ('selected' if period=="monthly" else '') + '>Monthly</option><option value="custom" ' + ('selected' if period=="custom" else '') + '>Custom (Last 30 Days)</option></select></div>'
-         '<div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">All Departments</option>' + "".join('<option value="' + d.name + '"' + (' selected' if dept_filter==d.name else '') + '>' + d.name + '</option>' for d in Department.query.all()) + '</select></div>'
-         '<div class="col-md-3"><label class="form-label">Status</label><select name="status" class="form-select"><option value="">All Statuses</option><option value="Pending" ' + ('selected' if status_filter=="Pending" else '') + '>Pending</option><option value="In Progress" ' + ('selected' if status_filter=="In Progress" else '') + '>In Progress</option><option value="Completed" ' + ('selected' if status_filter=="Completed" else '') + '>Completed</option></select></div>'
-         '<div class="col-md-3"><button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Apply Filters</button></div></form></div>'
-         '<div class="row g-3 mb-4"><div class="col-md-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total Requests</div></div></div>'
-         '<div class="col-md-3"><div class="metric-card"><div class="metric-value" style="color:#10b981">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
-         '<div class="col-md-3"><div class="metric-card"><div class="metric-value" style="color:#f59e0b">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-         '<div class="col-md-3"><div class="metric-card"><div class="metric-value" style="color:#3b82f6">' + str(total_hours) + ' hrs</div><div class="metric-label">Total Labor Hours</div></div></div></div>'
-         '<div class="row g-3"><div class="col-md-6"><div class="card"><h5>Department Workload</h5><ul class="list-group list-group-flush">' + 
-         "".join('<li class="list-group-item d-flex justify-content-between align-items-center"><span>' + k + '</span><span class="badge bg-primary rounded-pill">' + str(v) + '</span></li>' for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])) + 
-         '</ul></div></div><div class="col-md-6"><div class="card"><h5>Recent Completed Work Log</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Request</th><th>Staff</th><th>Hours</th><th>Date</th></tr></thead><tbody>' +
-         "".join('<tr><td>' + str(wo.request.request_no if wo.request else "N/A") + '</td><td>' + str(wo.completed_by.full_name if wo.completed_by else "N/A") + '</td><td>' + str(wo.labor_hours or 0) + '</td><td>' + (wo.completed_date.strftime("%Y-%m-%d") if wo.completed_date else "N/A") + '</td></tr>' for wo in work_orders if wo.status in ["Completed","Verified","Closed"][:10]) +
-         '</tbody></table></div></div></div></div>')
-    return page("Management Reports", c)
-
-@app.route("/management/reports/export")
-@role_required("ADMIN", "MANAGER")
-def export_report():
-    period = request.args.get("period", "daily")
-    dept_filter = request.args.get("department", "")
-    q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if dept_filter:
-        dept = Department.query.filter_by(name=dept_filter).first()
-        if dept: q = q.filter_by(department_id=dept.id)
-    now = datetime.utcnow()
-    if period == "daily":
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        q = q.filter(MaintenanceRequest.created_at >= start_date)
-    elif period == "weekly":
-        start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        q = q.filter(MaintenanceRequest.created_at >= start_date)
-    elif period == "monthly":
-        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        q = q.filter(MaintenanceRequest.created_at >= start_date)
-    reqs = q.all()
-    si = io.StringIO()
-    cw = csv.writer(si)
-    cw.writerow(["Rori Hotel Maintenance Management Report"])
-    cw.writerow(["Period", period, "Generated By", current_user.full_name, "Date", now.strftime("%Y-%m-%d %H:%M")])
-    cw.writerow([])
-    cw.writerow(["Request No", "Department", "Location", "Priority", "Status", "Assigned To", "Completed Date", "Labor Hours"])
-    for r in reqs:
-        wo = WorkOrder.query.filter_by(request_id=r.id).first()
-        cw.writerow([r.request_no, r.department.name if r.department else "N/A", r.location_name, r.priority, r.status, wo.assigned_to.full_name if wo and wo.assigned_to else "Unassigned", r.completed_date.strftime("%Y-%m-%d") if r.completed_date else "N/A", wo.labor_hours if wo else 0])
-    output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=maintenance_report.csv"
-    output.headers["Content-type"] = "text/csv"
-    return output
-
 @app.route("/reports")
 @login_required
 def reports():
     base = MaintenanceRequest.query.filter_by(is_deleted=False)
     total = base.count(); pending = base.filter_by(status="Pending").count()
     completed = base.filter_by(status="Completed").count(); verified = base.filter_by(status="Verified").count()
-    c = ('<h3 style="color:#c5a059">Reports</h3><div class="row g-3 mb-4">'
-         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(total) + '</div><div class="metric-label">Total</div></div></div>'
-         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(pending) + '</div><div class="metric-label">Pending</div></div></div>'
-         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(completed) + '</div><div class="metric-label">Completed</div></div></div>'
-         '<div class="col-3"><div class="metric-card"><div class="metric-value">' + str(verified) + '</div><div class="metric-label">Verified</div></div></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-chart-bar"></i> <span>Reports</span></h1></div></div>'
+         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Completed</div></div>'
+         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-double"></i></div><div class="kpi-value">' + str(verified) + '</div><div class="kpi-label">Verified</div></div></div>')
     return page("Reports", c)
 
 @app.route("/debug")
@@ -2080,7 +3414,7 @@ def debug():
 
 @app.route("/manifest.json")
 def manifest():
-    return jsonify({"name": "Rori Hotel Maintenance","short_name": "RoriMaint","start_url": "/dashboard","display": "standalone","background_color": "#0f172a","theme_color": "#c5a059","icons": []})
+    return jsonify({"name": "Rori Hotel Maintenance","short_name": "RoriMaint","start_url": "/dashboard","display": "standalone","background_color": "#0B0B12","theme_color": "#C5A059","icons": []})
 
 @app.route("/sw.js")
 def sw():
@@ -2106,7 +3440,7 @@ def e500(e):
 with app.app_context():
     ensure_database_schema()
     seed_data()
-    print("🚀 App initialized")
+    print("🚀 App initialized with Premium Dark Dashboard")
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
