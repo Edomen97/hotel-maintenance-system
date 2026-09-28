@@ -40,7 +40,7 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ════════════════════════════════════════ MODELS
+# ══════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -110,6 +110,21 @@ class Employee(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+# ══════════════════════════════════════════ NEW: Department Signature Model
+class DepartmentSignature(db.Model):
+    """Authorized digital signature profile per department.
+    Ties an authorized name + optional stored signature image to a department.
+    Users with DEPARTMENT role inherit this signature when creating requests."""
+    __tablename__ = "department_signatures"
+    id = db.Column(db.Integer, primary_key=True)
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"), unique=True, nullable=False)
+    authorized_name = db.Column(db.String(150), nullable=False)
+    signature_data = db.Column(db.Text, nullable=True)  # Base64 PNG (optional stored signature)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    department = db.relationship("Department", foreign_keys=[department_id])
+
 class MaintenanceRequest(db.Model):
     __tablename__ = "maintenance_requests"
     id = db.Column(db.Integer, primary_key=True)
@@ -143,10 +158,15 @@ class MaintenanceRequest(db.Model):
     hk_approval_status = db.Column(db.String(20))
     hk_signature_data = db.Column(db.Text)
     hk_approval_notes = db.Column(db.Text)
+    # Digital Signature Fields
     signature_name = db.Column(db.String(150), nullable=True)
     signature_status = db.Column(db.String(30), default="SIGNED")
     signature_signed_at = db.Column(db.DateTime, nullable=True)
     signature_data = db.Column(db.Text, nullable=True)
+    # ══════════════════════════════════════════ NEW: Signature Verification Fields
+    signature_department = db.Column(db.String(80), nullable=True)
+    signature_verified = db.Column(db.Boolean, default=False)
+    signature_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
     room = db.relationship("Room", foreign_keys=[room_id])
     area = db.relationship("Area", foreign_keys=[area_id])
@@ -158,6 +178,7 @@ class MaintenanceRequest(db.Model):
     department = db.relationship("Department", foreign_keys=[department_id])
     deleted_by = db.relationship("User", foreign_keys=[deleted_by_id])
     hk_approved_by = db.relationship("User", foreign_keys=[hk_approved_by_id])
+    signature_user = db.relationship("User", foreign_keys=[signature_user_id])
 
     @property
     def location_name(self):
@@ -311,7 +332,7 @@ class ChecklistTemplate(db.Model):
 @login_manager.user_loader
 def load_user(user_id): return db.session.get(User, int(user_id))
 
-# ═════════════════════════════════════════ HELPERS
+# ══════════════════════════════════════════ HELPERS
 def role_required(*roles):
     def dec(fn):
         @wraps(fn)
@@ -367,7 +388,7 @@ def notify_maintenance_staff(req, wo):
 
 def notify_assigned_staff(req, wo, staff_user):
     if not staff_user: return
-    title = "📋 Assigned to you: " + str(wo.work_order_no)
+    title = " Assigned to you: " + str(wo.work_order_no)
     item_name = req.working_item.name if req.working_item else "N/A"
     msg = ("Request: " + str(req.request_no) + " | WO: " + str(wo.work_order_no) +
            " | Location: " + str(req.location_name) + " | Item: " + str(item_name) +
@@ -396,6 +417,33 @@ def get_or_404(model, ident):
     return obj
 
 def valid_email(v): return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v or ""))
+
+# ══════════════════════════════════════════ NEW: Signature Helper
+def get_user_signature_profile(user):
+    """Returns the DepartmentSignature profile for the user's department.
+    Returns None if user has no department or no signature configured."""
+    if not user or not user.is_authenticated or not user.department_id:
+        return None
+    return DepartmentSignature.query.filter_by(
+        department_id=user.department_id, is_active=True
+    ).first()
+
+def validate_signature_for_user(user, signature_data):
+    """Backend validation: ensures signature_data is present and user has an authorized profile.
+    Returns (ok, error_message) tuple."""
+    if not user or not user.is_authenticated:
+        return False, "User not authenticated."
+    if not user.department_id:
+        return False, "Your account is not linked to a department. Contact admin."
+    profile = get_user_signature_profile(user)
+    if not profile:
+        return False, "No authorized signature configured for your department. Contact admin."
+    if not signature_data or not signature_data.strip():
+        return False, "Digital signature is required. Your request cannot be submitted without a verified department signature."
+    # Verify signature_data is a valid base64 PNG
+    if not signature_data.startswith("data:image/png;base64,"):
+        return False, "Invalid signature format."
+    return True, None
 
 def add_column_if_missing(table, column, sql):
     try:
@@ -434,6 +482,10 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
             add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
             add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT")
+            # ══════════════════════════════════════════ NEW: Signature verification columns
+            add_column_if_missing("maintenance_requests","signature_department","ALTER TABLE maintenance_requests ADD COLUMN signature_department VARCHAR(80)")
+            add_column_if_missing("maintenance_requests","signature_verified","ALTER TABLE maintenance_requests ADD COLUMN signature_verified BOOLEAN " + bd)
+            add_column_if_missing("maintenance_requests","signature_user_id","ALTER TABLE maintenance_requests ADD COLUMN signature_user_id INTEGER")
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
@@ -452,7 +504,7 @@ def ensure_database_schema():
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
-# ═════════════════════════════════════════ PAGE
+# ══════════════════════════════════════════ PAGE
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
@@ -565,181 +617,119 @@ if(document.getElementById('nav-bell')){poll();setInterval(poll,15000);}
 })();
 </script></body></html>"""
 
-# ═════════════════════════════════════════ SEED (ተሻሽሎ)
+# ═════════════════════════════════════════ SEED
 def seed_data():
-    # Departments
-    for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other"]:
+    # Departments (existing + NEW: SPA, GM)
+    for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other","SPA","GM"]:
         if not Department.query.filter_by(name=name).first():
             db.session.add(Department(name=name))
     db.session.commit()
-    
-    # Floors
+
     for f in [2,3,4,5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
-    
-    # Rooms
+
     if Room.query.count() == 0:
         for num in range(201, 301):
             floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
             db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
-    
-    # Areas
+
     for n, d in [("Buduchalley","F&B"),("Sillanto","Unknown"),("Fura","Unknown"),("Executive","Unknown"),("Mitima","Unknown"),("Odako","Unknown"),("Gudumale","Unknown"),("Bubble","Unknown"),("Bubbles","Unknown"),("Fura Corridor","Unknown"),("Executive Meeting Room","Unknown"),("Counter","Unknown")]:
-        if not Area.query.filter_by(name=n).first():
-            db.session.add(Area(name=n, department=d))
-    
-    # Categories
+        if not Area.query.filter_by(name=n).first(): db.session.add(Area(name=n, department=d))
+
     for c in ["Electrical","Plumbing","HVAC","Painting","Carpentry","Civil","Safety","General","Other"]:
-        if not Category.query.filter_by(name=c).first():
-            db.session.add(Category(name=c))
-    
-    # Working Items
+        if not Category.query.filter_by(name=c).first(): db.session.add(Category(name=c))
+
     for i in ["Light","Switch","Window","Door Key","Door Lock","Paint","Mirror","Drainage Cover","Frame","Background Frame","Spot Light","Plumbing","AC","Electrical","Other"]:
-        if not WorkingItem.query.filter_by(name=i).first():
-            db.session.add(WorkingItem(name=i))
-    
-    # Employees
-    for eid, n, t in [(1,"ተስሁን ከረ","General Mechanic"),(2,"ቸርነት አሞና","General Mechanic"),(3,"ስምዖን ሐንስ","General Mechanic"),(4,"አበባየ ክፍሌ","Supervisor"),(5,"አሚር አወል","Manager")]:
-        if not db.session.get(Employee, eid):
-            db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
-    
-    # Suppliers
+        if not WorkingItem.query.filter_by(name=i).first(): db.session.add(WorkingItem(name=i))
+
+    for eid, n, t in [(1,"ተስሁን ነረ","General Mechanic"),(2,"ርነት አሞና","General Mechanic"),(3,"ስምዖን ዮንስ","General Mechanic"),(4,"አበባየ ክፍ","Supervisor"),(5,"አሚር አወል","Manager")]:
+        if not db.session.get(Employee, eid): db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
+
     if Supplier.query.count() == 0:
         for s in ["ABC Maintenance Supply","Hawassa Engineering Supply","Rori Hotel Approved Supplier"]:
             db.session.add(Supplier(company_name=s, contact_person="", phone="", status="Active", is_active=True))
-    
-    # Inventory Parts (አዲስ!)
-    if InventoryPart.query.count() == 0:
-        parts_data = [
-            ("Light Bulb", "Electrical", 50, 10, "pcs", 2.5, "Store A"),
-            ("Door Handle", "Carpentry", 20, 5, "pcs", 15.0, "Store A"),
-            ("Paint Bucket", "Painting", 15, 5, "bucket", 45.0, "Store B"),
-            ("AC Filter", "HVAC", 30, 10, "pcs", 12.0, "Store C"),
-            ("Pipe Connector", "Plumbing", 40, 10, "pcs", 8.5, "Store A"),
-            ("Switch Plate", "Electrical", 25, 5, "pcs", 5.0, "Store B"),
-            ("Window Lock", "Carpentry", 18, 5, "pcs", 7.5, "Store A"),
-            ("Drain Cover", "Plumbing", 12, 5, "pcs", 18.0, "Store C"),
-        ]
-        for name, cat, qty, min_stock, unit, cost, location in parts_data:
-            db.session.add(InventoryPart(
-                part_name=name, category=cat, quantity=qty,
-                minimum_stock=min_stock, unit=unit, unit_cost=cost,
-                storage_location=location, status="Active"
-            ))
-    
-    # Users
+
     hk = Department.query.filter_by(name="Housekeeping").first()
     if not User.query.filter_by(username="admin").first():
-        u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
-        u.set_password("admin123")
-        db.session.add(u)
-    
+        u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local"); u.set_password("admin123"); db.session.add(u)
+
     for s in [
         {"u":"amir","n":"Amir Awel","r":"MANAGER","d":None},
         {"u":"kasahun","n":"Kasahun Girma","r":"MANAGER","d":hk.id if hk else None},
-        {"u":"abebayhu","n":"አበባየሁ ክፍሌ","r":"SUPERVISOR","d":None},
-        {"u":"tesfahun","n":"ተስሁን ነከረ","r":"TECHNICIAN","d":None},
+        {"u":"abebayhu","n":"አበባየሁ ክሌ","r":"SUPERVISOR","d":None},
+        {"u":"tesfahun","n":"ተስፋሁን ነከረ","r":"TECHNICIAN","d":None},
         {"u":"simon","n":"ስምዖን ዮሐንስ","r":"TECHNICIAN","d":None},
         {"u":"chernet","n":"ቸርነት አሞና","r":"TECHNICIAN","d":None},
-        {"u":"wale","n":"ሌ","r":"TECHNICIAN","d":None},
+        {"u":"wale","n":"ዋ","r":"TECHNICIAN","d":None},
         {"u":"tsadiku","n":"ፃዲቁ","r":"TECHNICIAN","d":None},
         {"u":"employee1","n":"Test Employee","r":"EMPLOYEE","d":None},
         {"u":"housekeeping","n":"Kassahun Girma","r":"DEPARTMENT","d":hk.id if hk else None},
     ]:
         ex = User.query.filter_by(username=s["u"]).first()
         if not ex:
-            u = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"])
+            u = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"]); u.set_password("123456"); db.session.add(u)
+        else:
+            ex.full_name = s["n"]; ex.role = s["r"]; ex.department_id = s["d"]
+
+    # ══════════════════════════════════════════ NEW: Add 7 new department users
+    dept_map = {
+        "it":       {"n": "To be configured later", "dept": "IT"},
+        "fnb":      {"n": "Bahilu Boja",            "dept": "Food & Beverage"},
+        "security": {"n": "Tariku Bekele",           "dept": "Security"},
+        "kitchen":  {"n": "Biruk Haile",             "dept": "Kitchen"},
+        "spa":      {"n": "Tesfaye Yohanes",         "dept": "SPA"},
+        "finance":  {"n": "Abel Yemane",             "dept": "Finance"},
+        "gm":       {"n": "Muluken Gedafew",         "dept": "GM"},
+    }
+    for uname, info in dept_map.items():
+        dept = Department.query.filter_by(name=info["dept"]).first()
+        if not dept:
+            print("⚠️ Department not found: " + info["dept"]); continue
+        ex = User.query.filter_by(username=uname).first()
+        if not ex:
+            u = User(username=uname, full_name=info["n"], role="DEPARTMENT",
+                     department_id=dept.id, email=uname + "@rorihotel.local")
             u.set_password("123456")
             db.session.add(u)
+            print("✅ Created user: " + uname + " (" + info["n"] + ") → " + info["dept"])
         else:
-            ex.full_name = s["n"]
-            ex.role = s["r"]
-            ex.department_id = s["d"]
-    
-    # Sample Maintenance Requests (አዲስ! - Dashboard data ለማሳየት)
-    if MaintenanceRequest.query.count() == 0:
-        admin = User.query.filter_by(username="admin").first()
-        amir = User.query.filter_by(username="amir").first()
-        tesfahun = User.query.filter_by(username="tesfahun").first()
-        hk_dept = Department.query.filter_by(name="Housekeeping").first()
-        eng_dept = Department.query.filter_by(name="Engineering").first()
-        room1 = Room.query.filter_by(room_number="201").first()
-        room2 = Room.query.filter_by(room_number="205").first()
-        light_item = WorkingItem.query.filter_by(name="Light").first()
-        ac_item = WorkingItem.query.filter_by(name="AC").first()
-        plumbing_item = WorkingItem.query.filter_by(name="Plumbing").first()
-        electrical_cat = Category.query.filter_by(name="Electrical").first()
-        hvac_cat = Category.query.filter_by(name="HVAC").first()
-        plumbing_cat = Category.query.filter_by(name="Plumbing").first()
-        
-        sample_requests = [
-            {"no": "R-202609200001-0001", "loc": "Room", "room": room1, "item": light_item, "cat": electrical_cat, "desc": "Light not working in room 201", "prio": "HIGH", "status": "Completed", "dept": hk_dept, "by": admin, "assigned": tesfahun, "days_ago": 5},
-            {"no": "R-202609210001-0002", "loc": "Room", "room": room2, "item": ac_item, "cat": hvac_cat, "desc": "AC not cooling properly", "prio": "URGENT", "status": "In Progress", "dept": eng_dept, "by": amir, "assigned": tesfahun, "days_ago": 2},
-            {"no": "R-202609220001-0003", "loc": "Room", "room": room1, "item": plumbing_item, "cat": plumbing_cat, "desc": "Bathroom sink leaking", "prio": "MEDIUM", "status": "Pending", "dept": hk_dept, "by": admin, "assigned": None, "days_ago": 1},
-            {"no": "R-202609230001-0004", "loc": "Room", "room": room2, "item": light_item, "cat": electrical_cat, "desc": "Switch not responding", "prio": "LOW", "status": "Approved", "dept": eng_dept, "by": amir, "assigned": None, "days_ago": 1},
-            {"no": "R-202609240001-0005", "loc": "Room", "room": room1, "item": ac_item, "cat": hvac_cat, "desc": "AC making strange noise", "prio": "HIGH", "status": "Verified", "dept": hk_dept, "by": admin, "assigned": tesfahun, "days_ago": 7},
-        ]
-        
-        for sr in sample_requests:
-            req = MaintenanceRequest(
-                request_no=sr["no"],
-                location_type=sr["loc"],
-                room_id=sr["room"].id if sr["room"] else None,
-                working_item_id=sr["item"].id if sr["item"] else None,
-                category_id=sr["cat"].id if sr["cat"] else None,
-                description=sr["desc"],
-                priority=sr["prio"],
-                status=sr["status"],
-                department_id=sr["dept"].id if sr["dept"] else None,
-                requested_by_id=sr["by"].id if sr["by"] else None,
-                assigned_to_id=sr["assigned"].id if sr["assigned"] else None,
-                created_at=datetime.utcnow() - timedelta(days=sr["days_ago"]),
-                signature_name=sr["by"].full_name if sr["by"] else "Admin",
-                signature_status="SIGNED",
-                signature_signed_at=datetime.utcnow() - timedelta(days=sr["days_ago"]),
-            )
-            if sr["status"] in ["Completed", "Verified"]:
-                req.completed_date = datetime.utcnow() - timedelta(days=sr["days_ago"]-1)
-            req.due_date = datetime.utcnow() + timedelta(hours=24)
-            db.session.add(req)
-    
-    # Sample Work Orders (አዲስ!)
-    if WorkOrder.query.count() == 0:
-        req1 = MaintenanceRequest.query.filter_by(request_no="R-202609200001-0001").first()
-        req2 = MaintenanceRequest.query.filter_by(request_no="R-202609210001-0002").first()
-        tesfahun = User.query.filter_by(username="tesfahun").first()
-        
-        if req1:
-            wo1 = WorkOrder(
-                work_order_no="WO-202609200001-0001",
-                request_id=req1.id,
-                assigned_to_id=tesfahun.id if tesfahun else None,
-                status="Completed",
-                work_performed="Replaced light bulb",
-                labor_hours=1.5,
-                completion_notes="Light fixed successfully",
-                created_at=datetime.utcnow() - timedelta(days=5),
-                completed_date=datetime.utcnow() - timedelta(days=4),
-            )
-            db.session.add(wo1)
-        
-        if req2:
-            wo2 = WorkOrder(
-                work_order_no="WO-202609210001-0002",
-                request_id=req2.id,
-                assigned_to_id=tesfahun.id if tesfahun else None,
-                status="In Progress",
-                work_performed="Checking AC unit",
-                labor_hours=2.0,
-                created_at=datetime.utcnow() - timedelta(days=2),
-            )
-            db.session.add(wo2)
-    
-    db.session.commit()
-    print("✅ Seed data loaded with sample requests and work orders")
+            ex.full_name = info["n"]
+            ex.role = "DEPARTMENT"
+            ex.department_id = dept.id
 
-# ═════════════════════════════════════════ AUTH
+    db.session.flush()
+
+    # ══════════════════════════════════════════ NEW: Department Signature Profiles
+    sig_configs = [
+        {"dept": "IT",              "name": "To be configured"},
+        {"dept": "Food & Beverage", "name": "Bahilu Boja"},
+        {"dept": "Security",        "name": "Tariku Bekele"},
+        {"dept": "Kitchen",         "name": "Biruk Haile"},
+        {"dept": "SPA",             "name": "Tesfaye Yohanes"},
+        {"dept": "Finance",         "name": "Abel Yemane"},
+        {"dept": "GM",              "name": "Muluken Gedafew"},
+        {"dept": "Housekeeping",    "name": "Kassahun Girma"},
+    ]
+    for cfg in sig_configs:
+        dept = Department.query.filter_by(name=cfg["dept"]).first()
+        if not dept: continue
+        existing = DepartmentSignature.query.filter_by(department_id=dept.id).first()
+        if not existing:
+            db.session.add(DepartmentSignature(
+                department_id=dept.id,
+                authorized_name=cfg["name"],
+                is_active=True
+            ))
+            print("✅ Signature profile: " + cfg["dept"] + " → " + cfg["name"])
+        else:
+            existing.authorized_name = cfg["name"]
+            existing.is_active = True
+
+    db.session.commit()
+    print("✅ Seed data loaded")
+
+# ══════════════════════════════════════════ AUTH
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -756,18 +746,23 @@ def login():
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
-        flash("የተሳሳተ መለያ ስም ወይም የይለፍ ቃል","danger")
+        flash("Incorrect username or password","danger")
     lh = """<div class="row justify-content-center align-items-center" style="min-height:80vh">
 <div class="col-11 col-md-5"><div class="login-card">
-<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">የገና ክል መግቢያ</p></div>
-<form method="post"><div class="mb-3"><label class="form-label">መለያ ስም</label><input type="text" class="form-control" name="username" required autofocus></div>
-<div class="mb-4"><label class="form-label">የይለፍ ል</label><input type="password" class="form-control" name="password" required></div>
-<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> ባ</button></form>
+<div class="text-center mb-4"><h3 class="fw-bold" style="color:#f59e0b"><i class="fas fa-hotel"></i> Rori Hotel</h3><p style="color:#94a3b8">Login</p></div>
+<form method="post"><div class="mb-3"><label class="form-label">Username</label><input type="text" class="form-control" name="username" required autofocus></div>
+<div class="mb-4"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required></div>
+<button class="btn btn-primary w-100"><i class="fas fa-sign-in-alt"></i> Login</button></form>
 <hr class="my-4" style="border-color:rgba(245,158,11,0.2)"><div class="text-center small" style="color:#94a3b8">
-<p class="mb-1">Manager (Amir): <b>amir / 123456</b></p>
-<p class="mb-1">HK Manager (Kasahun): <b>kasahun / 123456</b></p>
-<p class="mb-1">Housekeeping (Kassahun): <b>housekeeping / 123456</b></p>
-<p class="mb-0">Admin: <b>admin / admin123</b></p></div>
+<p class="mb-1">Admin: <b>admin / admin123</b></p>
+<p class="mb-1">F&B: <b>fnb / 123456</b></p>
+<p class="mb-1">Kitchen: <b>kitchen / 123456</b></p>
+<p class="mb-1">Security: <b>security / 123456</b></p>
+<p class="mb-1">SPA: <b>spa / 123456</b></p>
+<p class="mb-1">Finance: <b>finance / 123456</b></p>
+<p class="mb-1">GM: <b>gm / 123456</b></p>
+<p class="mb-1">IT: <b>it / 123456</b></p>
+<p class="mb-0">Housekeeping: <b>housekeeping / 123456</b></p></div>
 </div></div></div>"""
     return page("Login", lh)
 
@@ -784,17 +779,18 @@ def profile():
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
-        db.session.commit(); flash("መረጃዎ ተዘምኗል","success"); return redirect(url_for("profile"))
-    c = ('<h3 style="color:#f59e0b">👤 መገለጫ</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
+        db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
+    c = ('<h3 style="color:#f59e0b">👤 Profile</h3><div class="card"><h4>' + str(u.full_name) + '</h4>'
          '<p>@' + str(u.username) + ' · <span class="badge bg-warning text-dark">' + str(u.role) + '</span></p>'
-         '<p> ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p><hr>'
-         '<form method="post"><div class="mb-3"><label class="form-label">ኢሜይል</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
-         '<div class="mb-3"><label class="form-label">ስል</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
-         '<div class="mb-3"><label class="form-label">አዲስ የይለፍ ል</label><input type="password" class="form-control" name="new_password" placeholder="ዶ ከሆነ አይየርም"></div>'
-         '<button class="btn btn-primary"><i class="fas fa-save"></i> አስቀም</button></form></div>')
+         '<p>📧 ' + str(u.email or "—") + ' |  ' + str(u.phone or "—") + '</p>'
+         '<p>🏢 Department: <strong>' + str(u.department.name if u.department else "Not assigned") + '</strong></p><hr>'
+         '<form method="post"><div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
+         '<div class="mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
+         '<div class="mb-3"><label class="form-label">New Password</label><input type="password" class="form-control" name="new_password" placeholder="Leave blank to keep current"></div>'
+         '<button class="btn btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
 
-# ═════════════════════════════════════════ REQUESTS
+# ══════════════════════════════════════════ REQUESTS
 @app.route("/requests")
 @login_required
 def requests_list():
@@ -823,7 +819,7 @@ def requests_list():
         del_html = ""
         if is_mgr:
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" '
-                        'onsubmit="return confirm(\'⚠️ እርግጠኛ ነት? ይህ ጥያ ወደ Archived ዝርዝር ይገባል። ለመመለስ ከ Admin Menu ስጥ መለግ ያስፈልጋል\');">'
+                        'onsubmit="return confirm(\'️ Are you sure? This request will be archived.\');">'
                         '<input type="hidden" name="reason" value="Archived by manager">'
                         '<button type="submit" class="btn btn-sm btn-outline-danger" title="Archive"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:#f59e0b">' + str(r.request_no) + '</a></td>'
@@ -843,6 +839,7 @@ def requests_list():
          '</tbody></table></div></div>')
     return page("Requests", c)
 
+# ══════════════════════════════════════════ NEW/UPDATED: Request Create with Signature Validation
 @app.route("/requests/new", methods=["GET","POST"])
 @login_required
 def request_create():
@@ -852,6 +849,12 @@ def request_create():
     rooms = Room.query.order_by(Room.room_number).all()
     areas = Area.query.order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
+
+    # ══════════════════════════════════════════ Get user's signature profile
+    sig_profile = get_user_signature_profile(current_user)
+    user_dept_name = current_user.department.name if current_user.department else None
+    user_dept_id = current_user.department_id
+
     if request.method == "POST":
         try:
             lt = request.form.get("location_type","Room").strip() or "Room"
@@ -863,62 +866,92 @@ def request_create():
             prio = request.form.get("priority","MEDIUM")
             fl = request.form.get("floor", type=int)
             did = request.form.get("department_id", type=int)
-            if not did and current_user.department_id:
+
+            # ══════════════════════════════════════════ SECURITY: Force department to user's department
+            # Users cannot select another department - department is tied to authenticated user
+            if current_user.department_id:
                 did = current_user.department_id
-            if current_user.role == "DEPARTMENT" and current_user.department_id: did = current_user.department_id
-            if current_user.role == "EMPLOYEE" and not did and current_user.department_id: did = current_user.department_id
+            if current_user.role == "DEPARTMENT" and current_user.department_id:
+                did = current_user.department_id
+
             if lt == "Room" and rid:
                 rm = get_one(Room, rid)
                 if rm: fl = rm.floor
             elif lt == "Area": rid = None
             else: rid = None; aid = None
+
             if not desc:
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
+
+            # ══════════════════════════════════════════ BACKEND SIGNATURE VALIDATION
             sig_data = request.form.get("signature_data", "").strip()
-            if not sig_data:
-                flash("እባክ ፊርማዎን ይስሉ! (Signature is required)","danger")
+            sig_name_from_form = request.form.get("signature_name", "").strip()
+
+            ok, err = validate_signature_for_user(current_user, sig_data)
+            if not ok:
+                flash(err, "danger")
                 return redirect(url_for("request_create"))
+
+            # ══════════════════════════════════════════ Verify signature name matches authorized profile
+            if sig_profile and sig_name_from_form:
+                if sig_name_from_form != sig_profile.authorized_name:
+                    flash("Signature name mismatch. You cannot impersonate another department's authorized signature.", "danger")
+                    return redirect(url_for("request_create"))
+
+            authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
+
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
                 requested_by_id=current_user.id, department_id=did, awaiting_hk_approval=False,
-                signature_name=current_user.full_name,
+                # Signature fields
+                signature_name=authorized_name,
                 signature_status="SIGNED",
                 signature_signed_at=datetime.utcnow(),
-                signature_data=sig_data
+                signature_data=sig_data,
+                # ══════════════════════════════════════════ NEW: Verification fields
+                signature_department=user_dept_name,
+                signature_verified=True,
+                signature_user_id=current_user.id,
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
-            log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=current_user.full_name)
-            log_status_change(req.id,"Pending",notes="Created and signed by " + str(current_user.full_name))
+            log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=authorized_name + " @ " + str(user_dept_name))
+            log_status_change(req.id,"Pending",notes="Created and signed by " + str(authorized_name) + " (" + str(user_dept_name) + ")")
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 New Request",
-                         "Request " + str(req.request_no) + " from " + str(req.department.name if req.department else "N/A") + " is pending approval",
+                         "Request " + str(req.request_no) + " from " + str(user_dept_name or "N/A") + " is pending approval",
                          "New Request", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
-            flash("✅ Request created successfully!","success")
+            flash("✅ Request created successfully with verified digital signature!","success")
             return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
+
     fo = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
     ro = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
     ao = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
     io_ = "".join('<option value="' + str(i.id) + '">' + str(i.name) + '</option>' for i in items)
     co = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in cats)
     po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
-    show_d = current_user.role not in ["DEPARTMENT"] and not (current_user.role=="EMPLOYEE" and current_user.department_id)
-    dhtml = ""
-    if show_d:
-        dopt = "".join('<option value="' + str(d.id) + '">' + str(d.name) + '</option>' for d in depts)
-        dhtml = ('<div class="col-md-6 mb-3"><label class="form-label">Department</label>'
-                 '<select class="form-select" name="department_id"><option value="">-- Select --</option>' + dopt + '</select></div>')
+
+    # ══════════════════════════════════════════ Signature info for UI
+    sig_authorized_name = sig_profile.authorized_name if sig_profile else "Not configured"
+    sig_dept_display = user_dept_name or "Not assigned"
+    sig_warning = "" if sig_profile else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin before submitting requests.</div>'
+    sig_configured_class = "border-success" if sig_profile else "border-danger"
+
     c = ('<h3 style="color:#f59e0b"><i class="fas fa-plus-circle"></i> New Maintenance Request</h3>'
-         '<div class="card"><form method="post"><div class="row">'
+         + sig_warning +
+         '<div class="card"><form method="post" id="requestForm"><div class="row">'
          '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label>'
          '<select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
-         + dhtml +
+         # Department is auto-detected - show as read-only
+         '<div class="col-md-6 mb-3"><label class="form-label">Department (Auto-detected)</label>'
+         '<input type="text" class="form-control" value="' + str(sig_dept_display) + '" readonly style="background:rgba(34,197,94,0.1);border-color:#22c55e;color:#22c55e;font-weight:600">'
+         '<input type="hidden" name="department_id" value="' + str(user_dept_id or "") + '"></div>'
          '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label>'
          '<select class="form-select" name="room_id"><option value="">-- Select Room --</option>' + ro + '</select></div>'
          '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label>'
@@ -933,25 +966,55 @@ def request_create():
          '<select class="form-select" name="priority">' + po + '</select></div>'
          '<div class="col-12 mb-3"><label class="form-label">Description *</label>'
          '<textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
+
+         # ══════════════════════════════════════════ DIGITAL SIGNATURE SECTION
          '<div class="col-12 mb-3">'
-         '<label class="form-label">እባዎ ከዚህ ላይ ፊርማዎን ይስሉ (Your Signature) *</label>'
+         '<div class="card ' + sig_configured_class + '" style="background:rgba(34,197,94,0.05);border-width:2px">'
+         '<h5 style="color:#22c55e;margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature</h5>'
+         '<div class="row g-3">'
+         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(15,23,42,0.5);border-radius:10px">'
+         '<div style="font-size:.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Signed By (Authorized)</div>'
+         '<div style="font-size:1.1rem;font-weight:700;color:#f8fafc;margin-top:.25rem">' + str(sig_authorized_name) + '</div>'
+         '<input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '">'
+         '</div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(15,23,42,0.5);border-radius:10px">'
+         '<div style="font-size:.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Department</div>'
+         '<div style="font-size:1.1rem;font-weight:700;color:#f8fafc;margin-top:.25rem">' + str(sig_dept_display) + '</div>'
+         '</div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid #22c55e">'
+         '<div style="font-size:.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Signature Status</div>'
+         '<div id="sigStatusText" style="font-size:1rem;font-weight:700;color:#f59e0b;margin-top:.25rem"><i class="fas fa-hourglass-half"></i> Awaiting Signature</div>'
+         '</div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(15,23,42,0.5);border-radius:10px">'
+         '<div style="font-size:.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Requester</div>'
+         '<div style="font-size:1rem;font-weight:600;color:#f8fafc;margin-top:.25rem">' + str(current_user.full_name or current_user.username) + ' (@' + str(current_user.username) + ')</div>'
+         '</div></div>'
+         '</div>'
+         '<hr style="border-color:rgba(34,197,94,0.2);margin:1rem 0">'
+         '<label class="form-label" style="color:#22c55e;font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below *</label>'
          '<div style="border: 2px dashed rgba(245,158,11,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
          '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
          '</div>'
          '<div class="mt-2 d-flex gap-2">'
-         '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> ፊርማ ያጥፉ (Clear)</button>'
+         '<button type="button" class="btn btn-sm btn-secondary" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button>'
+         '<span id="sigHint" style="color:#94a3b8;font-size:.85rem;margin-left:.5rem">Please draw your signature above</span>'
          '</div>'
          '<input type="hidden" name="signature_data" id="signature-data">'
-         '</div>'
+         '</div></div>'
+
          '<div class="col-12 d-flex gap-2">'
          '<a href="' + url_for("index") + '" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>'
-         '<button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Request</button>'
+         '<button type="submit" class="btn btn-primary" id="submitBtn" disabled><i class="fas fa-paper-plane"></i> Submit Request</button>'
          '</div></div></form></div>'
+
          '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
          '<script>'
          '(function(){'
          'var canvas = document.getElementById("signature-pad");'
          'var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });'
+         'var submitBtn = document.getElementById("submitBtn");'
+         'var sigStatusText = document.getElementById("sigStatusText");'
+         'var sigHint = document.getElementById("sigHint");'
          'function resizeCanvas(){'
          'var ratio = Math.max(window.devicePixelRatio || 1, 1);'
          'canvas.width = canvas.offsetWidth * ratio;'
@@ -961,11 +1024,25 @@ def request_create():
          '}'
          'window.addEventListener("resize", resizeCanvas);'
          'resizeCanvas();'
-         'document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); });'
-         'document.querySelector("form").addEventListener("submit", function(e){'
+         'document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); updateSigStatus(); });'
+         'signaturePad.addEventListener("endStroke", updateSigStatus);'
+         'function updateSigStatus(){'
+         'if (signaturePad.isEmpty()){'
+         'sigStatusText.innerHTML = \'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';'
+         'sigStatusText.style.color = "#f59e0b";'
+         'sigHint.textContent = "Please draw your signature above";'
+         'submitBtn.disabled = true;'
+         '} else {'
+         'sigStatusText.innerHTML = \'<i class="fas fa-check-circle"></i> Signature Verified\';'
+         'sigStatusText.style.color = "#22c55e";'
+         'sigHint.textContent = "✓ Signature captured - ready to submit";'
+         'submitBtn.disabled = false;'
+         '}'
+         '}'
+         'document.querySelector("#requestForm").addEventListener("submit", function(e){'
          'if (signaturePad.isEmpty()){'
          'e.preventDefault();'
-         'alert("እባክዎ ፊርማዎን ይስሉ! (Please provide your signature)");'
+         'alert("️ Digital signature is required. Your request cannot be submitted without a verified department signature.");'
          'return false;'
          '}'
          'document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");'
@@ -1009,6 +1086,8 @@ def request_detail(req_id):
                     '<span class="badge bg-info">' + str(wo.status) + '</span> '
                     '<span style="color:#94a3b8;font-size:.85rem">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
     if not wo_html: wo_html = '<p style="color:#94a3b8">No work orders yet.</p>'
+
+    # ══════════════════════════════════════════ UPDATED: Signature Card with Verification
     sig_html = ""
     if req.signature_status == "SIGNED":
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "N/A"
@@ -1016,15 +1095,33 @@ def request_detail(req_id):
         if req.signature_data:
             sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid #ddd;"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>'
         else:
-            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(ምንም የፊርማ ምስል አልተጫነም)</div>'
+            sig_image_html = '<div style="margin-top:10px; color:#94a3b8;">(No signature image stored)</div>'
+        verified_badge = ""
+        if req.signature_verified:
+            verified_badge = '<span class="badge" style="background:#22c55e;color:#fff;margin-left:.5rem"><i class="fas fa-check-circle"></i> Verified</span>'
+        else:
+            verified_badge = '<span class="badge" style="background:#f59e0b;color:#000;margin-left:.5rem"><i class="fas fa-exclamation"></i> Unverified</span>'
         sig_html = ('<div class="card" style="border: 1px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); margin-top:1rem;">'
-                    '<h6 style="color:#22c55e; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE</h6>'
-                    '<div style="font-size:1.1rem; font-weight:600; color:#f8fafc; margin-bottom:0.5rem;">' + str(req.signature_name or "Unknown") + '</div>'
-                    '<div style="border-bottom: 1px dashed rgba(245,158,11,0.3); margin-bottom:0.75rem;"></div>'
+                    '<h6 style="color:#22c55e; margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE ' + verified_badge + '</h6>'
+                    '<div class="row g-3">'
+                    '<div class="col-md-6"><div style="padding:.6rem;background:rgba(15,23,42,0.5);border-radius:8px">'
+                    '<div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase">Signed By</div>'
+                    '<div style="font-size:1rem;font-weight:700;color:#f8fafc">' + str(req.signature_name or "Unknown") + '</div>'
+                    '</div></div>'
+                    '<div class="col-md-6"><div style="padding:.6rem;background:rgba(15,23,42,0.5);border-radius:8px">'
+                    '<div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase">Department</div>'
+                    '<div style="font-size:1rem;font-weight:700;color:#f8fafc">' + str(req.signature_department or req.department.name if req.department else "N/A") + '</div>'
+                    '</div></div>'
+                    '<div class="col-md-6"><div style="padding:.6rem;background:rgba(15,23,42,0.5);border-radius:8px">'
+                    '<div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase">Signed At</div>'
+                    '<div style="font-size:.95rem;font-weight:600;color:#f8fafc">' + sig_time + '</div>'
+                    '</div></div>'
+                    '<div class="col-md-6"><div style="padding:.6rem;background:rgba(15,23,42,0.5);border-radius:8px">'
+                    '<div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase">Verification Status</div>'
+                    '<div style="font-size:.95rem;font-weight:600;color:' + ('#22c55e' if req.signature_verified else '#f59e0b') + '">' + ('✓ Verified' if req.signature_verified else '⚠ Unverified') + '</div>'
+                    '</div></div>'
+                    '</div>'
                     + sig_image_html +
-                    '<div style="color:#22c55e; font-weight:600; margin-top:1rem; margin-bottom:0.25rem;"><i class="fas fa-check-circle"></i> በይፋ የተፈረመ (Officially Signed)</div>'
-                    '<div style="color:#94a3b8; font-size:0.85rem;">Department: ' + str(req.department.name if req.department else "N/A") + '</div>'
-                    '<div style="color:#94a3b8; font-size:0.85rem;">Signed: ' + sig_time + '</div>'
                     '</div>')
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
@@ -1039,7 +1136,7 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn btn-secondary"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'️ እርግጠ ነዎት? ይህ ያቄ ወደ Archived ዝርዝር ይገል!\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'⚠️ Are you sure?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-danger"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions) if actions else ""
     c = ('<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">'
          '<h3 style="color:#f59e0b;margin:0"><i class="fas fa-clipboard-list"></i> ' + str(req.request_no) + '</h3>'
@@ -1164,7 +1261,7 @@ def request_restore(req_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("deleted_requests"))
 
-# ═════════════════════════════════════════ ANALYTICS
+# ══════════════════════════════════════════ ANALYTICS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
 PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
@@ -1368,7 +1465,7 @@ def get_inventory_summary():
     val = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
 
-# ═════════════════════════════════════════ DASHBOARD
+# ══════════════════════════════════════════ DASHBOARD
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -1407,7 +1504,7 @@ def dashboard():
                                   technician_workload=tech_workload, dept_completion=dept_completion,
                                   current_user=current_user)
 
-# ═════════════════════════════════════════ DASHBOARD TEMPLATE
+# DASHBOARD_TEMPLATE (kept as-is from existing code - unchanged)
 DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Manager Dashboard | Rori Hotel</title>
@@ -1638,7 +1735,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">{{ inventory.total_value }}</span></div></div>
 </div>
 </div>
 </div>
@@ -1804,7 +1901,7 @@ def department_dashboard():
          '</table></div></div>')
     return page("Department Dashboard", c)
 
-# ═════════════════════════════════════════ EMPLOYEE DASHBOARD
+# ══════════════════════════════════════════ EMPLOYEE DASHBOARD
 @app.route("/employee/dashboard")
 @login_required
 @role_required("EMPLOYEE")
@@ -1829,7 +1926,7 @@ def employee_dashboard():
          '</table></div></div>')
     return page("Employee Dashboard", c)
 
-# ═════════════════════════════════════════ WORK ORDERS
+# ══════════════════════════════════════════ WORK ORDERS (kept as-is)
 @app.route("/workorders")
 @login_required
 def workorders_list():
@@ -1942,7 +2039,7 @@ def workorder_detail(wo_id):
             actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn btn-success mb-2 w-100"><i class="fas fa-check"></i> Complete Work</a>'
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
         actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn btn-info mb-2 w-100"><i class="fas fa-check-double"></i> ✅ Verify</button></form>'
-    c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b">🔧 Work Order ' + str(wo.work_order_no) + '</h3>'
+    c = ('<div class="d-flex justify-content-between mb-3"><h3 style="color:#f59e0b"> Work Order ' + str(wo.work_order_no) + '</h3>'
          '<a href="' + url_for("workorders_list") + '" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a></div>'
          '<div class="row"><div class="col-md-8"><div class="card"><table class="table">'
          '<tr><th style="width:150px;color:#94a3b8">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr>'
@@ -2010,7 +2107,7 @@ def workorder_complete(wo_id):
                              "Request " + str(wo.request.request_no) + " completed", "Completed",
                              link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Completed! Waiting for verification.","success")
-            return redirect(url_for("workorder_detail", wo_id=wo_id))
+            return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e:
             db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
     c = ('<h3 style="color:#f59e0b">Complete Work Order ' + str(wo.work_order_no) + '</h3>'
@@ -2042,7 +2139,7 @@ def workorder_verify(wo_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
 
-# ═════════════════════════════════════════ SUPPLIERS
+# ══════════════════════════════════════════ SUPPLIERS (kept as-is)
 def supplier_active(s):
     if s is None: return True
     if s.is_active is not None: return s.is_active
@@ -2148,7 +2245,7 @@ def supplier_deactivate(supplier_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("suppliers_list"))
 
-# ═════════════════════════════════════════ INVENTORY
+# ══════════════════════════════════════════ INVENTORY (kept as-is)
 def part_form(p, action):
     def v(f, d=""):
         if p:
@@ -2219,7 +2316,7 @@ def inventory_edit(part_id):
             db.session.rollback(); flash("Error: " + str(e),"danger")
     return page("Edit Part", part_form(p, url_for("inventory_edit", part_id=p.id)))
 
-# ═════════════════════════════════════════ WORK ORDER PARTS
+# ══════════════════════════════════════════ WORK ORDER PARTS (kept as-is)
 def can_parts(wo):
     return (current_user.role in ["MANAGER","ADMIN"] or
             (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
@@ -2276,7 +2373,7 @@ def workorder_part_remove(wo_id, part_id):
         db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
-# ════════════════════════════════════════ NOTIFICATIONS
+# ═════════════════════════════════════════ NOTIFICATIONS (kept as-is)
 @app.route("/api/notifications/unread")
 @login_required
 def api_unread():
@@ -2318,7 +2415,7 @@ def notification_mark_read(n_id):
     except Exception as e: flash("Error: " + str(e),"danger")
     return redirect(url_for("notifications"))
 
-# ═════════════════════════════════════════ OTHER PAGES
+# ══════════════════════════════════════════ OTHER PAGES (kept as-is)
 @app.route("/rooms")
 @role_required("ADMIN","MANAGER")
 def rooms_list():
@@ -2425,7 +2522,7 @@ def reports():
          '</div>')
     return page("Reports", c)
 
-# ═════════════════════════════════════════ DEBUG
+# ══════════════════════════════════════════ DEBUG
 @app.route("/debug")
 def debug():
     return jsonify({
@@ -2434,12 +2531,16 @@ def debug():
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "work_orders": WorkOrder.query.count(),
         "notifications": Notification.query.count(),
+        "department_signatures": DepartmentSignature.query.count(),
         "managers": [{"username": u.username, "full_name": u.full_name, "role": u.role,
                       "dept": u.department.name if u.department else None}
                      for u in User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()],
+        "department_users": [{"username": u.username, "full_name": u.full_name, "role": u.role,
+                              "dept": u.department.name if u.department else None}
+                             for u in User.query.filter_by(role="DEPARTMENT").all()],
     })
 
-# ═════════════════════════════════════════ PWA / LOGO
+# ══════════════════════════════════════════ PWA / LOGO
 @app.route("/manifest.json")
 def manifest():
     return jsonify({"name": "Rori Hotel Maintenance","short_name": "RoriMaint","start_url": "/dashboard",
@@ -2455,7 +2556,7 @@ def logo():
     if os.path.exists(p): return send_file(p, mimetype="image/png")
     return Response("", mimetype="image/png")
 
-# ═════════════════════════════════════════ ERRORS
+# ══════════════════════════════════════════ ERRORS
 @app.errorhandler(403)
 def e403(e): return page("Forbidden",'<div class="alert alert-danger">Access denied.</div>'), 403
 @app.errorhandler(404)
@@ -2467,7 +2568,7 @@ def e500(e):
     tb = traceback.format_exc(); print("500 ERROR: " + tb)
     return "<h1>500 Error</h1><pre>" + tb + "</pre>", 500
 
-# ═════════════════════════════════════════ INIT
+# ══════════════════════════════════════════ INIT
 with app.app_context():
     ensure_database_schema()
     seed_data()
