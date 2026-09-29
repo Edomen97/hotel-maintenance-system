@@ -1,11 +1,12 @@
-# app.py - Rori Hotel Maintenance Management System (FIXED REPORTS MODULE)
+# app.py - Rori Hotel Maintenance Management System (COMPLETE FIXED VERSION)
 import csv, io, json, os, re, sqlite3, uuid, traceback, calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text, inspect, func, case
 from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-                   render_template, render_template_string, request, send_file, url_for, Response, make_response)
+                   render_template, render_template_string, request, send_file,
+                   url_for, Response, make_response)
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
@@ -475,7 +476,7 @@ def ensure_database_schema():
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
-# ══════════════════════════════════════════ PAGE TEMPLATE (Dark Theme)
+# ══════════════════════════════════════════ PAGE TEMPLATE
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
@@ -499,6 +500,7 @@ def page(title, content):
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         else:
             nav = [('<i class="fas fa-tachometer-alt"></i> Dashboard', url_for('dashboard')),
+                   ('<i class="fas fa-fire-extinguisher"></i> Central Maintenance', url_for('central_maintenance')),
                    ('<i class="fas fa-plus-circle"></i> New Request', url_for('request_create')),
                    ('<i class="fas fa-clipboard-list"></i> Requests', url_for('requests_list')),
                    ('<i class="fas fa-tasks"></i> Work Orders', url_for('workorders_list')),
@@ -515,35 +517,33 @@ def page(title, content):
                     ('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
         elif r == "MANAGER":
             nav += [('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
-            
         nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
                 ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
                 ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                 ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
-    
+
     nav_html = "".join('<li><a class="nav-link" href="' + str(u) + '">' + str(l) + '</a></li>' for l, u in nav)
-    
+
     bell_html = ""
     sound_toggle = ""
     if current_user.is_authenticated:
         unread = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
         badge = '<span class="notif-badge">' + str(unread) + '</span>' if unread > 0 else ""
         bell_html = '<a class="header-icon" href="' + url_for('notifications') + '" style="position:relative;"><i class="fas fa-bell"></i>' + badge + '</a>'
-        
         if current_user.role in ["ADMIN", "MANAGER"]:
             sound_toggle = '''
             <div class="sound-control">
+                <button class="btn-icon" onclick="roriEnableAlerts()" title="Enable Alerts"><i class="fas fa-bell"></i></button>
                 <button class="btn-icon" onclick="roriToggleSound(true)" title="Sound ON"><i class="fas fa-volume-up"></i></button>
                 <button class="btn-icon" onclick="roriToggleSound(false)" title="Sound OFF"><i class="fas fa-volume-mute"></i></button>
                 <button class="btn-icon" onclick="roriTestSound()" title="Test Sound"><i class="fas fa-play"></i></button>
             </div>
             '''
-    
+
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
-    
-    # ── Auth-safe header profile block ──
+
     if current_user.is_authenticated:
         _display_name = current_user.full_name or current_user.username or "User"
         _avatar_letter = _display_name[0].upper() if _display_name else "U"
@@ -558,545 +558,299 @@ def page(title, content):
         )
     else:
         user_profile_html = ''
-    
+
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root {
-    --rori-gold: #C5A059;
-    --rori-gold-dark: #A8873F;
-    --bg-primary: #0B0B12;
-    --bg-secondary: #11111B;
-    --bg-card: #151522;
-    --bg-card-hover: #1B1B2A;
-    --border-color: rgba(197,160,89,0.20);
-    --text-primary: #FFFFFF;
-    --text-secondary: #A7A7B3;
-    --success: #22C55E;
-    --warning: #F59E0B;
-    --danger: #EF4444;
-    --info: #38BDF8;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    min-height: 100vh;
-    padding-top: 70px;
-}
-
-/* HEADER */
-.header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 70px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 2rem;
-    z-index: 1000;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-
-.header-left { display: flex; align-items: center; gap: 1rem; }
-
-.logo {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: var(--rori-gold);
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.logo i { font-size: 1.8rem; }
-
-.header-right { display: flex; align-items: center; gap: 1.5rem; }
-
-.header-icon {
-    color: var(--text-secondary);
-    font-size: 1.2rem;
-    text-decoration: none;
-    position: relative;
-    transition: color 0.3s;
-}
-
-.header-icon:hover { color: var(--rori-gold); }
-
-.notif-badge {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    background: var(--danger);
-    color: white;
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 10px;
-    min-width: 18px;
-    text-align: center;
-}
-
-.user-profile { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
-
-.user-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    color: white;
-}
-
-.user-info { display: flex; flex-direction: column; }
-.user-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
-.user-role { font-size: 0.75rem; color: var(--text-secondary); }
-
-.sound-control { display: flex; gap: 0.5rem; }
-
-.btn-icon {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.btn-icon:hover {
-    background: var(--bg-card-hover);
-    color: var(--rori-gold);
-    border-color: var(--rori-gold);
-}
-
-/* SIDEBAR */
-.sidebar {
-    position: fixed;
-    left: 0;
-    top: 70px;
-    bottom: 0;
-    width: 260px;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
-    padding: 1.5rem 0;
-    overflow-y: auto;
-    z-index: 999;
-    transition: transform 0.3s;
-}
-
-.sidebar-nav { list-style: none; }
-.sidebar-nav li { margin: 0.25rem 0; }
-
-.sidebar-nav .nav-link {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.85rem 1.5rem;
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: all 0.3s;
-    border-left: 3px solid transparent;
-}
-
-.sidebar-nav .nav-link:hover {
-    background: var(--bg-card);
-    color: var(--text-primary);
-    border-left-color: var(--rori-gold);
-}
-
-.sidebar-nav .nav-link.active {
-    background: rgba(197,160,89,0.1);
-    color: var(--rori-gold);
-    border-left-color: var(--rori-gold);
-}
-
-.sidebar-nav .nav-link i { width: 20px; text-align: center; }
-
-/* MAIN CONTENT */
-.main-content {
-    margin-left: 260px;
-    padding: 2rem;
-    min-height: calc(100vh - 70px);
-}
-
-/* PAGE TITLE */
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.page-title h1 {
-    font-size: 1.8rem;
-    font-weight: 800;
-    color: var(--text-primary);
-    margin-bottom: 0.25rem;
-}
-
-.page-title h1 span { color: var(--rori-gold); }
-.page-title p { font-size: 0.9rem; color: var(--text-secondary); }
-
-.btn-primary {
-    background: linear-gradient(135deg, var(--rori-gold), var(--rori-gold-dark));
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.3s;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(197,160,89,0.3);
-}
-
-/* KPI CARDS */
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-}
-
-.kpi-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
-    padding: 1.5rem;
-    transition: all 0.3s;
-    position: relative;
-    overflow: hidden;
-}
-
-.kpi-card:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--rori-gold);
-    transform: translateY(-4px);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.4);
-}
-
-.kpi-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--rori-gold), transparent);
-}
-
-.kpi-icon { font-size: 2rem; color: var(--rori-gold); margin-bottom: 1rem; }
-.kpi-value { font-size: 2.5rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.5rem; }
-.kpi-label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-.kpi-trend { font-size: 0.8rem; margin-top: 0.5rem; color: var(--success); }
-.kpi-trend.negative { color: var(--danger); }
-
-/* CARDS */
-.card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-
-.card-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.card-title i { color: var(--rori-gold); }
-
-/* CHART CONTAINERS */
-.chart-container { position: relative; height: 300px; }
-.chart-container.tall { height: 400px; }
-
-/* TABLES */
-.table { width: 100%; border-collapse: collapse; }
-
-.table thead th {
-    background: var(--bg-secondary);
-    color: var(--rori-gold);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 1rem;
-    text-align: left;
-    border-bottom: 2px solid var(--border-color);
-}
-
-.table tbody td {
-    padding: 1rem;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-primary);
-    font-size: 0.9rem;
-}
-
-.table tbody tr:hover { background: var(--bg-card-hover); }
-
-/* BADGES */
-.badge {
-    padding: 0.4rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    display: inline-block;
-}
-
-.badge-success { background: rgba(34,197,94,0.2); color: var(--success); }
-.badge-warning { background: rgba(245,158,11,0.2); color: var(--warning); }
-.badge-danger { background: rgba(239,68,68,0.2); color: var(--danger); }
-.badge-info { background: rgba(56,189,248,0.2); color: var(--info); }
-.badge-secondary { background: rgba(167,167,179,0.2); color: var(--text-secondary); }
-
-/* ALERTS */
-.alert {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1rem 1.5rem;
-    margin-bottom: 1rem;
-    color: var(--text-primary);
-}
-
-.alert-success { border-left: 4px solid var(--success); }
-.alert-danger { border-left: 4px solid var(--danger); }
-.alert-warning { border-left: 4px solid var(--warning); }
-.alert-info { border-left: 4px solid var(--info); }
-
-/* FORMS */
-.form-control, .form-select {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    color: var(--text-primary);
-    padding: 0.75rem 1rem;
-    font-size: 0.9rem;
-}
-
-.form-control:focus, .form-select:focus {
-    background: var(--bg-card-hover);
-    border-color: var(--rori-gold);
-    box-shadow: 0 0 0 3px rgba(197,160,89,0.15);
-    color: var(--text-primary);
-}
-
-.form-label {
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-size: 0.85rem;
-    margin-bottom: 0.5rem;
-}
-
-/* MOBILE MENU TOGGLE */
-.menu-toggle {
-    display: none;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    cursor: pointer;
-}
-
-/* RESPONSIVE */
-@media (max-width: 1024px) {
-    .sidebar { transform: translateX(-100%); }
-    .sidebar.active { transform: translateX(0); }
-    .main-content { margin-left: 0; }
-    .menu-toggle { display: block; }
-}
-
-@media (max-width: 768px) {
-    .header { padding: 0 1rem; }
-    .user-info { display: none; }
-    .main-content { padding: 1rem; }
-    .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
-    .kpi-value { font-size: 2rem; }
-    .page-header { flex-direction: column; align-items: flex-start; }
-}
-
-/* ANIMATIONS */
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.pulse { animation: pulse 2s infinite; }
-
-@keyframes slideIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.card { animation: slideIn 0.5s ease-out; }
-
-/* SCROLLBAR */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--bg-secondary); }
-::-webkit-scrollbar-thumb { background: var(--rori-gold); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--rori-gold-dark); }
-
-/* PRINT STYLES */
-@media print {
-    body { background: #fff !important; color: #000 !important; padding-top: 0 !important; }
-    .header, .sidebar, .no-print { display: none !important; }
-    .main-content { margin-left: 0 !important; padding: 0 !important; }
-    .card { border: 1px solid #ddd !important; box-shadow: none !important; background: #fff !important; color: #000 !important; break-inside: avoid; }
-    .kpi-card { border: 1px solid #ddd !important; background: #f9f9f9 !important; }
-    .table thead th { background: #eee !important; color: #000 !important; }
-    .table tbody td { color: #000 !important; border-bottom: 1px solid #ddd !important; }
-    h1, h2, h3, h4, h5, h6 { color: #000 !important; }
-    .badge { border: 1px solid #ccc !important; color: #000 !important; background: transparent !important; }
-}
+:root{--rori-gold:#C5A059;--rori-gold-dark:#A8873F;--bg-primary:#0B0B12;--bg-secondary:#11111B;--bg-card:#151522;--bg-card-hover:#1B1B2A;--border-color:rgba(197,160,89,0.20);--text-primary:#FFFFFF;--text-secondary:#A7A7B3;--success:#22C55E;--warning:#F59E0B;--danger:#EF4444;--info:#38BDF8}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);color:var(--text-primary);min-height:100vh;padding-top:70px}
+.header{position:fixed;top:0;left:0;right:0;height:70px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;padding:0 2rem;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
+.header-left{display:flex;align-items:center;gap:1rem}
+.logo{font-size:1.5rem;font-weight:800;color:var(--rori-gold);text-decoration:none;display:flex;align-items:center;gap:0.5rem}
+.logo i{font-size:1.8rem}
+.header-right{display:flex;align-items:center;gap:1.5rem}
+.header-icon{color:var(--text-secondary);font-size:1.2rem;text-decoration:none;position:relative;transition:color 0.3s}
+.header-icon:hover{color:var(--rori-gold)}
+.notif-badge{position:absolute;top:-8px;right:-8px;background:var(--danger);color:white;font-size:0.7rem;font-weight:700;padding:2px 6px;border-radius:10px;min-width:18px;text-align:center}
+.user-profile{display:flex;align-items:center;gap:0.75rem;cursor:pointer}
+.user-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-dark));display:flex;align-items:center;justify-content:center;font-weight:700;color:white}
+.user-info{display:flex;flex-direction:column}
+.user-name{font-weight:600;font-size:0.9rem;color:var(--text-primary)}
+.user-role{font-size:0.75rem;color:var(--text-secondary)}
+.sound-control{display:flex;gap:0.5rem}
+.btn-icon{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);width:36px;height:36px;border-radius:8px;cursor:pointer;transition:all 0.3s}
+.btn-icon:hover{background:var(--bg-card-hover);color:var(--rori-gold);border-color:var(--rori-gold)}
+.sidebar{position:fixed;left:0;top:70px;bottom:0;width:260px;background:var(--bg-secondary);border-right:1px solid var(--border-color);padding:1.5rem 0;overflow-y:auto;z-index:999;transition:transform 0.3s}
+.sidebar-nav{list-style:none}
+.sidebar-nav li{margin:0.25rem 0}
+.sidebar-nav .nav-link{display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1.5rem;color:var(--text-secondary);text-decoration:none;font-size:0.9rem;font-weight:500;transition:all 0.3s;border-left:3px solid transparent}
+.sidebar-nav .nav-link:hover{background:var(--bg-card);color:var(--text-primary);border-left-color:var(--rori-gold)}
+.sidebar-nav .nav-link.active{background:rgba(197,160,89,0.1);color:var(--rori-gold);border-left-color:var(--rori-gold)}
+.sidebar-nav .nav-link i{width:20px;text-align:center}
+.main-content{margin-left:260px;padding:2rem;min-height:calc(100vh - 70px)}
+.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem}
+.page-title h1{font-size:1.8rem;font-weight:800;color:var(--text-primary);margin-bottom:0.25rem}
+.page-title h1 span{color:var(--rori-gold)}
+.page-title p{font-size:0.9rem;color:var(--text-secondary)}
+.btn-primary{background:linear-gradient(135deg,var(--rori-gold),var(--rori-gold-dark));color:white;border:none;padding:0.75rem 1.5rem;border-radius:10px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.3s;text-decoration:none;display:inline-flex;align-items:center;gap:0.5rem}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(197,160,89,0.3)}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem;margin-bottom:2rem}
+.kpi-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:1.5rem;transition:all 0.3s;position:relative;overflow:hidden}
+.kpi-card:hover{background:var(--bg-card-hover);border-color:var(--rori-gold);transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.4)}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--rori-gold),transparent)}
+.kpi-icon{font-size:2rem;color:var(--rori-gold);margin-bottom:1rem}
+.kpi-value{font-size:2.5rem;font-weight:800;color:var(--text-primary);margin-bottom:0.5rem}
+.kpi-label{font-size:0.85rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:1.5rem;margin-bottom:1.5rem}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
+.card-title{font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:0.5rem}
+.card-title i{color:var(--rori-gold)}
+.table{width:100%;border-collapse:collapse}
+.table thead th{background:var(--bg-secondary);color:var(--rori-gold);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;padding:1rem;text-align:left;border-bottom:2px solid var(--border-color)}
+.table tbody td{padding:1rem;border-bottom:1px solid var(--border-color);color:var(--text-primary);font-size:0.9rem}
+.table tbody tr:hover{background:var(--bg-card-hover)}
+.badge{padding:0.4rem 0.8rem;border-radius:20px;font-size:0.75rem;font-weight:600;display:inline-block}
+.badge-success{background:rgba(34,197,94,0.2);color:var(--success)}
+.badge-warning{background:rgba(245,158,11,0.2);color:var(--warning)}
+.badge-danger{background:rgba(239,68,68,0.2);color:var(--danger)}
+.badge-info{background:rgba(56,189,248,0.2);color:var(--info)}
+.badge-secondary{background:rgba(167,167,179,0.2);color:var(--text-secondary)}
+.badge-primary{background:rgba(56,189,248,0.2);color:var(--info)}
+.alert{background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:1rem 1.5rem;margin-bottom:1rem;color:var(--text-primary)}
+.alert-success{border-left:4px solid var(--success)}
+.alert-danger{border-left:4px solid var(--danger)}
+.alert-warning{border-left:4px solid var(--warning)}
+.alert-info{border-left:4px solid var(--info)}
+.form-control,.form-select{background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;color:var(--text-primary);padding:0.75rem 1rem;font-size:0.9rem}
+.form-control:focus,.form-select:focus{background:var(--bg-card-hover);border-color:var(--rori-gold);box-shadow:0 0 0 3px rgba(197,160,89,0.15);color:var(--text-primary)}
+.form-label{color:var(--text-secondary);font-weight:500;font-size:0.85rem;margin-bottom:0.5rem}
+.menu-toggle{display:none;background:none;border:none;color:var(--text-primary);font-size:1.5rem;cursor:pointer}
+@media(max-width:1024px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0}.menu-toggle{display:block}}
+@media(max-width:768px){.header{padding:0 1rem}.user-info{display:none}.main-content{padding:1rem}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem}.kpi-value{font-size:2rem}.page-header{flex-direction:column;align-items:flex-start}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.pulse{animation:pulse 2s infinite}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:var(--bg-secondary)}
+::-webkit-scrollbar-thumb{background:var(--rori-gold);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--rori-gold-dark)}
+.rpro-section{margin-bottom:1.5rem}
+.rpro-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:1.25rem 1.5rem;margin-bottom:1rem}
+.rpro-card-title{font-size:.78rem;font-weight:700;color:var(--rori-gold);text-transform:uppercase;letter-spacing:.8px;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+.rpro-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
+.rpro-kv-label{font-size:.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:.25rem}
+.rpro-kv-value{font-size:.95rem;color:var(--text-primary);font-weight:600;word-break:break-word}
+.rpro-kv-value.mono{font-family:'Courier New',monospace;color:var(--rori-gold)}
+.rpro-timeline{position:relative;padding-left:2rem}
+.rpro-timeline::before{content:'';position:absolute;left:.55rem;top:.25rem;bottom:.25rem;width:2px;background:linear-gradient(180deg,var(--rori-gold),var(--border-color))}
+.rpro-timeline-item{position:relative;padding-bottom:1.25rem}
+.rpro-timeline-item:last-child{padding-bottom:0}
+.rpro-timeline-dot{position:absolute;left:-1.75rem;top:.35rem;width:14px;height:14px;border-radius:50%;background:var(--rori-gold);border:3px solid var(--bg-card);box-shadow:0 0 0 2px var(--rori-gold)}
+.rpro-timeline-status{font-size:.85rem;font-weight:700;color:var(--rori-gold);text-transform:uppercase;letter-spacing:.4px}
+.rpro-timeline-meta{font-size:.75rem;color:var(--text-secondary);margin-top:.15rem}
+.rpro-timeline-note{font-size:.85rem;color:var(--text-primary);margin-top:.35rem;padding:.5rem .75rem;background:var(--bg-secondary);border-radius:8px;border-left:2px solid var(--rori-gold)}
+.rpro-sig-box{background:#fff;padding:1rem;border-radius:12px;border:2px solid var(--success);display:inline-block;max-width:100%}
+.rpro-sig-box img{max-width:280px;max-height:120px;display:block}
+.rpro-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem}
+.rpro-room-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:1rem;transition:transform .15s,border-color .15s}
+.rpro-room-card:hover{transform:translateY(-3px);border-color:var(--rori-gold)}
+.rpro-room-num{font-size:1.5rem;font-weight:800;color:var(--rori-gold);line-height:1}
+.rpro-room-floor{font-size:.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-top:.15rem}
+.rpro-room-stats{display:flex;gap:.5rem;margin-top:.65rem;flex-wrap:wrap}
+.rpro-chip{font-size:.68rem;padding:.2rem .55rem;border-radius:20px;font-weight:600;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-secondary)}
+.rpro-chip.gold{background:rgba(197,160,89,.15);color:var(--rori-gold);border-color:rgba(197,160,89,.4)}
+.rpro-chip.green{background:rgba(34,197,94,.15);color:var(--success);border-color:rgba(34,197,94,.4)}
+.rpro-chip.orange{background:rgba(245,158,11,.15);color:var(--warning);border-color:rgba(245,158,11,.4)}
+.rpro-chip.red{background:rgba(239,68,68,.15);color:var(--danger);border-color:rgba(239,68,68,.4)}
+.rpro-chip.blue{background:rgba(56,189,248,.15);color:var(--info);border-color:rgba(56,189,248,.4)}
+.rpro-toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:1rem;margin-bottom:1.5rem}
+.rpro-toolbar .form-control,.rpro-toolbar .form-select{min-width:140px;flex:1}
+.area-toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.5rem;background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:1rem}
+.area-toolbar .form-control,.area-toolbar .form-select{min-width:160px;flex:1}
+.area-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem}
+.area-card{position:relative;background:var(--bg-card);border:1px solid var(--border-color);border-radius:18px;padding:1.25rem;transition:transform .18s,border-color .18s,box-shadow .18s;overflow:hidden;display:flex;flex-direction:column;gap:.75rem}
+.area-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--rori-gold),transparent)}
+.area-card:hover{transform:translateY(-4px);border-color:var(--rori-gold);box-shadow:0 14px 32px rgba(0,0,0,.45)}
+.area-new-badge{position:absolute;top:12px;right:12px;background:var(--danger);color:#fff;font-size:.68rem;font-weight:700;padding:.25rem .55rem;border-radius:12px;letter-spacing:.4px}
+.area-card-header{padding-right:5rem}
+.area-card-name{font-size:1.15rem;font-weight:800;color:var(--text-primary);letter-spacing:.3px;margin-bottom:.15rem}
+.area-card-dept{font-size:.78rem;color:var(--rori-gold);font-weight:600;display:flex;align-items:center;gap:.4rem;text-transform:uppercase;letter-spacing:.5px}
+.area-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:.65rem}
+.area-stat{text-align:center}
+.area-stat-val{font-size:1.2rem;font-weight:800;color:var(--text-primary);line-height:1.1}
+.area-stat-lbl{font-size:.62rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-top:.15rem}
+.area-status-row{display:flex;align-items:center;gap:.45rem;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.area-last-row{font-size:.72rem;color:var(--text-secondary);display:flex;align-items:center;gap:.35rem}
+.area-last-row i{color:var(--rori-gold)}
+.area-card-actions{display:flex;gap:.5rem;margin-top:auto;padding-top:.35rem}
+.empty-state{grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:3rem 1rem;background:var(--bg-card);border:1px dashed var(--border-color);border-radius:16px}
+.empty-state i{font-size:2rem;color:var(--rori-gold);opacity:.5;display:block;margin-bottom:.75rem}
+.kpi-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
+.kpi-mini-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:1.1rem 1.25rem;position:relative;overflow:hidden}
+.kpi-mini-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--rori-gold)}
+.kpi-mini-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-secondary);font-weight:600}
+.kpi-mini-value{font-size:1.75rem;font-weight:800;color:var(--text-primary);margin-top:.35rem}
+#roriAlertBanner{position:fixed;top:80px;right:20px;z-index:9999;background:linear-gradient(135deg,#C5A059,#A8873F);color:#0B0B12;border-radius:14px;padding:1rem 1.25rem;box-shadow:0 14px 40px rgba(0,0,0,.5);display:none;max-width:340px;font-weight:600;font-size:.88rem}
+#roriAlertBanner.show{display:block;animation:roriSlideIn .3s ease-out}
+#roriAlertBanner .ra-title{font-weight:800;font-size:.95rem;margin-bottom:.35rem}
+#roriAlertBanner .ra-btn{margin-top:.6rem;background:#0B0B12;color:#C5A059;border:none;padding:.45rem 1rem;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer}
+@keyframes roriSlideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:640px){.area-grid{grid-template-columns:1fr}.area-stat-grid{grid-template-columns:repeat(2,1fr)}.area-card-header{padding-right:0}}
+@media print{.header,.sidebar,.no-print{display:none!important}body{background:#fff!important;color:#000!important;padding-top:0!important}.main-content{margin-left:0!important;padding:0!important}.rpro-card,.rpro-room-card,.card,.area-card{border:1px solid #ccc!important;background:#fff!important;color:#000!important}.rpro-kv-value,.rpro-room-num,.area-card-name{color:#000!important}.rpro-kv-label,.rpro-room-floor{color:#555!important}.rpro-timeline::before{background:#999}.rpro-timeline-dot{background:#C5A059}.print-report{display:block!important}.print-report h1{font-size:22px;color:#000}.print-report h2{font-size:16px;color:#000}.print-report p{color:#000}.print-report table{width:100%;border-collapse:collapse;color:#000;font-size:11px}.print-report th,.print-report td{border:1px solid #999;padding:5px}.print-report th{background:#eee}}
 </style></head><body>
 
-<!-- HEADER -->
 <header class="header">
     <div class="header-left">
-        <button class="menu-toggle" onclick="toggleSidebar()">
-            <i class="fas fa-bars"></i>
-        </button>
-        <a href="/" class="logo">
-            <i class="fas fa-hotel"></i>
-            <span>RORI HOTEL</span>
-        </a>
+        <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+        <a href="/" class="logo"><i class="fas fa-hotel"></i><span>RORI HOTEL</span></a>
     </div>
     <div class="header-right">
         """ + sound_toggle + bell_html + user_profile_html + """
     </div>
 </header>
 
-<!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
     <ul class="sidebar-nav">
         """ + nav_html + """
     </ul>
 </aside>
 
-<!-- MAIN CONTENT -->
 <main class="main-content">
     """ + flash_html + content + """
 </main>
 
+<div id="roriAlertBanner">
+    <div class="ra-title"></div>
+    <div class="ra-body"></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('active');
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('active');}
+
+let roriAudioCtx=null;
+let roriSoundEnabled=localStorage.getItem('rori_sound_enabled')==='true';
+let roriAlertedRequests=JSON.parse(sessionStorage.getItem('rori_alerted_requests')||'[]');
+let roriBrowserNotif=(typeof Notification!=='undefined'&&Notification.permission==='granted');
+
+function roriInitAudio(){if(!roriAudioCtx){try{roriAudioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return false;}}if(roriAudioCtx.state==='suspended')roriAudioCtx.resume();return true;}
+
+function roriPlayAlert(priority){
+    if(!roriSoundEnabled||!roriInitAudio())return;
+    try{
+        const now=roriAudioCtx.currentTime;
+        const play=(freq,start,dur)=>{
+            const osc=roriAudioCtx.createOscillator();
+            const gain=roriAudioCtx.createGain();
+            osc.connect(gain);gain.connect(roriAudioCtx.destination);
+            osc.frequency.value=freq;osc.type='sine';
+            gain.gain.setValueAtTime(0.0001,now+start);
+            gain.gain.exponentialRampToValueAtTime(0.25,now+start+0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001,now+start+dur);
+            osc.start(now+start);osc.stop(now+start+dur);
+        };
+        if(priority==='URGENT'){play(880,0,0.18);play(880,0.22,0.18);play(880,0.44,0.18);play(1200,0.7,0.35);}
+        else if(priority==='HIGH'){play(660,0,0.2);play(660,0.28,0.2);play(880,0.56,0.3);}
+        else{play(520,0,0.25);play(660,0.3,0.35);}
+    }catch(e){console.warn('Audio alert failed',e);}
 }
 
-// Notification Sound System
-let roriAudioCtx = null;
-let roriSoundEnabled = localStorage.getItem('rori_sound_enabled') === 'true';
-let roriAlertedRequests = JSON.parse(sessionStorage.getItem('rori_alerted_requests') || '[]');
-
-function roriInitAudio() {
-    if (!roriAudioCtx) {
-        roriAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (roriAudioCtx.state === 'suspended') {
-        roriAudioCtx.resume();
-    }
+function roriShowBanner(title,body){
+    const b=document.getElementById('roriAlertBanner');
+    if(!b)return;
+    b.querySelector('.ra-title').textContent=title;
+    b.querySelector('.ra-body').textContent=body;
+    b.classList.add('show');
+    clearTimeout(window._roriBannerTimer);
+    window._roriBannerTimer=setTimeout(()=>b.classList.remove('show'),8000);
 }
 
-function roriPlayAlert(priority) {
-    if (!roriSoundEnabled || !roriAudioCtx) return;
-    const osc = roriAudioCtx.createOscillator();
-    const gain = roriAudioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(roriAudioCtx.destination);
-    
-    if (priority === 'URGENT') {
-        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime);
-        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime + 0.15);
-        osc.frequency.setValueAtTime(880, roriAudioCtx.currentTime + 0.3);
-    } else {
-        osc.frequency.setValueAtTime(660, roriAudioCtx.currentTime);
-    }
-    
-    gain.gain.setValueAtTime(0.1, roriAudioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, roriAudioCtx.currentTime + 0.5);
-    
-    osc.start(roriAudioCtx.currentTime);
-    osc.stop(roriAudioCtx.currentTime + 0.5);
-}
-
-window.roriToggleSound = function(enable) {
-    roriSoundEnabled = enable;
-    localStorage.setItem('rori_sound_enabled', roriSoundEnabled);
-    if (enable) roriInitAudio();
-};
-
-window.roriTestSound = function() {
+window.roriEnableAlerts=function(){
     roriInitAudio();
-    roriSoundEnabled = true;
+    roriSoundEnabled=true;
+    localStorage.setItem('rori_sound_enabled','true');
+    if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
+        Notification.requestPermission().then(p=>{
+            roriBrowserNotif=(p==='granted');
+            if(roriBrowserNotif)roriShowBanner('✓ Alerts Enabled','Sound and browser notifications are now active.');
+            else roriShowBanner('✓ Sound Enabled','Browser notifications blocked — sound only.');
+        });
+    }else{
+        roriBrowserNotif=(typeof Notification!=='undefined'&&Notification.permission==='granted');
+        roriShowBanner('✓ Alerts Enabled','You will now hear a sound when new requests arrive.');
+    }
     roriPlayAlert('HIGH');
 };
 
-// Poll for notifications
-function pollNotifications() {
-    fetch('/api/notifications/unread', {credentials: 'same-origin', cache: 'no-store'})
-    .then(r => r.ok ? r.json() : null)
-    .then(d => {
-        if (!d) return;
-        if (d.latest_title && d.latest_title.includes('NEW MAINTENANCE REQUEST')) {
-            let priority = 'MEDIUM';
-            if (d.latest_title.includes('URGENT')) priority = 'URGENT';
-            else if (d.latest_title.includes('HIGH')) priority = 'HIGH';
-            
-            if (!roriAlertedRequests.includes(d.latest_id)) {
-                roriInitAudio();
-                roriPlayAlert(priority);
-                roriAlertedRequests.push(d.latest_id);
-                sessionStorage.setItem('rori_alerted_requests', JSON.stringify(roriAlertedRequests));
-                
-                // Visual notification
-                const badge = document.querySelector('.notif-badge');
-                if (badge) {
-                    badge.classList.add('pulse');
-                    setTimeout(() => badge.classList.remove('pulse'), 2000);
-                }
-            }
-        }
-    })
-    .catch(() => {});
+window.roriToggleSound=function(enable){
+    roriSoundEnabled=!!enable;
+    localStorage.setItem('rori_sound_enabled',roriSoundEnabled?'true':'false');
+    if(enable)roriInitAudio();
+    roriShowBanner(enable?'🔊 Sound ON':'🔇 Sound OFF','Preference saved.');
+};
+
+window.roriTestSound=function(){
+    roriSoundEnabled=true;
+    localStorage.setItem('rori_sound_enabled','true');
+    roriInitAudio();
+    roriPlayAlert('URGENT');
+    roriShowBanner('🔔 Test Alert','This is what a new request sounds like.');
+};
+
+function roriNotify(title,body,priority){
+    roriShowBanner(title,body);
+    if(roriBrowserNotif){
+        try{
+            const n=new Notification(title,{body:body,icon:'/logo.png',tag:'rori-'+Date.now()});
+            setTimeout(()=>n.close(),7000);
+        }catch(e){}
+    }
 }
 
-if (document.querySelector('.header-icon')) {
+function pollNotifications(){
+    fetch('/api/notifications/unread',{credentials:'same-origin',cache:'no-store'})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+        if(!d||!d.latest_id)return;
+        if(roriAlertedRequests.includes(d.latest_id))return;
+        const t=(d.latest_title||'').toUpperCase();
+        if(!t.includes('REQUEST'))return;
+        let prio='MEDIUM';
+        if(t.includes('URGENT'))prio='URGENT';
+        else if(t.includes('HIGH'))prio='HIGH';
+        roriPlayAlert(prio);
+        roriNotify(d.latest_title||'New Maintenance Request',d.latest_message||'A new request has been submitted.',prio);
+        roriAlertedRequests.push(d.latest_id);
+        sessionStorage.setItem('rori_alerted_requests',JSON.stringify(roriAlertedRequests));
+        const badge=document.querySelector('.notif-badge');
+        if(badge){badge.classList.add('pulse');setTimeout(()=>badge.classList.remove('pulse'),2500);}
+    })
+    .catch(()=>{});
+}
+
+(function(){
+    if(!roriSoundEnabled&&document.querySelector('.header-icon')){
+        setTimeout(()=>{
+            if(!roriSoundEnabled){
+                roriShowBanner('🔔 Enable Alert Sound','Click below to hear alerts when new requests arrive.');
+                const b=document.getElementById('roriAlertBanner');
+                if(b){
+                    const btn=document.createElement('button');
+                    btn.className='ra-btn';
+                    btn.textContent='Enable Alerts';
+                    btn.onclick=()=>{roriEnableAlerts();b.classList.remove('show');};
+                    b.appendChild(btn);
+                }
+            }
+        },1800);
+    }
+})();
+
+if(document.querySelector('.header-icon')){
     pollNotifications();
-    setInterval(pollNotifications, 10000);
+    setInterval(pollNotifications,10000);
 }
 </script>
 </body></html>"""
@@ -1190,7 +944,7 @@ def seed_data():
     db.session.commit()
     print("✅ Seed data loaded")
 
-# ══════════════════════════════════════════ AUTH & ROUTES
+# ══════════════════════════════════════════ AUTH & MAIN ROUTES
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -1216,14 +970,8 @@ def login():
 <p style="color:var(--text-secondary)">Maintenance Management System</p>
 </div>
 <form method="post">
-<div class="mb-3">
-<label class="form-label">Username</label>
-<input type="text" class="form-control" name="username" required autofocus>
-</div>
-<div class="mb-4">
-<label class="form-label">Password</label>
-<input type="password" class="form-control" name="password" required>
-</div>
+<div class="mb-3"><label class="form-label">Username</label><input type="text" class="form-control" name="username" required autofocus></div>
+<div class="mb-4"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required></div>
 <button class="btn-primary w-100"><i class="fas fa-sign-in-alt"></i> Login</button>
 </form>
 <hr style="border-color:var(--border-color);margin:1.5rem 0">
@@ -1235,22 +983,8 @@ def login():
 </div>
 </div>
 <style>
-.login-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: calc(100vh - 70px);
-    padding: 2rem;
-}
-.login-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    padding: 2.5rem;
-    max-width: 440px;
-    width: 100%;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
+.login-container{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 70px);padding:2rem}
+.login-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:20px;padding:2.5rem;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
 </style>"""
     return page("Login", lh)
 
@@ -1300,8 +1034,8 @@ def requests_list():
         del_html = ""
         if is_mgr:
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');">'
-                        '<input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-archive"></i></button></form>')
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
+                        '<input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>' + ('<th></th>' if is_mgr else '') + '</tr></thead>'
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
          '<div class="card"><div style="overflow-x:auto;"><table class="table">' + header + '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" style="text-align:center;color:var(--text-secondary);">No requests found</td></tr>') + '</tbody></table></div></div>')
@@ -1359,7 +1093,7 @@ def request_create():
             log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=authorized_name + " @ " + str(user_dept_name))
             log_status_change(req.id,"Pending",notes="Created and signed by " + str(authorized_name) + " (" + str(user_dept_name) + ")")
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
-            notify_users([u.id for u in managers], req.id, "📝 New Request", "Request " + str(req.request_no) + " from " + str(user_dept_name or "N/A") + " is pending approval", "New Request", link=url_for("request_detail", req_id=req.id))
+            notify_users([u.id for u in managers], req.id, "📝 NEW MAINTENANCE REQUEST", "Request " + str(req.request_no) + " [" + str(prio) + "] from " + str(user_dept_name or "N/A") + " is pending approval", "New Request", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
             flash("✅ Request created successfully!","success")
             return redirect(url_for("request_detail", req_id=req.id))
@@ -1413,43 +1147,33 @@ def request_create():
 def request_detail(req_id):
     req = get_or_404(MaintenanceRequest, req_id)
     if req.is_deleted and current_user.role != "ADMIN":
-        flash("This request has been archived.","warning"); return redirect(url_for("requests_list"))
+        flash("This request has been archived.","warning")
+        return redirect(url_for("requests_list"))
     if current_user.role == "DEPARTMENT":
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
+
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     wos = WorkOrder.query.filter_by(request_id=req.id).all()
-    def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
-    hist_html = ""
+
+    def badge(st):
+        return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+                "Completed":"success","Verified":"success","Closed":"secondary",
+                "Rejected":"danger","Overdue":"danger"}.get(st, "secondary")
+
+    def kv(label, value, mono=False, color=None):
+        c = (' style="color:' + color + '"') if color else ""
+        cls = "rpro-kv-value mono" if mono else "rpro-kv-value"
+        return ('<div class="rpro-kv-item"><div class="rpro-kv-label">' + label + '</div>'
+                '<div class="' + cls + '"' + c + '>' + (str(value) if value not in (None,"") else "—") + '</div></div>')
+
+    assigned_dt = None
+    started_dt = None
     for h in hist:
-        who = h.user.full_name if h.user else "System"
-        when = h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else ""
-        note = (" — " + str(h.notes)) if h.notes else ""
-        hist_html += ('<div style="padding:.75rem 1rem;border-left:3px solid var(--rori-gold);background:var(--bg-card);border-radius:10px;margin-bottom:.5rem;border:1px solid var(--border-color);border-left-width:3px;">'
-                      '<strong style="color:var(--rori-gold)">' + str(h.status) + '</strong> '
-                      '<span style="color:var(--text-secondary);font-size:.85rem">by ' + str(who) + ' · ' + str(when) + note + '</span></div>')
-    if not hist_html: hist_html = '<p style="color:var(--text-secondary)">No status history yet.</p>'
-    wo_html = ""
-    for wo in wos:
-        wo_html += ('<div style="padding:.75rem 1rem;background:var(--bg-card);border-radius:10px;margin-bottom:.5rem;border:1px solid var(--border-color);">'
-                    '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);font-weight:600;">' + str(wo.work_order_no) + '</a> '
-                    '<span class="badge badge-info">' + str(wo.status) + '</span> '
-                    '<span style="color:var(--text-secondary);font-size:.85rem;">· ' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</span></div>')
-    if not wo_html: wo_html = '<p style="color:var(--text-secondary)">No work orders yet.</p>'
-    sig_html = ""
-    if req.signature_status == "SIGNED":
-        sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "N/A"
-        sig_image_html = '<div style="margin-top:10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border:1px solid var(--border-color);"><img src="' + str(req.signature_data) + '" style="max-width:250px; max-height:100px;" alt="Signature"></div>' if req.signature_data else '<div style="margin-top:10px; color:var(--text-secondary);">(No signature image stored)</div>'
-        verified_badge = '<span class="badge badge-success" style="margin-left:.5rem"><i class="fas fa-check-circle"></i> Verified</span>' if req.signature_verified else '<span class="badge badge-warning" style="margin-left:.5rem"><i class="fas fa-exclamation"></i> Unverified</span>'
-        sig_html = ('<div class="card" style="border: 1px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); margin-top:1rem;">'
-                    '<h6 style="color:var(--success); margin-bottom:1rem;"><i class="fas fa-signature"></i> DIGITAL SIGNATURE ' + verified_badge + '</h6>'
-                    '<div class="row g-3">'
-                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Signed By</div><div style="font-size:1rem;font-weight:700;color:var(--text-primary)">' + str(req.signature_name or "Unknown") + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1rem;font-weight:700;color:var(--text-primary)">' + str(req.signature_department or req.department.name if req.department else "N/A") + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Signed At</div><div style="font-size:.95rem;font-weight:600;color:var(--text-primary)">' + sig_time + '</div></div></div>'
-                    '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border-color)"><div style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase">Verification Status</div><div style="font-size:.95rem;font-weight:600;color:' + ('var(--success)' if req.signature_verified else 'var(--warning)') + '">' + ('✓ Verified' if req.signature_verified else '⚠ Unverified') + '</div></div></div>'
-                    '</div>' + sig_image_html + '</div>')
+        if h.status == "Assigned" and not assigned_dt: assigned_dt = h.timestamp
+        if h.status == "In Progress" and not started_dt: started_dt = h.timestamp
+
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
@@ -1463,28 +1187,130 @@ def request_detail(req_id):
         if req.status == "Verified":
             actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
-    actions_html = " ".join(actions) if actions else ""
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1></div><div>' + actions_html + '</div></div>'
-         '<div class="row"><div class="col-md-8"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;">Request Details</h5>'
-         '<table class="table"><tbody>'
-         '<tr><th style="width:180px;color:var(--text-secondary);">Status</th><td><span class="badge badge-' + bd(req.status) + '">' + str(req.status) + '</span></td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Priority</th><td>' + str(req.priority) + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Department</th><td>' + str(req.department.name if req.department else "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Location</th><td>' + str(req.location_name) + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Item</th><td>' + str(req.working_item.name if req.working_item else "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Category</th><td>' + str(req.category.name if req.category else "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Requested By</th><td><strong>' + str(req.requested_by.full_name if req.requested_by else "—") + '</strong></td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Assigned To</th><td>' + str(req.assigned_to.full_name if req.assigned_to else "Not Assigned") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Description</th><td>' + str(req.description or "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Due Date</th><td>' + (req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Completed</th><td>' + (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Completion Note</th><td>' + str(req.completion_note or "—") + '</td></tr>'
-         '<tr><th style="color:var(--text-secondary);">Created</th><td>' + (req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else "—") + '</td></tr>'
-         '</tbody></table>' + sig_html + '</div>'
-         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-clipboard-list"></i> Work Orders</h5>' + wo_html + '</div>'
-         '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-history"></i> Status History</h5>' + hist_html + '</div></div></div>')
-    return page("Request " + str(req.request_no), c)
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
+    actions_html = " ".join(actions)
+
+    info_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
+        '<div class="rpro-kv">'
+        + kv("Request ID", req.request_no, mono=True)
+        + kv("Status", '<span class="badge badge-' + badge(req.status) + '">' + str(req.status) + '</span>')
+        + kv("Priority", '<span class="badge badge-' + ("danger" if req.priority=="URGENT" else "warning" if req.priority=="HIGH" else "info" if req.priority=="MEDIUM" else "secondary") + '">' + str(req.priority or "MEDIUM") + '</span>')
+        + kv("Created", req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else None)
+        + kv("Department", req.department.name if req.department else "Not Assigned")
+        + kv("Location Type", req.location_type)
+        + kv("Location", req.location_name)
+        + kv("Floor", req.floor if req.floor else None)
+        + kv("Working Item", req.working_item.name if req.working_item else None)
+        + kv("Category", req.category.name if req.category else None)
+        + kv("Requested By", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else None)
+        + kv("Assigned To", (req.assigned_to.full_name or req.assigned_to.username) if req.assigned_to else "Not Assigned")
+        + kv("Assigned Date", assigned_dt.strftime("%Y-%m-%d %H:%M") if assigned_dt else None)
+        + kv("Started Date", started_dt.strftime("%Y-%m-%d %H:%M") if started_dt else None)
+        + kv("Due Date", req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else None)
+        + kv("Completed", req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else None)
+        + '</div>'
+        + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div>'
+           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+           + str(req.description or "No description provided.") + '</div></div>')
+        + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div>'
+           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+           + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
+        + '</div>'
+    )
+
+    sig_card = ""
+    if req.signature_status == "SIGNED" and req.signature_data:
+        sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "—"
+        ver_badge = ('<span class="badge badge-success"><i class="fas fa-check-circle"></i> Verified</span>'
+                     if req.signature_verified else
+                     '<span class="badge badge-warning"><i class="fas fa-exclamation"></i> Unverified</span>')
+        sig_card = (
+            '<div class="rpro-card" style="border-color:rgba(34,197,94,.4);background:linear-gradient(180deg,rgba(34,197,94,.05),var(--bg-card));">'
+            '<div class="rpro-card-title"><i class="fas fa-signature"></i> Digital Signature ' + ver_badge + '</div>'
+            '<div class="rpro-kv" style="margin-bottom:1rem;">'
+            + kv("Signed By", req.signature_name or "Unknown")
+            + kv("Department", req.signature_department or (req.department.name if req.department else "—"))
+            + kv("Signed At", sig_time)
+            + kv("Verification", "✓ Verified" if req.signature_verified else "⚠ Unverified",
+                 color="var(--success)" if req.signature_verified else "var(--warning)")
+            + '</div>'
+            '<div class="rpro-sig-box"><img src="' + str(req.signature_data) + '" alt="Signature"></div>'
+            '</div>'
+        )
+
+    wo_rows = []
+    for wo in wos:
+        wo_rows.append(
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border:1px solid var(--border-color);margin-bottom:.5rem;flex-wrap:wrap;">'
+            '<div style="flex:1;min-width:180px;">'
+            '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);font-weight:700;text-decoration:none;">' + str(wo.work_order_no) + '</a>'
+            '<div style="font-size:.78rem;color:var(--text-secondary);margin-top:.15rem;">'
+            '<i class="fas fa-user"></i> ' + ((wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned")
+            + ' · <i class="fas fa-clock"></i> ' + str(round(wo.labor_hours or 0, 1)) + ' hrs'
+            + '</div></div>'
+            '<div><span class="badge badge-' + badge(wo.status) + '">' + str(wo.status) + '</span></div>'
+            '</div>'
+        )
+    wo_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-tasks"></i> Work Orders</div>'
+        + ("".join(wo_rows) if wo_rows else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No work orders created yet.</p>')
+        + '</div>'
+    )
+
+    tl_items = []
+    for h in hist:
+        who = (h.user.full_name or h.user.username) if h.user else "System"
+        when = h.timestamp.strftime("%d %b %Y · %H:%M") if h.timestamp else ""
+        note_html = ('<div class="rpro-timeline-note">' + str(h.notes) + '</div>') if h.notes else ""
+        tl_items.append(
+            '<div class="rpro-timeline-item">'
+            '<div class="rpro-timeline-dot"></div>'
+            '<div class="rpro-timeline-status">' + str(h.status) + '</div>'
+            '<div class="rpro-timeline-meta">' + str(who) + ' · ' + when + '</div>'
+            + note_html +
+            '</div>'
+        )
+    timeline_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-history"></i> Status Timeline</div>'
+        '<div class="rpro-timeline">'
+        + ("".join(tl_items) if tl_items else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No status changes recorded.</p>')
+        + '</div></div>'
+    )
+
+    verify_card = ""
+    if req.status in ("Verified","Closed"):
+        wo_verifier = wos[0].verified_by if wos and wos[0].verified_by else req.manager
+        verify_card = (
+            '<div class="rpro-card" style="border-color:rgba(56,189,248,.4);">'
+            '<div class="rpro-card-title"><i class="fas fa-shield-alt"></i> Verification</div>'
+            '<div class="rpro-kv">'
+            + kv("Verified By", (wo_verifier.full_name or wo_verifier.username) if wo_verifier else "—")
+            + kv("Verified Date", wos[0].verified_date.strftime("%Y-%m-%d %H:%M") if wos and wos[0].verified_date else (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—"))
+            + '</div></div>'
+        )
+
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title">'
+        '<h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1>'
+        '<p>' + str(req.location_name) + ' · ' + (req.department.name if req.department else "No Department") + '</p>'
+        '</div>'
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">' + actions_html + '</div>'
+        '</div>'
+        + '<div class="row g-3">'
+        + '<div class="col-lg-8">'
+        + info_card + sig_card + wo_card
+        + '</div>'
+        + '<div class="col-lg-4">'
+        + timeline_card + verify_card
+        + '</div>'
+        + '</div>'
+    )
+    return page("Request " + str(req.request_no), content)
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER","ADMIN")
@@ -1824,6 +1650,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
 <div class="collapse navbar-collapse" id="nav"><div class="navbar-nav ms-auto">
 <a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
+<a class="nav-link" href="{{ url_for('central_maintenance') }}"><i class="fas fa-fire-extinguisher"></i> Central</a>
 <a class="nav-link" href="{{ url_for('request_create') }}"><i class="fas fa-plus-circle"></i> New</a>
 <a class="nav-link" href="{{ url_for('requests_list') }}"><i class="fas fa-tasks"></i> Requests</a>
 <a class="nav-link" href="{{ url_for('workorders_list') }}"><i class="fas fa-clipboard-list"></i> Work Orders</a>
@@ -1950,112 +1777,81 @@ new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', da
 })();
 </script></body></html>"""
 
-# ═════════════════════════════════════════ MANAGEMENT REPORTS (FIXED)
+# ═════════════════════════════════════════ MANAGEMENT REPORTS
 @app.route("/management/reports")
 @role_required("ADMIN", "MANAGER")
 def management_reports():
     period = request.args.get("period", "daily")
     dept_filter = request.args.get("department", "")
-    
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     if dept_filter:
         dept = Department.query.filter_by(name=dept_filter).first()
         if dept: q = q.filter_by(department_id=dept.id)
-    
     now = datetime.utcnow()
     if period == "daily":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=1)
         q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Daily Report - " + start_date.strftime("%Y-%m-%d")
     elif period == "weekly":
         start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=7)
         q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Weekly Report - Wk " + start_date.strftime("%Y-%m-%d")
     elif period == "monthly":
         start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         next_month = start_date.replace(day=28) + timedelta(days=4)
         end_date = next_month.replace(day=1)
         q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at < end_date)
-        period_label = "Monthly Report - " + start_date.strftime("%B %Y")
     else:
         start_date = now - timedelta(days=30)
         end_date = now
         q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at <= end_date)
-        period_label = "Custom Range - " + start_date.strftime("%Y-%m-%d") + " to " + end_date.strftime("%Y-%m-%d")
-        
     reqs = q.all()
     total = len(reqs)
     completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
     pending = sum(1 for r in reqs if r.status in ["Pending","Approved"])
     in_progress = sum(1 for r in reqs if r.status in ["Assigned","In Progress"])
-    
-    # Calculate real work hours from database
     work_orders = WorkOrder.query.filter(WorkOrder.request_id.in_([r.id for r in reqs])).all()
     total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
-    
-    # Department breakdown
     dept_counts = defaultdict(int)
-    for r in reqs:
-        dept_counts[r.department.name if r.department else "Unspecified"] += 1
-        
-    # Staff workload for this period
+    for r in reqs: dept_counts[r.department.name if r.department else "Unspecified"] += 1
     staff_work = defaultdict(lambda: {"assigned": 0, "completed": 0, "hours": 0})
     for wo in work_orders:
         if wo.assigned_to:
             name = wo.assigned_to.full_name or wo.assigned_to.username
             staff_work[name]["assigned"] += 1
-            if wo.status in ["Completed","Verified","Closed"]:
-                staff_work[name]["completed"] += 1
+            if wo.status in ["Completed","Verified","Closed"]: staff_work[name]["completed"] += 1
             staff_work[name]["hours"] += wo.labor_hours or 0
-            
-    # Daily breakdown for weekly report
     daily_breakdown = []
     if period == "weekly":
         for i in range(7):
             day_date = start_date + timedelta(days=i)
             day_reqs = [r for r in reqs if r.created_at.date() == day_date.date()]
-            daily_breakdown.append({
-                "day": day_date.strftime("%A"),
-                "date": day_date.strftime("%Y-%m-%d"),
-                "total": len(day_reqs),
-                "completed": sum(1 for r in day_reqs if r.status in ["Completed","Verified","Closed"])
-            })
-    
+            daily_breakdown.append({"day": day_date.strftime("%A"), "date": day_date.strftime("%Y-%m-%d"),
+                                    "total": len(day_reqs), "completed": sum(1 for r in day_reqs if r.status in ["Completed","Verified","Closed"])})
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-chart-line"></i> <span>Management</span> Reports</h1>'
          '<p>Detailed analytics and performance metrics</p></div>'
-         '<div style="display:flex;gap:1rem;" class="no-print"><a href="/management/reports/export?period=' + period + '&department=' + dept_filter + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download Excel</a>'
+         '<div style="display:flex;gap:1rem;" class="no-print"><a href="/management/reports/export?period=' + period + '&department=' + dept_filter + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download CSV</a>'
          '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / PDF</button></div></div>'
-         
          '<div class="card" style="margin-bottom:2rem;"><form method="get" class="row g-3 align-items-end">'
          '<div class="col-md-3"><label class="form-label">Period</label><select name="period" class="form-select"><option value="daily" ' + ('selected' if period=="daily" else '') + '>Daily</option><option value="weekly" ' + ('selected' if period=="weekly" else '') + '>Weekly</option><option value="monthly" ' + ('selected' if period=="monthly" else '') + '>Monthly</option><option value="custom" ' + ('selected' if period=="custom" else '') + '>Custom (Last 30 Days)</option></select></div>'
          '<div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">All Departments</option>' + "".join('<option value="' + d.name + '"' + (' selected' if dept_filter==d.name else '') + '>' + d.name + '</option>' for d in Department.query.all()) + '</select></div>'
-         '<div class="col-md-3"><label class="form-label">Status</label><select name="status" class="form-select"><option value="">All Statuses</option><option value="Pending" ' + ('selected' if request.args.get("status")=="Pending" else '') + '>Pending</option><option value="In Progress" ' + ('selected' if request.args.get("status")=="In Progress" else '') + '>In Progress</option><option value="Completed" ' + ('selected' if request.args.get("status")=="Completed" else '') + '>Completed</option></select></div>'
          '<div class="col-md-3"><button type="submit" class="btn-primary w-100"><i class="fas fa-filter"></i> Apply Filters</button></div></form></div>'
-         
          '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total Requests</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Completed</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
          '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(total_hours) + ' hrs</div><div class="kpi-label">Work Hours</div></div></div>'
-         
-         '<div class="row g-3">'
-         '<div class="col-md-6"><div class="card"><h5>Department Workload</h5><ul class="list-group list-group-flush" style="background:transparent;">' + 
-         "".join('<li class="list-group-item d-flex justify-content-between align-items-center" style="background:var(--bg-card);border-color:var(--border-color);color:var(--text-primary);"><span>' + k + '</span><span class="badge badge-info rounded-pill">' + str(v) + '</span></li>' for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])) + 
+         '<div class="row g-3"><div class="col-md-6"><div class="card"><h5>Department Workload</h5><ul class="list-group list-group-flush" style="background:transparent;">' +
+         "".join('<li class="list-group-item d-flex justify-content-between align-items-center" style="background:var(--bg-card);border-color:var(--border-color);color:var(--text-primary);"><span>' + k + '</span><span class="badge badge-info rounded-pill">' + str(v) + '</span></li>' for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])) +
          '</ul></div></div>'
          '<div class="col-md-6"><div class="card"><h5>Staff Performance</h5><div class="table-responsive"><table class="table"><thead><tr><th>Staff</th><th>Assigned</th><th>Completed</th><th>Hours</th></tr></thead><tbody>' +
          "".join('<tr><td>' + k + '</td><td><span class="badge badge-info">' + str(v["assigned"]) + '</span></td><td><span class="badge badge-success">' + str(v["completed"]) + '</span></td><td>' + str(round(v["hours"],1)) + ' hrs</td></tr>' for k, v in sorted(staff_work.items(), key=lambda x: -x[1]["hours"])) +
-         '</tbody></table></div></div></div>'
-         '</div>')
-         
+         '</tbody></table></div></div></div></div>')
     if period == "weekly" and daily_breakdown:
         c += '<div class="card mt-4"><h5>Daily Breakdown (This Week)</h5><div class="table-responsive"><table class="table"><thead><tr><th>Day</th><th>Date</th><th>Total Requests</th><th>Completed</th></tr></thead><tbody>' + \
              "".join('<tr><td>' + d["day"] + '</td><td>' + d["date"] + '</td><td>' + str(d["total"]) + '</td><td>' + str(d["completed"]) + '</td></tr>' for d in daily_breakdown) + \
              '</tbody></table></div></div>'
-             
     if total == 0:
         c += '<div class="alert alert-warning mt-4"><i class="fas fa-info-circle"></i> No maintenance records found for the selected period.</div>'
-        
     return page("Management Reports", c)
 
 @app.route("/management/reports/export")
@@ -2063,12 +1859,10 @@ def management_reports():
 def export_report():
     period = request.args.get("period", "daily")
     dept_filter = request.args.get("department", "")
-    
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     if dept_filter:
         dept = Department.query.filter_by(name=dept_filter).first()
         if dept: q = q.filter_by(department_id=dept.id)
-    
     now = datetime.utcnow()
     if period == "daily":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2079,35 +1873,120 @@ def export_report():
     elif period == "monthly":
         start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         q = q.filter(MaintenanceRequest.created_at >= start_date)
-        
     reqs = q.all()
-    
     si = io.StringIO()
     cw = csv.writer(si)
     cw.writerow(["Rori Hotel Maintenance Management Report"])
-    cw.writerow(["Period", period, "Generated By", current_user.full_name, "Date", now.strftime("%Y-%m-%d %H:%M")])
+    cw.writerow(["Period", period, "Generated By", current_user.full_name or current_user.username, "Date", now.strftime("%Y-%m-%d %H:%M")])
     cw.writerow([])
     cw.writerow(["Request No", "Department", "Location", "Priority", "Status", "Assigned To", "Completed Date", "Labor Hours"])
-    
     for r in reqs:
         wo = WorkOrder.query.filter_by(request_id=r.id).first()
-        cw.writerow([
-            r.request_no,
-            r.department.name if r.department else "N/A",
-            r.location_name,
-            r.priority,
-            r.status,
-            wo.assigned_to.full_name if wo and wo.assigned_to else "Unassigned",
-            r.completed_date.strftime("%Y-%m-%d") if r.completed_date else "N/A",
-            wo.labor_hours if wo else 0
-        ])
-        
+        cw.writerow([r.request_no, r.department.name if r.department else "N/A", r.location_name, r.priority, r.status,
+                     wo.assigned_to.full_name if wo and wo.assigned_to else "Unassigned",
+                     r.completed_date.strftime("%Y-%m-%d") if r.completed_date else "N/A", wo.labor_hours if wo else 0])
     output = make_response(si.getvalue())
     output.headers["Content-Disposition"] = "attachment; filename=maintenance_report_" + period + "_" + now.strftime("%Y%m%d") + ".csv"
     output.headers["Content-type"] = "text/csv"
     return output
 
-# ══════════════════════════════════════════ DEPARTMENT DASHBOARD
+# ══════════════════════════════════════════ CENTRAL MAINTENANCE
+@app.route("/maintenance")
+@role_required("ADMIN","MANAGER","SUPERVISOR")
+def central_maintenance():
+    base = MaintenanceRequest.query.filter_by(is_deleted=False)
+    counts = {s: base.filter_by(status=s).count() for s in REQUEST_STATUSES}
+    total = base.count()
+    staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
+    tech_rows = []
+    for u in staff:
+        wos = WorkOrder.query.filter_by(assigned_to_id=u.id).all()
+        tech_rows.append({"user": u, "assigned": len(wos),
+                          "in_progress": sum(1 for w in wos if w.status == "In Progress"),
+                          "completed": sum(1 for w in wos if w.status in ("Completed","Verified","Closed")),
+                          "pending": sum(1 for w in wos if w.status in ("Pending","Assigned"))})
+    tech_rows.sort(key=lambda x: -x["assigned"])
+    rooms_total = Room.query.count()
+    room_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
+    room_open = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
+    areas_total = Area.query.count()
+    area_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
+    area_open = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
+    recent = base.order_by(MaintenanceRequest.created_at.desc()).limit(10).all()
+    recent_rows = []
+    for r in recent:
+        bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+              "Completed":"success","Verified":"success","Closed":"secondary",
+              "Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
+        recent_rows.append('<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.department.name if r.department else "—") + '</td>'
+            '<td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td>'
+            '<td>' + str(r.priority) + '</td>'
+            '<td>' + ((r.assigned_to.full_name or r.assigned_to.username) if r.assigned_to else "—") + '</td>'
+            '</tr>')
+    tech_rows_html = "".join(
+        '<tr><td><strong>' + ((t["user"].full_name or t["user"].username)) + '</strong><br>'
+        '<small style="color:var(--text-secondary)">' + str(t["user"].role) + '</small></td>'
+        '<td><span class="rpro-chip gold">' + str(t["assigned"]) + '</span></td>'
+        '<td><span class="rpro-chip orange">' + str(t["pending"]) + '</span></td>'
+        '<td><span class="rpro-chip blue">' + str(t["in_progress"]) + '</span></td>'
+        '<td><span class="rpro-chip green">' + str(t["completed"]) + '</span></td></tr>'
+        for t in tech_rows)
+    def status_tile(label, value, color):
+        return ('<div class="kpi-card" style="padding:1rem .75rem;text-align:center;">'
+                '<div class="kpi-value" style="font-size:1.6rem;color:' + color + ';">' + str(value) + '</div>'
+                '<div class="kpi-label" style="font-size:.68rem;">' + label + '</div></div>')
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1>'
+        '<p>Unified view of Rooms · Areas · Requests · Work Orders · Technicians</p></div></div>'
+        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
+        + status_tile("Total", total, "var(--text-primary)")
+        + status_tile("Pending", counts.get("Pending",0), "var(--warning)")
+        + status_tile("Approved", counts.get("Approved",0), "var(--info)")
+        + status_tile("Assigned", counts.get("Assigned",0), "var(--info)")
+        + status_tile("In Progress", counts.get("In Progress",0), "var(--info)")
+        + status_tile("Completed", counts.get("Completed",0), "var(--success)")
+        + status_tile("Verified", counts.get("Verified",0), "var(--success)")
+        + status_tile("Closed", counts.get("Closed",0), "var(--text-secondary)")
+        + '</div>'
+        '<div class="row g-3 mb-3">'
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-door-open"></i> Rooms</div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Total Rooms</span><strong>' + str(rooms_total) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Requests</span><strong style="color:var(--rori-gold)">' + str(room_reqs) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Open</span><strong style="color:var(--warning)">' + str(room_open) + '</strong></div>'
+        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> Manage Rooms</a>'
+        '</div></div>'
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-map-marked-alt"></i> Areas</div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Total Areas</span><strong>' + str(areas_total) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Requests</span><strong style="color:var(--rori-gold)">' + str(area_reqs) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Open</span><strong style="color:var(--warning)">' + str(area_open) + '</strong></div>'
+        '<a href="' + url_for("areas_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> Manage Areas</a>'
+        '</div></div>'
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clipboard-list"></i> Work Orders</div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Total</span><strong>' + str(WorkOrder.query.count()) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Active</span><strong style="color:var(--warning)">' + str(WorkOrder.query.filter(WorkOrder.status.in_(["Pending","Assigned","In Progress"])).count()) + '</strong></div>'
+        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Completed</span><strong style="color:var(--success)">' + str(WorkOrder.query.filter(WorkOrder.status.in_(["Completed","Verified"])).count()) + '</strong></div>'
+        '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> View Work Orders</a>'
+        '</div></div>'
+        '</div>'
+        '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-users-cog"></i> Technician Workload</div>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
+        '<th>Technician</th><th>Assigned</th><th>Pending</th><th>In Progress</th><th>Completed</th>'
+        '</tr></thead><tbody>'
+        + (tech_rows_html if tech_rows_html else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No active technicians.</td></tr>')
+        + '</tbody></table></div></div>'
+        '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clock-rotate-left"></i> Recent Requests</div>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
+        '<th>Request #</th><th>Location</th><th>Department</th><th>Status</th><th>Priority</th><th>Assigned</th>'
+        '</tr></thead><tbody>'
+        + ("".join(recent_rows) if recent_rows else '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);">No requests.</td></tr>')
+        + '</tbody></table></div></div>')
+    return page("Central Maintenance", content)
+
+# ══════════════════════════════════════════ DEPARTMENT / EMPLOYEE DASHBOARDS
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -2157,7 +2036,7 @@ def workorders_list():
     else: wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
     rows = []
     for wo in wos:
-        assigned = wo.assigned_to.full_name if wo.assigned_to else " Unassigned"
+        assigned = (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
         rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
@@ -2482,7 +2361,13 @@ def workorder_part_remove(wo_id, part_id):
 def api_unread():
     c = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
     latest = Notification.query.filter_by(user_id=current_user.id, is_read=False).order_by(Notification.created_at.desc()).first()
-    return jsonify({"unread": c, "latest_id": latest.id if latest else None, "latest_title": latest.title if latest else None, "server_time": datetime.utcnow().isoformat()})
+    return jsonify({
+        "unread": c,
+        "latest_id": latest.id if latest else None,
+        "latest_title": latest.title if latest else None,
+        "latest_message": latest.message if latest else None,
+        "server_time": datetime.utcnow().isoformat()
+    })
 
 @app.route("/notifications")
 @login_required
@@ -2510,25 +2395,365 @@ def notification_mark_read(n_id):
     except Exception as e: flash("Error: " + str(e),"danger")
     return redirect(url_for("notifications"))
 
-# ══════════════════════════════════════════ OTHER PAGES
-@app.route("/rooms")
-@role_required("ADMIN","MANAGER")
-def rooms_list():
-    rs = Room.query.order_by(Room.room_number).all()
-    rows = "".join('<tr><td>' + str(r.room_number) + '</td><td>' + str(r.floor) + '</td><td>' + str(r.status) + '</td></tr>' for r in rs)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span></h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>Room</th><th>Floor</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
-    return page("Rooms", c)
+# ══════════════════════════════════════════ AREAS MANAGEMENT
+def _area_dept_label(a):
+    d = (a.department or "").strip() if a.department else ""
+    if not d or d.lower() in ("unknown", "n/a", "none", "-"): return "Not Assigned"
+    if d.lower() == "f&b": return "Food & Beverage"
+    return d
+
+def _area_req_stats():
+    stats = defaultdict(lambda: {"total": 0, "pending": 0, "approved": 0, "assigned": 0,
+        "in_progress": 0, "completed": 0, "verified": 0, "closed": 0,
+        "rejected": 0, "overdue": 0, "open": 0, "last_date": None, "new_24h": 0, "staff": set()})
+    reqs = (MaintenanceRequest.query.filter_by(is_deleted=False).filter(MaintenanceRequest.area_id.isnot(None)).all())
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    for r in reqs:
+        s = stats[r.area_id]
+        s["total"] += 1
+        st = (r.status or "").strip()
+        key = st.lower().replace(" ", "_")
+        if key in s: s[key] += 1
+        if st in ("Pending","Approved","Assigned","In Progress","Overdue"): s["open"] += 1
+        if r.assigned_to: s["staff"].add(r.assigned_to.full_name or r.assigned_to.username)
+        if r.created_at:
+            if s["last_date"] is None or r.created_at > s["last_date"]: s["last_date"] = r.created_at
+            if r.created_at >= cutoff: s["new_24h"] += 1
+    return stats
+
+def _area_status(a, s):
+    if not s or s.get("total", 0) == 0: return ("No Active Requests", "secondary")
+    if s.get("in_progress", 0) > 0: return ("Work In Progress", "info")
+    if s.get("open", 0) > 0: return ("Maintenance Required", "warning")
+    return ("All Requests Completed", "success")
+
+def _area_search(a, q):
+    if not q: return True
+    ql = q.lower()
+    if ql in (a.name or "").lower(): return True
+    if ql in (a.department or "").lower(): return True
+    for r in MaintenanceRequest.query.filter_by(area_id=a.id, is_deleted=False).all():
+        if ql in (r.request_no or "").lower(): return True
+        if r.working_item and ql in (r.working_item.name or "").lower(): return True
+        if r.category and ql in (r.category.name or "").lower(): return True
+    return False
 
 @app.route("/areas")
 @role_required("ADMIN","MANAGER")
 def areas_list():
-    ar = Area.query.order_by(Area.name).all()
-    rows = "".join('<tr><td>' + str(a.name) + '</td><td>' + str(a.department or "—") + '</td></tr>' for a in ar)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span></h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>Name</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
-    return page("Areas", c)
+    q = (request.args.get("q") or "").strip()
+    mode = (request.args.get("filter") or "all").strip()
+    dept_filter = (request.args.get("dept") or "").strip()
+    all_areas = Area.query.order_by(Area.name).all()
+    stats = _area_req_stats()
+    dept_set = sorted({_area_dept_label(a) for a in all_areas})
+    total_areas = len(all_areas)
+    areas_with_active = 0; total_requests = 0; total_completed = 0
+    for a in all_areas:
+        s = stats.get(a.id)
+        if s and s["open"] > 0: areas_with_active += 1
+        if s:
+            total_requests += s["total"]
+            total_completed += s["completed"]
+    areas_without_active = total_areas - areas_with_active
+    open_work_orders = (WorkOrder.query
+        .join(MaintenanceRequest, WorkOrder.request_id == MaintenanceRequest.id)
+        .filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False,
+                WorkOrder.status.in_(["Pending","Assigned","In Progress"])).count())
+    visible = []
+    for a in all_areas:
+        s = stats.get(a.id)
+        if dept_filter and _area_dept_label(a) != dept_filter: continue
+        if mode == "active" and not (s and s["open"] > 0): continue
+        if mode == "no_active" and (s and s["open"] > 0): continue
+        if mode == "in_progress" and not (s and s["in_progress"] > 0): continue
+        if mode == "completed" and not (s and s["total"] > 0 and s["open"] == 0): continue
+        if q and not _area_search(a, q): continue
+        visible.append((a, s))
+    cards = []
+    for a, s in visible:
+        s = s or {"total":0,"open":0,"in_progress":0,"completed":0,"new_24h":0,"last_date":None}
+        dept = _area_dept_label(a)
+        st_label, st_class = _area_status(a, s)
+        st_color = {"success":"var(--success)","warning":"var(--warning)",
+                    "info":"var(--info)","secondary":"var(--text-secondary)"}.get(st_class, "var(--text-secondary)")
+        new_badge = ('<div class="area-new-badge"><i class="fas fa-bell"></i> NEW (' + str(s.get("new_24h",0)) + ')</div>' if s.get("new_24h", 0) > 0 else "")
+        last_dt = s.get("last_date")
+        last_str = last_dt.strftime("%Y-%m-%d %H:%M") if last_dt else "—"
+        cards.append(
+            '<div class="area-card">' + new_badge
+            + '<div class="area-card-header">'
+            + '<div class="area-card-name">' + str(a.name) + '</div>'
+            + '<div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div>'
+            + '</div>'
+            + '<div class="area-stat-grid">'
+            + '<div class="area-stat"><div class="area-stat-val">' + str(s["total"]) + '</div><div class="area-stat-lbl">Total</div></div>'
+            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--warning)">' + str(s["open"]) + '</div><div class="area-stat-lbl">Open</div></div>'
+            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--info)">' + str(s["in_progress"]) + '</div><div class="area-stat-lbl">In Progress</div></div>'
+            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Completed</div></div>'
+            + '</div>'
+            + '<div class="area-status-row" style="color:' + st_color + '"><i class="fas fa-circle" style="font-size:.55rem"></i> <span>' + st_label + '</span></div>'
+            + '<div class="area-last-row"><i class="fas fa-clock"></i> Last: ' + last_str + '</div>'
+            + '<div class="area-card-actions">'
+            + '<a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-eye"></i> View Area</a>'
+            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '" title="Edit Area"><i class="fas fa-edit"></i></a>'
+            + '</div></div>')
+    cards_html = "".join(cards) if cards else ('<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match the current filter.</p></div>')
+    dept_options = '<option value="">All Departments</option>' + "".join(
+        '<option value="' + d + '"' + (' selected' if dept_filter == d else '') + '>' + d + '</option>' for d in dept_set)
+    def _sel(m): return ' selected' if mode == m else ''
+    filter_options = (
+        '<option value="all"' + _sel("all") + '>All Areas</option>'
+        '<option value="active"' + _sel("active") + '>Has Active Request</option>'
+        '<option value="no_active"' + _sel("no_active") + '>No Active Request</option>'
+        '<option value="in_progress"' + _sel("in_progress") + '>In Progress</option>'
+        '<option value="completed"' + _sel("completed") + '>All Completed</option>')
+    print_rows = []
+    for a in all_areas:
+        s = stats.get(a.id) or {"total":0,"open":0,"in_progress":0,"completed":0,"staff":set()}
+        st_label, _ = _area_status(a, s)
+        print_rows.append('<tr><td>'+str(a.name)+'</td><td>'+str(_area_dept_label(a))+'</td><td>'+st_label+'</td>'
+            '<td style="text-align:center">'+str(s["total"])+'</td>'
+            '<td style="text-align:center">'+str(s["open"])+'</td>'
+            '<td style="text-align:center">'+str(s["in_progress"])+'</td>'
+            '<td style="text-align:center">'+str(s["completed"])+'</td>'
+            '<td>'+(', '.join(sorted(s.get("staff") or [])) if s.get("staff") else "—")+'</td></tr>')
+    print_table = ('<div class="print-report" style="display:none">'
+        '<h1>RORI HOTEL</h1><h2>AREAS &amp; MAINTENANCE REPORT</h2>'
+        '<p>Report Date: '+datetime.utcnow().strftime("%Y-%m-%d %H:%M")+'</p>'
+        '<p>Total Areas: <b>'+str(total_areas)+'</b> | Total Requests: <b>'+str(total_requests)+'</b> | '
+        'Open: <b>'+str(total_requests-total_completed)+'</b> | Completed: <b>'+str(total_completed)+'</b></p>'
+        '<table><thead><tr><th>Area</th><th>Department</th><th>Status</th><th>Total</th><th>Open</th>'
+        '<th>In Progress</th><th>Completed</th><th>Assigned Staff</th></tr></thead><tbody>'
+        + "".join(print_rows) + '</tbody></table></div>')
+    content = (
+        '<div class="no-print">'
+        + '<div class="page-header">'
+        + '<div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span> &amp; Maintenance</h1>'
+        + '<p>Rori Hotel | Engineering &amp; Maintenance Area Management</p></div>'
+        + '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print Area Report</button>'
+        + '</div>'
+        + '<div class="kpi-mini">'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas with Active Requests</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas without Active</div><div class="kpi-mini-value" style="color:var(--success)">' + str(areas_without_active) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Maintenance Requests</div><div class="kpi-mini-value">' + str(total_requests) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Open Work Orders</div><div class="kpi-mini-value" style="color:var(--info)">' + str(open_work_orders) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Completed Requests</div><div class="kpi-mini-value" style="color:var(--success)">' + str(total_completed) + '</div></div>'
+        + '</div>'
+        + '<form method="get" class="area-toolbar">'
+        + '<input type="text" class="form-control" name="q" placeholder="Search area, department, item, request #..." value="' + str(q) + '">'
+        + '<select class="form-select" name="filter">' + filter_options + '</select>'
+        + '<select class="form-select" name="dept">' + dept_options + '</select>'
+        + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Apply</button>'
+        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
+        + '</form>'
+        + '<div class="area-grid">' + cards_html + '</div>'
+        + '</div>'
+        + print_table)
+    return page("Areas & Maintenance", content)
 
+@app.route("/areas/<int:area_id>")
+@role_required("ADMIN","MANAGER")
+def area_detail(area_id):
+    a = get_or_404(Area, area_id)
+    reqs = (MaintenanceRequest.query.filter_by(area_id=a.id, is_deleted=False)
+            .order_by(MaintenanceRequest.created_at.desc()).all())
+    counts = {"total":0,"pending":0,"approved":0,"assigned":0,"in_progress":0,
+              "completed":0,"verified":0,"closed":0,"rejected":0,"overdue":0,"open":0}
+    staff_set = set()
+    for r in reqs:
+        counts["total"] += 1
+        st = (r.status or "").strip()
+        key = st.lower().replace(" ", "_")
+        if key in counts: counts[key] += 1
+        if st in ("Pending","Approved","Assigned","In Progress","Overdue"): counts["open"] += 1
+        if r.assigned_to: staff_set.add(r.assigned_to.full_name or r.assigned_to.username)
+    st_label, st_class = _area_status(a, {"total": counts["total"], "open": counts["open"],
+        "in_progress": counts["in_progress"], "completed": counts["completed"]})
+    st_color = {"success":"var(--success)","warning":"var(--warning)",
+                "info":"var(--info)","secondary":"var(--text-secondary)"}.get(st_class, "var(--text-secondary)")
+    dept_label = _area_dept_label(a)
+    rows = []
+    for r in reqs:
+        bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+              "Completed":"success","Verified":"success","Closed":"secondary",
+              "Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
+        rows.append('<tr>'
+            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
+            '<td>' + str(r.category.name if r.category else "—") + '</td>'
+            '<td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td>'
+            '<td>' + str(r.assigned_to.full_name if r.assigned_to else "Unassigned") + '</td>'
+            '<td><span class="badge badge-secondary">' + str(r.priority) + '</span></td>'
+            '<td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '<td>' + (r.completed_date.strftime("%Y-%m-%d %H:%M") if r.completed_date else "—") + '</td>'
+            '</tr>')
+    table_html = ('<div style="overflow-x:auto;"><table class="table"><thead><tr>'
+        '<th>Request #</th><th>Item</th><th>Category</th><th>Requested By</th>'
+        '<th>Assigned To</th><th>Priority</th><th>Status</th><th>Created</th><th>Completed</th>'
+        '</tr></thead><tbody>'
+        + ("".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);padding:2rem;">No requests for this area.</td></tr>')
+        + '</tbody></table></div>')
+    def chip(val, label, color):
+        return ('<div style="background:var(--bg-secondary);padding:.75rem;border-radius:10px;'
+                'border:1px solid var(--border-color);text-align:center;">'
+                '<div style="font-size:1.3rem;font-weight:800;color:' + color + ';">' + str(val) + '</div>'
+                '<div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div></div>')
+    content = ('<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>' + str(a.name) + '</span></h1>'
+        '<p><i class="fas fa-building"></i> ' + str(dept_label) + '</p></div>'
+        '<div style="display:flex;gap:.6rem;">'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
+        '<a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i> Edit Area</a>'
+        '</div></div>'
+        + '<div class="card" style="border-left:3px solid ' + st_color + ';">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Current Status</div>'
+        + '<div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div>'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Department</div>'
+        + '<div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div>'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">Active Staff</div>'
+        + '<div style="font-size:1.15rem;font-weight:800;color:var(--text-primary);">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div>'
+        + '</div></div>'
+        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-chart-simple"></i> Status Breakdown</h5>'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;">'
+        + chip(counts["pending"], "Pending", "var(--warning)")
+        + chip(counts["approved"], "Approved", "var(--info)")
+        + chip(counts["assigned"], "Assigned", "var(--info)")
+        + chip(counts["in_progress"], "In Progress", "var(--info)")
+        + chip(counts["completed"], "Completed", "var(--success)")
+        + chip(counts["verified"], "Verified", "var(--success)")
+        + chip(counts["closed"], "Closed", "var(--text-secondary)")
+        + '</div></div>'
+        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-list"></i> Recent Requests</h5>'
+        + table_html + '</div>')
+    return page("Area: " + str(a.name), content)
+
+@app.route("/areas/<int:area_id>/edit", methods=["GET","POST"])
+@role_required("ADMIN","MANAGER")
+def area_edit(area_id):
+    a = get_or_404(Area, area_id)
+    if request.method == "POST":
+        old_dept = a.department
+        new_dept = (request.form.get("department") or "").strip()
+        a.department = None if new_dept in ("", "Not Assigned", "Unknown") else new_dept
+        a.status = (request.form.get("status") or a.status or "Active").strip()
+        a.description = (request.form.get("description") or "").strip()
+        log_audit("Area Updated","Area",a.id,old_value=str(old_dept),new_value=str(a.department))
+        db.session.commit()
+        flash("✅ Area updated","success")
+        return redirect(url_for("area_detail", area_id=a.id))
+    depts = [d.name for d in Department.query.order_by(Department.name).all()]
+    current = (a.department or "").strip()
+    if current and current not in depts and current.lower() != "unknown":
+        depts = [current] + depts
+    opts = '<option value="">Not Assigned</option>' + "".join(
+        '<option value="' + d + '"' + (' selected' if d == current else '') + '>' + d + '</option>' for d in depts)
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Area</h1>'
+        + '<p>' + str(a.name) + '</p></div>'
+        + '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-arrow-left"></i> Back</a>'
+        + '</div>'
+        + '<div class="card"><form method="post"><div class="row">'
+        + '<div class="col-md-6 mb-3"><label class="form-label">Area Name</label><input type="text" class="form-control" value="' + str(a.name) + '" disabled></div>'
+        + '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
+        + '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status">'
+        + '<option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option>'
+        + '<option value="Inactive"' + (' selected' if (a.status or "")=="Inactive" else '') + '>Inactive</option>'
+        + '</select></div>'
+        + '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3">' + str(a.description or "") + '</textarea></div>'
+        + '<div class="col-12 d-flex gap-2"><a href="' + url_for("area_detail", area_id=a.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        + '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div>'
+        + '</div></form></div>')
+    return page("Edit Area", content)
+
+# ══════════════════════════════════════════ ROOMS
+@app.route("/rooms")
+@role_required("ADMIN","MANAGER")
+def rooms_list():
+    q = (request.args.get("q") or "").strip()
+    floor_f = request.args.get("floor", type=int)
+    status_f = (request.args.get("status") or "").strip()
+    base_q = Room.query
+    if floor_f: base_q = base_q.filter(Room.floor == floor_f)
+    if status_f: base_q = base_q.filter(Room.status == status_f)
+    if q: base_q = base_q.filter(Room.room_number.like("%" + q + "%"))
+    rooms = base_q.order_by(Room.room_number).all()
+    stats = defaultdict(lambda: {"total":0,"open":0,"in_progress":0,"completed":0,"last_date":None})
+    room_ids = [r.id for r in rooms]
+    if room_ids:
+        reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.in_(room_ids))
+                .filter_by(is_deleted=False).all())
+        for r in reqs:
+            s = stats[r.room_id]
+            s["total"] += 1
+            if r.status in ("Pending","Approved","Assigned","In Progress","Overdue"): s["open"] += 1
+            if r.status == "In Progress": s["in_progress"] += 1
+            if r.status in ("Completed","Verified","Closed"): s["completed"] += 1
+            if r.created_at and (s["last_date"] is None or r.created_at > s["last_date"]): s["last_date"] = r.created_at
+    all_rooms = Room.query.all()
+    total_rooms = len(all_rooms)
+    occupied = sum(1 for r in all_rooms if r.status == "Occupied")
+    available = sum(1 for r in all_rooms if r.status == "Available")
+    maintenance = sum(1 for r in all_rooms if r.status == "Maintenance")
+    all_room_ids = [r.id for r in all_rooms]
+    open_reqs = 0
+    if all_room_ids:
+        open_reqs = (MaintenanceRequest.query
+                     .filter(MaintenanceRequest.room_id.in_(all_room_ids))
+                     .filter_by(is_deleted=False)
+                     .filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
+    cards = []
+    for r in rooms:
+        s = stats.get(r.id) or {"total":0,"open":0,"in_progress":0,"completed":0,"last_date":None}
+        status_class = {"Available":"green","Occupied":"blue","Reserved":"gold",
+                        "Maintenance":"orange","Out of Service":"red"}.get(r.status, "gold")
+        last = s["last_date"].strftime("%Y-%m-%d") if s["last_date"] else "—"
+        open_badge = ('<span class="rpro-chip orange"><i class="fas fa-tools"></i> ' + str(s["open"]) + ' open</span>' if s["open"] else
+                      '<span class="rpro-chip green"><i class="fas fa-check"></i> Clear</span>')
+        cards.append(
+            '<div class="rpro-room-card">'
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+            '<div><div class="rpro-room-num">' + str(r.room_number) + '</div>'
+            '<div class="rpro-room-floor"><i class="fas fa-layer-group"></i> Floor ' + str(r.floor) + '</div></div>'
+            '<span class="rpro-chip ' + status_class + '">' + str(r.status) + '</span>'
+            '</div>'
+            '<div class="rpro-room-stats">' + open_badge
+            + '<span class="rpro-chip"><i class="fas fa-list"></i> ' + str(s["total"]) + ' total</span>'
+            + ('<span class="rpro-chip blue"><i class="fas fa-spinner"></i> ' + str(s["in_progress"]) + '</span>' if s["in_progress"] else "")
+            + '</div>'
+            '<div style="font-size:.7rem;color:var(--text-secondary);margin-top:.6rem;"><i class="fas fa-clock"></i> Last: ' + last + '</div>'
+            '<a href="' + url_for("requests_list") + '?room_id=' + str(r.id) + '" class="btn-primary" style="margin-top:.75rem;width:100%;justify-content:center;padding:.45rem;font-size:.8rem;"><i class="fas fa-eye"></i> View Requests</a>'
+            '</div>')
+    all_floors = sorted({r.floor for r in all_rooms})
+    floor_opts = '<option value="">All Floors</option>' + "".join(
+        '<option value="' + str(f) + '"' + (' selected' if floor_f == f else '') + '>Floor ' + str(f) + '</option>' for f in all_floors)
+    status_opts = '<option value="">All Statuses</option>' + "".join(
+        '<option value="' + s + '"' + (' selected' if status_f == s else '') + '>' + s + '</option>' for s in ROOM_STATUSES)
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span> Management</h1>'
+        '<p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors</p></div></div>'
+        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
+        '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-door-open"></i></div><div class="kpi-value">' + str(total_rooms) + '</div><div class="kpi-label">Total Rooms</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(available) + '</div><div class="kpi-label">Available</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info)"><i class="fas fa-user-check"></i></div><div class="kpi-value">' + str(occupied) + '</div><div class="kpi-label">Occupied</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-tools"></i></div><div class="kpi-value">' + str(maintenance) + '</div><div class="kpi-label">Maintenance</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open Requests</div></div>'
+        '</div>'
+        '<form method="get" class="rpro-toolbar">'
+        '<input type="text" class="form-control" name="q" placeholder="Search room number..." value="' + q + '">'
+        '<select class="form-select" name="floor">' + floor_opts + '</select>'
+        '<select class="form-select" name="status">' + status_opts + '</select>'
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-filter"></i> Filter</button>'
+        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
+        '</form>'
+        + ('<div class="rpro-room-grid">' + "".join(cards) + '</div>' if cards
+           else '<div class="rpro-card" style="text-align:center;padding:3rem;"><i class="fas fa-search" style="font-size:2rem;color:var(--rori-gold);opacity:.5;"></i><p style="color:var(--text-secondary);margin-top:.75rem;">No rooms match your filters.</p></div>'))
+    return page("Rooms", content)
+
+# ══════════════════════════════════════════ OTHER PAGES
 @app.route("/inventory")
 @role_required("ADMIN","MANAGER")
 def inventory_list():
@@ -2556,7 +2781,7 @@ def employees_list():
 @role_required("ADMIN")
 def admin_users():
     us = User.query.all()
-    rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
+    rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name or u.username) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-cog"></i> <span>Users</span></h1></div></div>'
          '<div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Users", c)
@@ -2608,7 +2833,10 @@ def reports():
 
 @app.route("/debug")
 def debug():
-    return jsonify({"users": User.query.count(), "departments": Department.query.count(), "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(), "work_orders": WorkOrder.query.count(), "notifications": Notification.query.count(), "department_signatures": DepartmentSignature.query.count()})
+    return jsonify({"users": User.query.count(), "departments": Department.query.count(),
+                    "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
+                    "work_orders": WorkOrder.query.count(), "notifications": Notification.query.count(),
+                    "department_signatures": DepartmentSignature.query.count()})
 
 @app.route("/manifest.json")
 def manifest():
@@ -2638,7 +2866,7 @@ def e500(e):
 with app.app_context():
     ensure_database_schema()
     seed_data()
-    print(" App initialized with Fixed Management Reports")
+    print("✅ Rori Hotel Maintenance System initialized")
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
