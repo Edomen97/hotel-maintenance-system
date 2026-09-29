@@ -543,6 +543,22 @@ def page(title, content):
     
     flash_html = "".join('<div class="alert alert-' + str(c) + ' alert-dismissible fade show">' + str(m) + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>' for c, m in get_flashed_messages(with_categories=True))
     
+    # ── Auth-safe header profile block ──
+    if current_user.is_authenticated:
+        _display_name = current_user.full_name or current_user.username or "User"
+        _avatar_letter = _display_name[0].upper() if _display_name else "U"
+        _display_role = current_user.role or ""
+        user_profile_html = (
+            '<div class="user-profile">'
+            '<div class="user-avatar">' + _avatar_letter + '</div>'
+            '<div class="user-info">'
+            '<div class="user-name">' + str(_display_name) + '</div>'
+            '<div class="user-role">' + str(_display_role) + '</div>'
+            '</div></div>'
+        )
+    else:
+        user_profile_html = ''
+    
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>""" + str(title) + """ | Rori Hotel</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -979,14 +995,7 @@ body {
         </a>
     </div>
     <div class="header-right">
-        """ + sound_toggle + bell_html + """
-        <div class="user-profile">
-            <div class="user-avatar">""" + (current_user.full_name[0].upper() if current_user.full_name else current_user.username[0].upper()) + """</div>
-            <div class="user-info">
-                <div class="user-name">""" + str(current_user.full_name or current_user.username) + """</div>
-                <div class="user-role">""" + str(current_user.role) + """</div>
-            </div>
-        </div>
+        """ + sound_toggle + bell_html + user_profile_html + """
     </div>
 </header>
 
