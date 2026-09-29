@@ -1,4 +1,5 @@
-# app.py - Rori Hotel Maintenance Management System (COMPLETE FIXED VERSION)
+# app.py - Rori Hotel Maintenance Management System
+# Developer: Edom Adinew
 import csv, io, json, os, re, sqlite3, uuid, traceback, calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -41,14 +42,149 @@ ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
 # ══════════════════════════════════════════ RORI HOTEL ROOM STRUCTURE
-# ONLY these 100 guest rooms exist. NO 1st floor rooms.
-# 2F: 201-225 (25) | 3F: 301-325 (25) | 4F: 401-425 (25) | 5F: 501-525 (25)
+# 2F: 201-225 | 3F: 301-325 | 4F: 401-425 | 5F: 501-525 (100 rooms total)
 RORI_ROOM_STRUCTURE = {
     2: list(range(201, 226)),
     3: list(range(301, 326)),
     4: list(range(401, 426)),
     5: list(range(501, 526)),
 }
+
+# ══════════════════════════════════════════ DEPARTMENT MAINTENANCE ITEMS
+NEW_ITEMS_BY_DEPT = {
+    "Food & Beverage": [
+        "🪑 Table, Chair, Sofa",
+        "🚪 Door / Lock / Handle",
+        "💡 Lights / Switch / Socket",
+        "❄️ AC / Fan",
+        "🚰 Sink / Tap / Drainage",
+        "🧊 Beverage Refrigerator / Display Cooler",
+        "🍹 Bar Equipment",
+        "☕ Coffee Machine",
+        "🪟 Window / Curtain / Blind",
+        "🧱 Floor / Wall / Ceiling",
+        "🔌 Electrical Problems",
+        "🚿 Water Leakage",
+        "🧯 Fire Extinguisher / Safety Equipment",
+        "🏨 Restaurant / Bar / Dining Area Maintenance",
+    ],
+    "Kitchen": [
+        "🔥 Gas Stove / Electric Stove",
+        "🍕 Oven",
+        "🍗 Grill",
+        "🍟 Deep Fryer",
+        "♨️ Bain-Marie / Food Warmer",
+        "🧊 Refrigerator",
+        "❄️ Freezer",
+        "🥩 Meat Slicer / Grinder",
+        "🧼 Dishwasher",
+        "💨 Exhaust Hood / Ventilation",
+        "🚰 Kitchen Sink / Tap / Drainage",
+        "🔌 Electrical Equipment",
+        "💡 Kitchen Lights",
+        "🪑 Kitchen Tables / Shelves",
+        "🚪 Kitchen Doors",
+        "🧯 Fire & Gas Safety Equipment",
+        "💧 Water Leakage",
+        "🧱 Floor / Wall / Ceiling",
+    ],
+    "Security": [
+        "📹 CCTV Cameras",
+        "🖥️ DVR/NVR",
+        "🔐 Access Control",
+        "🚪 Security Doors & Locks",
+        "🚨 Alarm System",
+        "🔥 Fire Alarm",
+        "💡 Security Lighting",
+        "⚡ Electrical",
+        "📻 Walkie-Talkie / Communication",
+        "🚧 Gate / Barrier",
+        "🪟 Windows & Security Grills",
+        "🔋 UPS / Backup Power",
+        "🧯 Fire/Safety Equipment",
+        "🪑 Security Desk/Chair/Furniture",
+        "🏢 Security Office Maintenance",
+        "🅿️ Parking-Area Security Equipment",
+        "🔌 Network Cables/Switches for CCTV/Access Control",
+    ],
+    "SPA": [
+        "🚿 Shower — Tap, Shower Head, Water Leakage",
+        "🛁 Jacuzzi / Hot Tub — Pump, Heater, Water Circulation",
+        "♨️ Sauna — Heater, Temperature Control, Door",
+        "💨 Steam Room — Steam Generator, Control, Ventilation",
+        "❄️ AC / Air Conditioning",
+        "💡 Lights / Switch / Socket",
+        "🚰 Sink / Tap / Drainage",
+        "🚪 Doors / Locks / Handles",
+        "🪞 Mirror",
+        "🪑 Massage Bed / Treatment Bed",
+        "🛏️ Furniture / Sofa / Chair",
+        "🧺 Towel Warmer / Laundry Equipment",
+        "🔌 Electrical Equipment",
+        "💧 Water Leakage / Plumbing",
+        "🧱 Floor / Wall / Ceiling",
+        "🎵 Sound System",
+        "🧯 Fire & Safety Equipment",
+        "🏊 Pool-Related Equipment",
+    ],
+    "Marketing": [
+        "💡 Lights / Switch / Socket",
+        "🖥️ Computer / Monitor",
+        "🖨️ Printer / Scanner",
+        "📺 TV / Display Screen",
+        "📸 Camera / Photography Equipment",
+        "🎤 Microphone / Speaker / Sound System",
+        "🌐 Internet / Wi-Fi / Network",
+        "🔌 Electrical Equipment",
+        "❄️ AC / Fan",
+        "🚪 Door / Lock / Handle",
+        "🪑 Desk / Chair / Office Furniture",
+        "🪧 Signboard / Advertising Board",
+        "🖼️ Display / Poster Frames",
+        "🏢 Marketing Office Maintenance",
+    ],
+    "Laundry": [
+        "🧺 Washing Machine",
+        "♨️ Dryer",
+        "🧹 Ironing Machine / Press",
+        "🧵 Sewing Machine",
+        "🌀 Laundry Extractor / Spinner",
+        "💨 Steam Boiler / Steam System",
+        "🔥 Steam Iron",
+        "🚰 Water Supply / Tap / Pipe",
+        "💧 Drainage / Drain Pipe",
+        "⚡ Electrical Panel / Socket / Switch",
+        "💡 Laundry Lights",
+        "❄️ AC / Ventilation / Exhaust Fan",
+        "🚪 Doors / Locks / Handles",
+        "🪑 Laundry Tables / Shelves",
+        "🧯 Fire & Safety Equipment",
+        "🔌 Power Supply / UPS",
+        "🧱 Floor / Wall / Ceiling",
+        "💦 Water Leakage",
+    ],
+}
+
+# ══════════════════════════════════════════ HOTEL AREAS
+HOTEL_AREAS = [
+    "Main Hotel Entrance Gate",
+    "VIP Parking Area",
+    "Expansion Building Area",
+    "Staff Gate Area",
+    "Customer Restroom",
+    "Fountain Area",
+    "Garden Area",
+    "Steward Area",
+    "Water Tank Area",
+    "Wastewater Drainage Area — የፍሳሽ ውሃ መስገጃ",
+    "Generator Area",
+    "Motor Parking Area",
+    "New Compound Area",
+    "Dukale Compound Area",
+    "X-Ray Gate Area",
+    "Main Site / General Hotel Area",
+    "Kalicheral Kitchen Area",
+]
 
 # ══════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
@@ -92,10 +228,11 @@ class Room(db.Model):
 class Area(db.Model):
     __tablename__ = "areas"
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), unique=True, nullable=False)
+    name = db.Column(db.String(150), unique=True, nullable=False)
     department = db.Column(db.String(120))
     description = db.Column(db.Text)
     status = db.Column(db.String(20), default="Active")
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -108,8 +245,10 @@ class Category(db.Model):
 class WorkingItem(db.Model):
     __tablename__ = "working_items"
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(80), unique=True, nullable=False)
+    name = db.Column(db.String(150), unique=True, nullable=False)
     description = db.Column(db.Text)
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
+    department = db.relationship("Department", foreign_keys=[department_id])
 
 class Employee(db.Model):
     __tablename__ = "employees"
@@ -447,6 +586,7 @@ def ensure_database_schema():
             pg = db.engine.dialect.name == "postgresql"
             dt = "TIMESTAMP" if pg else "DATETIME"
             bd = "DEFAULT FALSE" if pg else "DEFAULT 0"
+            bd_t = "DEFAULT TRUE" if pg else "DEFAULT 1"
             add_column_if_missing("maintenance_requests","department_id","ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER")
             add_column_if_missing("maintenance_requests","manager_id","ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER")
             add_column_if_missing("maintenance_requests","completion_note","ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT")
@@ -483,6 +623,13 @@ def ensure_database_schema():
             add_column_if_missing("suppliers","created_at","ALTER TABLE suppliers ADD COLUMN created_at " + dt)
             add_column_if_missing("suppliers","updated_at","ALTER TABLE suppliers ADD COLUMN updated_at " + dt)
             add_column_if_missing("inventory_parts","supplier_id","ALTER TABLE inventory_parts ADD COLUMN supplier_id INTEGER")
+            # New: department-linked working items + dynamic areas
+            add_column_if_missing("working_items","department_id","ALTER TABLE working_items ADD COLUMN department_id INTEGER")
+            add_column_if_missing("areas","is_active","ALTER TABLE areas ADD COLUMN is_active BOOLEAN " + bd_t)
+            try:
+                with db.engine.begin() as conn:
+                    conn.execute(text("UPDATE areas SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
+            except Exception: pass
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
@@ -600,7 +747,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 .sidebar-nav .nav-link:hover{background:var(--bg-card);color:var(--text-primary);border-left-color:var(--rori-gold)}
 .sidebar-nav .nav-link.active{background:rgba(197,160,89,0.1);color:var(--rori-gold);border-left-color:var(--rori-gold)}
 .sidebar-nav .nav-link i{width:20px;text-align:center}
-.main-content{margin-left:260px;padding:2rem;min-height:calc(100vh - 70px)}
+.main-content{margin-left:260px;padding:2rem;min-height:calc(100vh - 70px);padding-bottom:5rem}
 .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem}
 .page-title h1{font-size:1.8rem;font-weight:800;color:var(--text-primary);margin-bottom:0.25rem}
 .page-title h1 span{color:var(--rori-gold)}
@@ -649,8 +796,10 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 .list-group-item{background:var(--bg-card)!important;color:var(--text-primary)!important;border-color:var(--border-color)!important}
 .menu-toggle{display:none;background:none;border:none;color:var(--text-primary);font-size:1.5rem;cursor:pointer}
+.rori-footer{margin-left:0;margin-top:3rem;padding:1.5rem 2rem;text-align:center;font-size:.8rem;color:var(--text-secondary);border-top:1px solid var(--border-color)}
+.rori-footer .dev-name{color:var(--rori-gold);font-weight:700;letter-spacing:.3px}
 @media(max-width:1024px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0}.menu-toggle{display:block}}
-@media(max-width:768px){.header{padding:0 1rem}.user-info{display:none}.main-content{padding:1rem}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem}.kpi-value{font-size:2rem}.page-header{flex-direction:column;align-items:flex-start}.table>:not(caption)>*>*{padding:.7rem .6rem;font-size:.82rem}.table>thead th{font-size:.68rem;padding:.7rem .6rem}}
+@media(max-width:768px){.header{padding:0 1rem}.user-info{display:none}.main-content{padding:1rem;padding-bottom:4rem}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem}.kpi-value{font-size:2rem}.page-header{flex-direction:column;align-items:flex-start}.table>:not(caption)>*>*{padding:.7rem .6rem;font-size:.82rem}.table>thead th{font-size:.68rem;padding:.7rem .6rem}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
 .pulse{animation:pulse 2s infinite}
 ::-webkit-scrollbar{width:8px;height:8px}
@@ -696,7 +845,9 @@ select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 .area-card{position:relative;background:var(--bg-card);border:1px solid var(--border-color);border-radius:18px;padding:1.25rem;transition:transform .18s,border-color .18s,box-shadow .18s;overflow:hidden;display:flex;flex-direction:column;gap:.75rem}
 .area-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--rori-gold),transparent)}
 .area-card:hover{transform:translateY(-4px);border-color:var(--rori-gold);box-shadow:0 14px 32px rgba(0,0,0,.45)}
+.area-card.inactive{opacity:.55;filter:grayscale(.6)}
 .area-new-badge{position:absolute;top:12px;right:12px;background:var(--danger);color:#fff;font-size:.68rem;font-weight:700;padding:.25rem .55rem;border-radius:12px;letter-spacing:.4px}
+.area-inactive-badge{position:absolute;top:12px;right:12px;background:#6b7280;color:#fff;font-size:.68rem;font-weight:700;padding:.25rem .55rem;border-radius:12px;letter-spacing:.4px}
 .area-card-header{padding-right:5rem}
 .area-card-name{font-size:1.15rem;font-weight:800;color:var(--text-primary);letter-spacing:.3px;margin-bottom:.15rem}
 .area-card-dept{font-size:.78rem;color:var(--rori-gold);font-weight:600;display:flex;align-items:center;gap:.4rem;text-transform:uppercase;letter-spacing:.5px}
@@ -707,7 +858,8 @@ select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 .area-status-row{display:flex;align-items:center;gap:.45rem;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
 .area-last-row{font-size:.72rem;color:var(--text-secondary);display:flex;align-items:center;gap:.35rem}
 .area-last-row i{color:var(--rori-gold)}
-.area-card-actions{display:flex;gap:.5rem;margin-top:auto;padding-top:.35rem}
+.area-card-actions{display:flex;gap:.5rem;margin-top:auto;padding-top:.35rem;flex-wrap:wrap}
+.area-card-actions .btn-primary{font-size:.78rem;padding:.5rem .8rem}
 .empty-state{grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:3rem 1rem;background:var(--bg-card);border:1px dashed var(--border-color);border-radius:16px}
 .empty-state i{font-size:2rem;color:var(--rori-gold);opacity:.5;display:block;margin-bottom:.75rem}
 .kpi-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
@@ -721,7 +873,7 @@ select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 #roriAlertBanner .ra-btn{margin-top:.6rem;background:#0B0B12;color:#C5A059;border:none;padding:.45rem 1rem;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer}
 @keyframes roriSlideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:640px){.area-grid{grid-template-columns:1fr}.area-stat-grid{grid-template-columns:repeat(2,1fr)}.area-card-header{padding-right:0}}
-@media print{.header,.sidebar,.no-print{display:none!important}body{background:#fff!important;color:#000!important;padding-top:0!important}.main-content{margin-left:0!important;padding:0!important}.rpro-card,.rpro-room-card,.card,.area-card{border:1px solid #ccc!important;background:#fff!important;color:#000!important}.rpro-kv-value,.rpro-room-num,.area-card-name{color:#000!important}.rpro-kv-label,.rpro-room-floor{color:#555!important}.rpro-timeline::before{background:#999}.rpro-timeline-dot{background:#C5A059}.print-report{display:block!important}.print-report h1{font-size:22px;color:#000}.print-report h2{font-size:16px;color:#000}.print-report p{color:#000}.print-report table{width:100%;border-collapse:collapse;color:#000;font-size:11px}.print-report th,.print-report td{border:1px solid #999;padding:5px}.print-report th{background:#eee}}
+@media print{.header,.sidebar,.no-print,.rori-footer{display:none!important}body{background:#fff!important;color:#000!important;padding-top:0!important}.main-content{margin-left:0!important;padding:0!important}.rpro-card,.rpro-room-card,.card,.area-card{border:1px solid #ccc!important;background:#fff!important;color:#000!important}.rpro-kv-value,.rpro-room-num,.area-card-name{color:#000!important}.rpro-kv-label,.rpro-room-floor{color:#555!important}.rpro-timeline::before{background:#999}.rpro-timeline-dot{background:#C5A059}.print-report{display:block!important}.print-report h1{font-size:22px;color:#000}.print-report h2{font-size:16px;color:#000}.print-report p{color:#000}.print-report table{width:100%;border-collapse:collapse;color:#000;font-size:11px}.print-report th,.print-report td{border:1px solid #999;padding:5px}.print-report th{background:#eee}}
 </style></head><body>
 
 <header class="header">
@@ -742,6 +894,10 @@ select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 
 <main class="main-content">
     """ + flash_html + content + """
+    <div class="rori-footer">
+        <div>Rori Hotel — Maintenance Management System</div>
+        <div style="margin-top:.35rem;">Developer: <span class="dev-name">Edom Adinew</span></div>
+    </div>
 </main>
 
 <div id="roriAlertBanner">
@@ -880,36 +1036,76 @@ if(document.querySelector('.header-icon')){
 
 # ══════════════════════════════════════════ SEED DATA
 def seed_data():
-    for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other","SPA","GM"]:
+    core_depts = [
+        "Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen",
+        "Finance","HR","Security","IT","Sales & Marketing","Administration",
+        "Maintenance","Other","SPA","GM","Marketing","Laundry",
+    ]
+    for name in core_depts:
         if not Department.query.filter_by(name=name).first():
             db.session.add(Department(name=name))
     db.session.commit()
+
     for f in [2,3,4,5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
-    # ═══ RORI HOTEL ROOM STRUCTURE: EXACTLY 100 ROOMS ═══
-    # 2F: 201-225 | 3F: 301-325 | 4F: 401-425 | 5F: 501-525
-    # No rooms on 1st floor. No rooms 226-300, 326-400, 426-500.
+
     if Room.query.count() == 0:
         for floor, nums in RORI_ROOM_STRUCTURE.items():
             for num in nums:
                 db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
-    for n, d in [("Buduchalley","F&B"),("Sillanto","Unknown"),("Fura","Unknown"),("Executive","Unknown"),("Mitima","Unknown"),("Odako","Unknown"),("Gudumale","Unknown"),("Bubble","Unknown"),("Bubbles","Unknown"),("Fura Corridor","Unknown"),("Executive Meeting Room","Unknown"),("Counter","Unknown")]:
-        if not Area.query.filter_by(name=n).first(): db.session.add(Area(name=n, department=d))
+
+    legacy_areas = [
+        ("Buduchalley","F&B"),("Sillanto","Unknown"),("Fura","Unknown"),
+        ("Executive","Unknown"),("Mitima","Unknown"),("Odako","Unknown"),
+        ("Gudumale","Unknown"),("Bubble","Unknown"),("Bubbles","Unknown"),
+        ("Fura Corridor","Unknown"),("Executive Meeting Room","Unknown"),
+        ("Counter","Unknown"),
+    ]
+    for n, d in legacy_areas:
+        if not Area.query.filter_by(name=n).first():
+            db.session.add(Area(name=n, department=d, is_active=True))
+    for n in HOTEL_AREAS:
+        if not Area.query.filter_by(name=n).first():
+            db.session.add(Area(name=n, department=None, is_active=True))
+    db.session.commit()
+
     for c in ["Electrical","Plumbing","HVAC","Painting","Carpentry","Civil","Safety","General","Other"]:
         if not Category.query.filter_by(name=c).first(): db.session.add(Category(name=c))
-    for i in ["Light","Switch","Window","Door Key","Door Lock","Paint","Mirror","Drainage Cover","Frame","Background Frame","Spot Light","Plumbing","AC","Electrical","Other"]:
+
+    legacy_items = ["Light","Switch","Window","Door Key","Door Lock","Paint","Mirror",
+                    "Drainage Cover","Frame","Background Frame","Spot Light","Plumbing",
+                    "AC","Electrical","Other"]
+    for i in legacy_items:
         if not WorkingItem.query.filter_by(name=i).first(): db.session.add(WorkingItem(name=i))
-    for eid, n, t in [(1,"Mechanic 1","General Mechanic"),(2,"Mechanic 2","General Mechanic"),(3,"Mechanic 3","General Mechanic"),(4,"Supervisor 1","Supervisor"),(5,"Amir Awel","Manager")]:
-        if not db.session.get(Employee, eid): db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
+    db.session.commit()
+
+    for dept_name, items in NEW_ITEMS_BY_DEPT.items():
+        dept = Department.query.filter_by(name=dept_name).first()
+        if not dept: continue
+        for item_name in items:
+            existing = WorkingItem.query.filter_by(name=item_name).first()
+            if not existing:
+                db.session.add(WorkingItem(name=item_name, department_id=dept.id))
+            else:
+                if existing.department_id is None:
+                    existing.department_id = dept.id
+    db.session.commit()
+
+    for eid, n, t in [(1,"Mechanic 1","General Mechanic"),(2,"Mechanic 2","General Mechanic"),
+                      (3,"Mechanic 3","General Mechanic"),(4,"Supervisor 1","Supervisor"),
+                      (5,"Amir Awel","Manager")]:
+        if not db.session.get(Employee, eid):
+            db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
+
     if Supplier.query.count() == 0:
         for s in ["ABC Maintenance Supply","Hawassa Engineering Supply","Rori Hotel Approved Supplier"]:
             db.session.add(Supplier(company_name=s, contact_person="", phone="", status="Active", is_active=True))
+
     hk = Department.query.filter_by(name="Housekeeping").first()
     if not User.query.filter_by(username="admin").first():
         u = User(username="admin", full_name="System Administrator", role="ADMIN", email="admin@rorihotel.local")
-        u.set_password("admin123")
-        db.session.add(u)
+        u.set_password("admin123"); db.session.add(u)
     for s in [
         {"u":"amir","n":"Amir Awel","r":"MANAGER","d":None},
         {"u":"kasahun","n":"Kasahun Girma","r":"MANAGER","d":hk.id if hk else None},
@@ -925,16 +1121,18 @@ def seed_data():
         ex = User.query.filter_by(username=s["u"]).first()
         if not ex:
             u = User(username=s["u"], full_name=s["n"], role=s["r"], department_id=s["d"])
-            u.set_password("123456")
-            db.session.add(u)
+            u.set_password("123456"); db.session.add(u)
         else:
             ex.full_name = s["n"]; ex.role = s["r"]; ex.department_id = s["d"]
+
     dept_map = {
-        "it": {"n": "Hebron Tedrose", "dept": "IT"},
         "fnb": {"n": "Bahilu Boja", "dept": "Food & Beverage"},
-        "security": {"n": "Tariku Bekele", "dept": "Security"},
         "kitchen": {"n": "Biruk Haile", "dept": "Kitchen"},
+        "security": {"n": "Tariku Bekele", "dept": "Security"},
         "spa": {"n": "Tesfaye Yohanes", "dept": "SPA"},
+        "marketing": {"n": "Marketing Head", "dept": "Marketing"},
+        "laundry": {"n": "Laundry Supervisor", "dept": "Laundry"},
+        "it": {"n": "Hebron Tedrose", "dept": "IT"},
         "finance": {"n": "Abel Yemane", "dept": "Finance"},
         "gm": {"n": "Muluken Gedafew", "dept": "GM"},
     }
@@ -943,18 +1141,21 @@ def seed_data():
         if not dept: continue
         ex = User.query.filter_by(username=uname).first()
         if not ex:
-            u = User(username=uname, full_name=info["n"], role="DEPARTMENT", department_id=dept.id, email=uname + "@rorihotel.local")
-            u.set_password("123456")
-            db.session.add(u)
+            u = User(username=uname, full_name=info["n"], role="DEPARTMENT",
+                     department_id=dept.id, email=uname + "@rorihotel.local")
+            u.set_password("123456"); db.session.add(u)
         else:
             ex.full_name = info["n"]; ex.role = "DEPARTMENT"; ex.department_id = dept.id
     db.session.flush()
+
     sig_configs = [
-        {"dept": "IT", "name": "Hebron Tedrose"},
         {"dept": "Food & Beverage", "name": "Bahilu Boja"},
-        {"dept": "Security", "name": "Tariku Bekele"},
         {"dept": "Kitchen", "name": "Biruk Haile"},
+        {"dept": "Security", "name": "Tariku Bekele"},
         {"dept": "SPA", "name": "Tesfaye Yohanes"},
+        {"dept": "Marketing", "name": "Marketing Head"},
+        {"dept": "Laundry", "name": "Laundry Supervisor"},
+        {"dept": "IT", "name": "Hebron Tedrose"},
         {"dept": "Finance", "name": "Abel Yemane"},
         {"dept": "GM", "name": "Muluken Gedafew"},
         {"dept": "Housekeeping", "name": "Kassahun Girma"},
@@ -971,56 +1172,30 @@ def seed_data():
     print("✅ Seed data loaded")
 
 def fix_room_structure():
-    """Enforce Rori Hotel's exact 100-room layout:
-       2F=201-225, 3F=301-325, 4F=401-425, 5F=501-525.
-       Removes any stray rooms (1F, 226-300, 326-400, 426-500, etc.),
-       fixes wrong floor numbers, and inserts any missing valid rooms.
-       Linked maintenance requests of removed rooms are safely unlinked."""
+    """Enforce Rori Hotel's exact 100-room layout (2F-5F only)."""
     valid = {}
     for floor, nums in RORI_ROOM_STRUCTURE.items():
         for n in nums:
             valid[str(n)] = floor
-
     changed = False
-
-    # 1) Remove rooms that don't belong to the canonical set
     for r in Room.query.all():
         if r.room_number not in valid:
             MaintenanceRequest.query.filter_by(room_id=r.id).update({"room_id": None})
-            db.session.delete(r)
-            changed = True
-
-    # 2) Fix floor mismatches on surviving rooms
+            db.session.delete(r); changed = True
     for r in Room.query.all():
-        correct_floor = valid.get(r.room_number)
-        if correct_floor is not None and r.floor != correct_floor:
-            r.floor = correct_floor
-            changed = True
-
+        cf = valid.get(r.room_number)
+        if cf is not None and r.floor != cf: r.floor = cf; changed = True
     db.session.flush()
-
-    # 3) Insert any missing rooms from the canonical set
     existing = {r.room_number for r in Room.query.all()}
     for num_str, floor in valid.items():
         if num_str not in existing:
-            db.session.add(Room(floor=floor, room_number=num_str, status="Available"))
-            changed = True
-
-    # 4) Keep Floor table in sync (only 2,3,4,5 — never 1)
+            db.session.add(Room(floor=floor, room_number=num_str, status="Available")); changed = True
     for f in [2, 3, 4, 5]:
         if not Floor.query.filter_by(floor_number=f).first():
-            db.session.add(Floor(floor_number=f))
-            changed = True
-
+            db.session.add(Floor(floor_number=f)); changed = True
     db.session.commit()
-
-    total = Room.query.count()
-    print(f"✅ Room structure enforced: {total} rooms (expected 100)")
-    if changed:
-        print("   → Stray rooms removed / missing rooms added / floors corrected.")
-    else:
-        print("   → Room structure already correct, no changes needed.")
-    return total
+    print(f"✅ Room structure enforced: {Room.query.count()} rooms (expected 100)")
+    return Room.query.count()
 
 # ══════════════════════════════════════════ AUTH & MAIN ROUTES
 @app.route("/")
@@ -1123,12 +1298,11 @@ def requests_list():
 @app.route("/requests/new", methods=["GET","POST"])
 @login_required
 def request_create():
-    depts = Department.query.order_by(Department.name).all()
     cats = Category.query.order_by(Category.name).all()
-    items = WorkingItem.query.order_by(WorkingItem.name).all()
     rooms = Room.query.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
-    areas = Area.query.order_by(Area.name).all()
+    areas = Area.query.filter_by(is_active=True).order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
+    all_depts = Department.query.order_by(Department.name).all()
     sig_profile = get_user_signature_profile(current_user)
     user_dept_name = current_user.department.name if current_user.department else None
     user_dept_id = current_user.department_id
@@ -1143,6 +1317,8 @@ def request_create():
             prio = request.form.get("priority","MEDIUM")
             fl = request.form.get("floor", type=int)
             did = current_user.department_id if current_user.department_id else None
+            form_dept_id = request.form.get("department_id", type=int)
+            if form_dept_id: did = form_dept_id
             if lt == "Room" and rid:
                 rm = get_one(Room, rid)
                 if rm: fl = rm.floor
@@ -1152,25 +1328,28 @@ def request_create():
                 flash("Description is required","danger"); return redirect(url_for("request_create"))
             sig_data = request.form.get("signature_data", "").strip()
             sig_name_from_form = request.form.get("signature_name", "").strip()
-            ok, err = validate_signature_for_user(current_user, sig_data)
-            if not ok:
-                flash(err, "danger"); return redirect(url_for("request_create"))
-            if sig_profile and sig_name_from_form:
-                if sig_name_from_form != sig_profile.authorized_name:
+            # Signature validation: if department user -> validate; if manager/admin, allow without signature
+            if current_user.role in ["DEPARTMENT", "EMPLOYEE"]:
+                ok, err = validate_signature_for_user(current_user, sig_data)
+                if not ok:
+                    flash(err, "danger"); return redirect(url_for("request_create"))
+                if sig_profile and sig_name_from_form and sig_name_from_form != sig_profile.authorized_name:
                     flash("Signature name mismatch.", "danger"); return redirect(url_for("request_create"))
             authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
                 working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
                 requested_by_id=current_user.id, department_id=did, awaiting_hk_approval=False,
-                signature_name=authorized_name, signature_status="SIGNED", signature_signed_at=datetime.utcnow(),
-                signature_data=sig_data, signature_department=user_dept_name, signature_verified=True, signature_user_id=current_user.id,
+                signature_name=authorized_name, signature_status=("SIGNED" if sig_data else "UNSIGNED"),
+                signature_signed_at=(datetime.utcnow() if sig_data else None),
+                signature_data=sig_data, signature_department=user_dept_name,
+                signature_verified=bool(sig_data), signature_user_id=current_user.id,
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
-            log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=authorized_name + " @ " + str(user_dept_name))
-            log_status_change(req.id,"Pending",notes="Created and signed by " + str(authorized_name) + " (" + str(user_dept_name) + ")")
+            if sig_data: log_audit("Digital Signature","MaintenanceRequest",req.id,new_value=authorized_name + " @ " + str(user_dept_name))
+            log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 NEW MAINTENANCE REQUEST", "Request " + str(req.request_no) + " [" + str(prio) + "] from " + str(user_dept_name or "N/A") + " is pending approval", "New Request", link=url_for("request_detail", req_id=req.id))
             db.session.commit()
@@ -1179,46 +1358,61 @@ def request_create():
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
+
+    # Build department options (used by both roles)
+    dept_opts = "".join('<option value="' + str(d.id) + '"' + (' selected' if d.id == user_dept_id else '') + '>' + str(d.name) + '</option>' for d in all_depts)
+
+    # Build items map: dept_id -> list of {id, name}
+    items_by_dept = {}
+    for d in all_depts:
+        items = WorkingItem.query.filter_by(department_id=d.id).order_by(WorkingItem.name).all()
+        items_by_dept[d.id] = [{"id": w.id, "name": w.name} for w in items]
+
+    # Areas: dynamic; expose all active areas
+    areas_json = [{"id": a.id, "name": a.name, "dept": a.department or ""} for a in areas]
+
     fo = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
     ro = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
-    ao = "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
-    io_ = "".join('<option value="' + str(i.id) + '">' + str(i.name) + '</option>' for i in items)
     co = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in cats)
     po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
-    sig_authorized_name = sig_profile.authorized_name if sig_profile else "Not configured"
+    sig_authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
     sig_dept_display = user_dept_name or "Not assigned"
-    sig_warning = "" if sig_profile else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department.</div>'
-    sig_configured_class = "border-success" if sig_profile else "border-danger"
+    sig_block_required = current_user.role in ["DEPARTMENT", "EMPLOYEE"]
+    sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department.</div>'
+
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>New</span> Maintenance Request</h1></div></div>' + sig_warning +
          '<div class="card"><form method="post" id="requestForm"><div class="row">'
+         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" id="deptSelect" required>' + dept_opts + '</select></div>'
          '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label><select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Department (Auto-detected)</label><input type="text" class="form-control" value="' + str(sig_dept_display) + '" readonly style="background:rgba(34,197,94,0.1);border-color:var(--success);color:var(--success);font-weight:600"><input type="hidden" name="department_id" value="' + str(user_dept_id or "") + '"></div>'
-         '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label><select class="form-select" name="room_id"><option value="">-- Select Room --</option>' + ro + '</select></div>'
+         '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label><select class="form-select" name="room_id" id="roomSelect"><option value="">-- Select Room --</option>' + ro + '</select></div>'
          '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label><select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
-         '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area</label><select class="form-select" name="area_id"><option value="">-- Select Area --</option>' + ao + '</select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Working Item</label><select class="form-select" name="working_item_id"><option value="">-- Select Item --</option>' + io_ + '</select></div>'
+         '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area / Location</label><select class="form-select" name="area_id" id="areaSelect"><option value="">-- Select Area --</option></select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Maintenance Item *</label><select class="form-select" name="working_item_id" id="itemSelect" required><option value="">-- Select Item --</option></select></div>'
          '<div class="col-md-6 mb-3"><label class="form-label">Category</label><select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + co + '</select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority">' + po + '</select></div>'
          '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
-         '<div class="col-12 mb-3"><div class="card ' + sig_configured_class + '" style="background:rgba(34,197,94,0.05);border-width:2px">'
-         '<h5 style="color:var(--success);margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature</h5>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority">' + po + '</select></div>'
+         '<div class="col-12 mb-3"><div class="card" style="background:rgba(34,197,94,0.05);border:2px solid ' + ("var(--success)" if sig_block_required else "var(--border-color)") + '">'
+         '<h5 style="color:var(--success);margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature ' + ("(required)" if sig_block_required else "(optional for manager/admin)") + '</h5>'
          '<div class="row g-3">'
-         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signed By (Authorized)</div><div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_authorized_name) + '</div><input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '"></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_dept_display) + '</div></div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signed By</div><div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_authorized_name) + '</div><input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '"></div></div>'
+         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_dept_display) + '</div></div></div>'
          '<div class="col-md-6"><div style="padding:.75rem;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid var(--success)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signature Status</div><div id="sigStatusText" style="font-size:1rem;font-weight:700;color:var(--rori-gold);margin-top:.25rem"><i class="fas fa-hourglass-half"></i> Awaiting Signature</div></div></div>'
          '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Requester</div><div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:.25rem">' + str(current_user.full_name or current_user.username) + ' (@' + str(current_user.username) + ')</div></div></div>'
          '</div><hr style="border-color:var(--success);margin:1rem 0">'
-         '<label class="form-label" style="color:var(--success);font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below *</label>'
+         '<label class="form-label" style="color:var(--success);font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below</label>'
          '<div style="border: 2px dashed rgba(197,160,89,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
          '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
          '</div>'
-         '<div class="mt-2 d-flex gap-2"><button type="button" class="btn-icon" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button><span id="sigHint" style="color:var(--text-secondary);font-size:.85rem;margin-left:.5rem">Please draw your signature above</span></div>'
+         '<div class="mt-2 d-flex gap-2"><button type="button" class="btn-icon" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button><span id="sigHint" style="color:var(--text-secondary);font-size:.85rem;margin-left:.5rem">Draw your signature above</span></div>'
          '<input type="hidden" name="signature_data" id="signature-data">'
          '</div></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("index") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary" id="submitBtn" disabled><i class="fas fa-paper-plane"></i> Submit Request</button></div></div></form></div>'
+         '<div class="col-12 d-flex gap-2"><a href="' + url_for("index") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary" id="submitBtn"><i class="fas fa-paper-plane"></i> Submit Request</button></div></div></form></div>'
+         '<script>window.RORI_ITEMS_BY_DEPT=' + json.dumps({str(k): v for k, v in items_by_dept.items()}) + ';</script>'
+         '<script>window.RORI_AREAS=' + json.dumps(areas_json) + ';</script>'
+         '<script>window.RORI_SIG_REQUIRED=' + ("true" if sig_block_required else "false") + ';</script>'
          '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
-         '<script>(function(){var canvas = document.getElementById("signature-pad");var signaturePad = new SignaturePad(canvas, { backgroundColor: "rgb(255, 255, 255)", penColor: "rgb(0, 0, 0)" });var submitBtn = document.getElementById("submitBtn");var sigStatusText = document.getElementById("sigStatusText");var sigHint = document.getElementById("sigHint");function resizeCanvas(){var ratio = Math.max(window.devicePixelRatio || 1, 1);canvas.width = canvas.offsetWidth * ratio;canvas.height = canvas.offsetHeight * ratio;canvas.getContext("2d").scale(ratio, ratio);signaturePad.clear();}window.addEventListener("resize", resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click", function(){ signaturePad.clear(); updateSigStatus(); });signaturePad.addEventListener("endStroke", updateSigStatus);function updateSigStatus(){if (signaturePad.isEmpty()){sigStatusText.innerHTML = \'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color = "var(--rori-gold)";sigHint.textContent = "Please draw your signature above";submitBtn.disabled = true;} else {sigStatusText.innerHTML = \'<i class="fas fa-check-circle"></i> Signature Verified\';sigStatusText.style.color = "var(--success)";sigHint.textContent = "✓ Signature captured - ready to submit";submitBtn.disabled = false;}}document.querySelector("#requestForm").addEventListener("submit", function(e){if (signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}document.getElementById("signature-data").value = signaturePad.toDataURL("image/png");});})();</script>'
-         '<script>(function(){var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");function upd(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}lt.addEventListener("change",upd);upd();})();</script>')
+         '<script>(function(){var canvas=document.getElementById("signature-pad");var signaturePad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});var submitBtn=document.getElementById("submitBtn");var sigStatusText=document.getElementById("sigStatusText");var sigHint=document.getElementById("sigHint");var sigRequired=window.RORI_SIG_REQUIRED===true;function resizeCanvas(){var ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext("2d").scale(ratio,ratio);signaturePad.clear();updateSigStatus();}window.addEventListener("resize",resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click",function(){signaturePad.clear();updateSigStatus();});signaturePad.addEventListener("endStroke",updateSigStatus);function updateSigStatus(){if(signaturePad.isEmpty()){sigStatusText.innerHTML=\'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color="var(--rori-gold)";sigHint.textContent="Draw your signature above";}else{sigStatusText.innerHTML=\'<i class="fas fa-check-circle"></i> Signature Captured\';sigStatusText.style.color="var(--success)";sigHint.textContent="✓ Ready to submit";}}document.querySelector("#requestForm").addEventListener("submit",function(e){if(sigRequired&&signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}if(!signaturePad.isEmpty()){document.getElementById("signature-data").value=signaturePad.toDataURL("image/png");}});updateSigStatus();})();</script>'
+         '<script>(function(){var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");var deptSel=document.getElementById("deptSelect");var itemSel=document.getElementById("itemSelect");var areaSel=document.getElementById("areaSelect");var itemsByDept=window.RORI_ITEMS_BY_DEPT||{};var allAreas=window.RORI_AREAS||[];function updLoc(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}function rebuildItems(){var d=deptSel.value;var list=itemsByDept[d]||[];itemSel.innerHTML=\'<option value="">-- Select Item --</option>\';list.forEach(function(it){var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}function rebuildAreas(){var d=deptSel.value;var deptName=(deptSel.options[deptSel.selectedIndex]||{}).textContent||"";areaSel.innerHTML=\'<option value="">-- Select Area --</option>\';allAreas.forEach(function(a){var o=document.createElement("option");o.value=a.id;o.textContent=a.name;areaSel.appendChild(o);});}lt.addEventListener("change",updLoc);deptSel.addEventListener("change",function(){rebuildItems();});updLoc();rebuildItems();rebuildAreas();})();</script>')
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -1232,27 +1426,18 @@ def request_detail(req_id):
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
-
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     wos = WorkOrder.query.filter_by(request_id=req.id).all()
-
-    def badge(st):
-        return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
-                "Completed":"success","Verified":"success","Closed":"secondary",
-                "Rejected":"danger","Overdue":"danger"}.get(st, "secondary")
-
+    def badge(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st, "secondary")
     def kv(label, value, mono=False, color=None):
-        c = (' style="color:' + color + '"') if color else ""
+        cs = (' style="color:' + color + '"') if color else ""
         cls = "rpro-kv-value mono" if mono else "rpro-kv-value"
         return ('<div class="rpro-kv-item"><div class="rpro-kv-label">' + label + '</div>'
-                '<div class="' + cls + '"' + c + '>' + (str(value) if value not in (None,"") else "—") + '</div></div>')
-
-    assigned_dt = None
-    started_dt = None
+                '<div class="' + cls + '"' + cs + '>' + (str(value) if value not in (None,"") else "—") + '</div></div>')
+    assigned_dt = None; started_dt = None
     for h in hist:
         if h.status == "Assigned" and not assigned_dt: assigned_dt = h.timestamp
         if h.status == "In Progress" and not started_dt: started_dt = h.timestamp
-
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
@@ -1268,7 +1453,6 @@ def request_detail(req_id):
         if not req.is_deleted:
             actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions)
-
     info_card = (
         '<div class="rpro-card">'
         '<div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
@@ -1298,7 +1482,6 @@ def request_detail(req_id):
            + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
         + '</div>'
     )
-
     sig_card = ""
     if req.signature_status == "SIGNED" and req.signature_data:
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "—"
@@ -1318,7 +1501,6 @@ def request_detail(req_id):
             '<div class="rpro-sig-box"><img src="' + str(req.signature_data) + '" alt="Signature"></div>'
             '</div>'
         )
-
     wo_rows = []
     for wo in wos:
         wo_rows.append(
@@ -1338,7 +1520,6 @@ def request_detail(req_id):
         + ("".join(wo_rows) if wo_rows else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No work orders created yet.</p>')
         + '</div>'
     )
-
     tl_items = []
     for h in hist:
         who = (h.user.full_name or h.user.username) if h.user else "System"
@@ -1359,7 +1540,6 @@ def request_detail(req_id):
         + ("".join(tl_items) if tl_items else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No status changes recorded.</p>')
         + '</div></div>'
     )
-
     verify_card = ""
     if req.status in ("Verified","Closed"):
         wo_verifier = wos[0].verified_by if wos and wos[0].verified_by else req.manager
@@ -1371,7 +1551,6 @@ def request_detail(req_id):
             + kv("Verified Date", wos[0].verified_date.strftime("%Y-%m-%d %H:%M") if wos and wos[0].verified_date else (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—"))
             + '</div></div>'
         )
-
     content = (
         '<div class="page-header">'
         '<div class="page-title">'
@@ -1529,8 +1708,7 @@ def get_kpis(args):
 
 def get_trends(args):
     reqs = build_filtered_query(args).all()
-    d_from = _parse_date(args.get("date_from"))
-    d_to = _parse_date(args.get("date_to"))
+    d_from = _parse_date(args.get("date_from")); d_to = _parse_date(args.get("date_to"))
     if d_from and d_to: start, end = d_from, d_to
     else:
         dates = [r.created_at for r in reqs if r.created_at]
@@ -1619,8 +1797,7 @@ def get_floor_stats(args):
 
 def get_technician_workload(args):
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
-    d_from = _parse_date(args.get("date_from"))
-    d_to = _parse_date(args.get("date_to"))
+    d_from = _parse_date(args.get("date_from")); d_to = _parse_date(args.get("date_to"))
     result = []
     for s in staff:
         q = WorkOrder.query.filter_by(assigned_to_id=s.id)
@@ -1723,6 +1900,8 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 .empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
 .filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
 .filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
+.rori-footer{margin-top:3rem;padding:1.5rem 2rem;text-align:center;font-size:.8rem;color:#94a3b8;border-top:1px solid rgba(245,158,11,0.2)}
+.rori-footer .dev-name{color:#f59e0b;font-weight:700;letter-spacing:.3px}
 @media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}.table>:not(caption)>*>*{padding:.6rem .5rem;font-size:.78rem}.table thead th{font-size:.65rem;padding:.6rem .5rem}}
 </style></head><body>
 <nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
@@ -1823,7 +2002,9 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div>
+<div class="rori-footer"><div>Rori Hotel — Maintenance Management System</div><div style="margin-top:.35rem;">Developer: <span class="dev-name">Edom Adinew</span></div></div>
+</div>
 <script>
 window.DASHBOARD_DATA = {{ chart_data|tojson }};
 (function(){
@@ -1989,7 +2170,7 @@ def central_maintenance():
     rooms_total = Room.query.count()
     room_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
     room_open = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
-    areas_total = Area.query.count()
+    areas_total = Area.query.filter_by(is_active=True).count()
     area_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
     area_open = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
     recent = base.order_by(MaintenanceRequest.created_at.desc()).limit(10).all()
@@ -2083,14 +2264,14 @@ def department_dashboard():
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
          '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
-         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No requests yet.</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);">No requests yet.</td></tr>') + '</tbody></table></div></div>')
     return page("Department Dashboard", c)
 
 @app.route("/employee/dashboard")
@@ -2524,9 +2705,13 @@ def areas_list():
     q = (request.args.get("q") or "").strip()
     mode = (request.args.get("filter") or "all").strip()
     dept_filter = (request.args.get("dept") or "").strip()
-    all_areas = Area.query.order_by(Area.name).all()
+    show_inactive = (request.args.get("show_inactive") or "").strip() == "1"
+    base_q = Area.query
+    if not show_inactive:
+        base_q = base_q.filter((Area.is_active == True) | (Area.is_active == None))
+    all_areas = base_q.order_by(Area.name).all()
     stats = _area_req_stats()
-    dept_set = sorted({_area_dept_label(a) for a in all_areas})
+    dept_set = sorted({_area_dept_label(a) for a in Area.query.all()})
     total_areas = len(all_areas)
     areas_with_active = 0; total_requests = 0; total_completed = 0
     for a in all_areas:
@@ -2557,11 +2742,16 @@ def areas_list():
         st_label, st_class = _area_status(a, s)
         st_color = {"success":"var(--success)","warning":"var(--warning)",
                     "info":"var(--info)","secondary":"var(--text-secondary)"}.get(st_class, "var(--text-secondary)")
-        new_badge = ('<div class="area-new-badge"><i class="fas fa-bell"></i> NEW (' + str(s.get("new_24h",0)) + ')</div>' if s.get("new_24h", 0) > 0 else "")
+        is_active = (a.is_active is not False)
+        new_badge = ""
+        if not is_active:
+            new_badge = '<div class="area-inactive-badge">INACTIVE</div>'
+        elif s.get("new_24h", 0) > 0:
+            new_badge = '<div class="area-new-badge"><i class="fas fa-bell"></i> NEW (' + str(s.get("new_24h",0)) + ')</div>'
         last_dt = s.get("last_date")
         last_str = last_dt.strftime("%Y-%m-%d %H:%M") if last_dt else "—"
         cards.append(
-            '<div class="area-card">' + new_badge
+            '<div class="area-card' + ("" if is_active else " inactive") + '">' + new_badge
             + '<div class="area-card-header">'
             + '<div class="area-card-name">' + str(a.name) + '</div>'
             + '<div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div>'
@@ -2575,8 +2765,10 @@ def areas_list():
             + '<div class="area-status-row" style="color:' + st_color + '"><i class="fas fa-circle" style="font-size:.55rem"></i> <span>' + st_label + '</span></div>'
             + '<div class="area-last-row"><i class="fas fa-clock"></i> Last: ' + last_str + '</div>'
             + '<div class="area-card-actions">'
-            + '<a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-eye"></i> View Area</a>'
+            + '<a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-eye"></i> View</a>'
             + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '" title="Edit Area"><i class="fas fa-edit"></i></a>'
+            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate this area?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;" title="Deactivate"><i class="fas fa-ban"></i></button></form>' if is_active else
+               '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;" title="Activate"><i class="fas fa-undo"></i></button></form>')
             + '</div></div>')
     cards_html = "".join(cards) if cards else ('<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match the current filter.</p></div>')
     dept_options = '<option value="">All Departments</option>' + "".join(
@@ -2611,8 +2803,10 @@ def areas_list():
         + '<div class="page-header">'
         + '<div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span> &amp; Maintenance</h1>'
         + '<p>Rori Hotel | Engineering &amp; Maintenance Area Management</p></div>'
-        + '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print Area Report</button>'
-        + '</div>'
+        + '<div style="display:flex;gap:.6rem;flex-wrap:wrap;">'
+        + '<a href="' + url_for("area_add") + '" class="btn-primary"><i class="fas fa-plus"></i> Add Area</a>'
+        + '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print Report</button>'
+        + '</div></div>'
         + '<div class="kpi-mini">'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas with Active Requests</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
@@ -2625,6 +2819,7 @@ def areas_list():
         + '<input type="text" class="form-control" name="q" placeholder="Search area, department, item, request #..." value="' + str(q) + '">'
         + '<select class="form-select" name="filter">' + filter_options + '</select>'
         + '<select class="form-select" name="dept">' + dept_options + '</select>'
+        + '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;white-space:nowrap;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
         + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Apply</button>'
         + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
         + '</form>'
@@ -2632,6 +2827,45 @@ def areas_list():
         + '</div>'
         + print_table)
     return page("Areas & Maintenance", content)
+
+@app.route("/areas/add", methods=["GET","POST"])
+@role_required("ADMIN","MANAGER")
+def area_add():
+    depts = Department.query.order_by(Department.name).all()
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        dept = (request.form.get("department") or "").strip()
+        desc = (request.form.get("description") or "").strip()
+        if not name:
+            flash("Area name is required","danger")
+            return redirect(url_for("area_add"))
+        existing = Area.query.filter(func.lower(Area.name) == name.lower()).first()
+        if existing:
+            flash("An area with this name already exists.","warning")
+            return redirect(url_for("area_add"))
+        try:
+            a = Area(name=name, department=(None if dept in ("", "Not Assigned") else dept), description=desc, status="Active", is_active=True)
+            db.session.add(a); db.session.flush()
+            log_audit("Area Created","Area",a.id,new_value=name)
+            db.session.commit()
+            flash("✅ Area added successfully.","success")
+            return redirect(url_for("areas_list"))
+        except Exception as e:
+            db.session.rollback(); flash("Error: " + str(e),"danger")
+    dept_opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d.name + '">' + d.name + '</option>' for d in depts)
+    content = ('<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Area</h1>'
+        '<p>Create a new Area / Location for the hotel</p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
+        '</div>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" required autofocus placeholder="e.g. Pool Bar Area"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + dept_opts + '</select></div>'
+        '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="3"></textarea></div>'
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Area</button></div>'
+        '</div></form></div>')
+    return page("Add Area", content)
 
 @app.route("/areas/<int:area_id>")
 @role_required("ADMIN","MANAGER")
@@ -2716,12 +2950,22 @@ def area_detail(area_id):
 def area_edit(area_id):
     a = get_or_404(Area, area_id)
     if request.method == "POST":
-        old_dept = a.department
+        old_name = a.name; old_dept = a.department
+        new_name = (request.form.get("name") or "").strip()
         new_dept = (request.form.get("department") or "").strip()
+        if not new_name:
+            flash("Area name is required","danger")
+            return redirect(url_for("area_edit", area_id=a.id))
+        dup = Area.query.filter(func.lower(Area.name) == new_name.lower(), Area.id != a.id).first()
+        if dup:
+            flash("Another area with this name already exists.","warning")
+            return redirect(url_for("area_edit", area_id=a.id))
+        a.name = new_name
         a.department = None if new_dept in ("", "Not Assigned", "Unknown") else new_dept
         a.status = (request.form.get("status") or a.status or "Active").strip()
+        a.is_active = (a.status == "Active")
         a.description = (request.form.get("description") or "").strip()
-        log_audit("Area Updated","Area",a.id,old_value=str(old_dept),new_value=str(a.department))
+        log_audit("Area Updated","Area",a.id,old_value=str(old_name)+" / "+str(old_dept),new_value=str(a.name)+" / "+str(a.department))
         db.session.commit()
         flash("✅ Area updated","success")
         return redirect(url_for("area_detail", area_id=a.id))
@@ -2736,7 +2980,7 @@ def area_edit(area_id):
         + '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-arrow-left"></i> Back</a>'
         + '</div>'
         + '<div class="card"><form method="post"><div class="row">'
-        + '<div class="col-md-6 mb-3"><label class="form-label">Area Name</label><input type="text" class="form-control" value="' + str(a.name) + '" disabled></div>'
+        + '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
         + '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
         + '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status">'
         + '<option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option>'
@@ -2747,6 +2991,30 @@ def area_edit(area_id):
         + '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div>'
         + '</div></form></div>')
     return page("Edit Area", content)
+
+@app.route("/areas/<int:area_id>/deactivate", methods=["POST"])
+@role_required("ADMIN","MANAGER")
+def area_deactivate(area_id):
+    a = get_or_404(Area, area_id)
+    try:
+        a.is_active = False; a.status = "Inactive"
+        log_audit("Area Deactivated","Area",a.id,old_value="active",new_value="inactive")
+        db.session.commit(); flash("Area deactivated","success")
+    except Exception as e:
+        db.session.rollback(); flash("Error: " + str(e),"danger")
+    return redirect(url_for("areas_list"))
+
+@app.route("/areas/<int:area_id>/activate", methods=["POST"])
+@role_required("ADMIN","MANAGER")
+def area_activate(area_id):
+    a = get_or_404(Area, area_id)
+    try:
+        a.is_active = True; a.status = "Active"
+        log_audit("Area Activated","Area",a.id,old_value="inactive",new_value="active")
+        db.session.commit(); flash("Area activated","success")
+    except Exception as e:
+        db.session.rollback(); flash("Error: " + str(e),"danger")
+    return redirect(url_for("areas_list"))
 
 # ══════════════════════════════════════════ ROOMS
 @app.route("/rooms")
@@ -2759,7 +3027,6 @@ def rooms_list():
     if floor_f: base_q = base_q.filter(Room.floor == floor_f)
     if status_f: base_q = base_q.filter(Room.status == status_f)
     if q: base_q = base_q.filter(Room.room_number.like("%" + q + "%"))
-    # Strict numeric ascending: 201..225, 301..325, 401..425, 501..525
     rooms = base_q.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     stats = defaultdict(lambda: {"total":0,"open":0,"in_progress":0,"completed":0,"last_date":None})
     room_ids = [r.id for r in rooms]
@@ -2920,7 +3187,11 @@ def debug():
                     "department_signatures": DepartmentSignature.query.count(),
                     "rooms_total": Room.query.count(),
                     "rooms_by_floor": {str(f): Room.query.filter_by(floor=f).count() for f in [2,3,4,5]},
-                    "floors_present": sorted({r.floor for r in Room.query.all()})})
+                    "floors_present": sorted({r.floor for r in Room.query.all()}),
+                    "areas_total": Area.query.count(),
+                    "areas_active": Area.query.filter_by(is_active=True).count(),
+                    "working_items_total": WorkingItem.query.count(),
+                    "items_by_department": {d.name: WorkingItem.query.filter_by(department_id=d.id).count() for d in Department.query.all()}})
 
 @app.route("/manifest.json")
 def manifest():
@@ -2951,7 +3222,7 @@ with app.app_context():
     ensure_database_schema()
     seed_data()
     fix_room_structure()
-    print("✅ Rori Hotel Maintenance System initialized")
+    print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
