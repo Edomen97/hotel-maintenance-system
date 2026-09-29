@@ -1,4 +1,4 @@
-# app.py - Rori Hotel Maintenance Management System (COMPLETE FIXED VERSION)
+# app.py - Rori Hotel Maintenance Management System (FIXED FOR RENDER)
 import csv, io, json, os, re, sqlite3, uuid, traceback, calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -1555,7 +1555,7 @@ def get_status_stats(args):
     items = [(s, counts[s]) for s in order if counts.get(s,0) > 0]
     for s, c in counts.items():
         if s not in order and c > 0: items.append((s, c))
-    return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
+    return {"labels": [k for k,_ in items], "counts": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
 
 def get_dept_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1563,7 +1563,7 @@ def get_dept_stats(args):
     for r in reqs: counts[r.department.name if r.department else "Unspecified"] += 1
     items = sorted(counts.items(), key=lambda x: -x[1])
     total = sum(counts.values())
-    return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
+    return {"labels": [k for k,_ in items], "counts": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
 
 def get_dept_completion(args):
     reqs = build_filtered_query(args).all()
@@ -1583,7 +1583,7 @@ def get_priority_stats(args):
     order = ["URGENT","HIGH","MEDIUM","LOW"]
     total = sum(counts.values())
     items = [(p, counts[p]) for p in order if counts.get(p,0) > 0]
-    return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
+    return {"labels": [k for k,_ in items], "counts": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_category_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1591,7 +1591,7 @@ def get_category_stats(args):
     for r in reqs: counts[r.category.name if r.category else "Uncategorized"] += 1
     items = sorted(counts.items(), key=lambda x: -x[1])
     total = sum(counts.values())
-    return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
+    return {"labels": [k for k,_ in items], "counts": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_floor_stats(args):
     reqs = build_filtered_query(args).all()
@@ -1599,7 +1599,7 @@ def get_floor_stats(args):
     for r in reqs:
         if r.floor: counts[r.floor] += 1
     items = sorted(counts.items())
-    return {"labels": ["Floor " + str(k) for k,_ in items], "values": [v for _,v in items]}
+    return {"labels": ["Floor " + str(k) for k,_ in items], "counts": [v for _,v in items]}
 
 def get_technician_workload(args):
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
@@ -1772,7 +1772,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <div class="row g-3 mb-4">
 <div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-chart-bar"></i> Department Share (%)</h5>
 {% if chart_data.departments.labels|length > 0 %}<div class="prog-list">{% for i in range(chart_data.departments.labels|length) %}
-<div class="prog-row"><div class="prog-top"><span class="nm">{{ chart_data.departments.labels[i] }}</span><span class="ct">{{ chart_data.departments.values[i] }} - {{ chart_data.departments.percentages[i] }}%</span></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">{{ chart_data.departments.labels[i] }}</span><span class="ct">{{ chart_data.departments['counts'][i] }} - {{ chart_data.departments.percentages[i] }}%</span></div>
 <div class="prog-bar"><span style="width:{{ chart_data.departments.percentages[i] }}%"></span></div></div>{% endfor %}</div>
 {% else %}<div class="empty"><i class="fas fa-inbox"></i>No data available</div>{% endif %}</div></div>
 <div class="col-lg-6"><div class="card"><h5 class="mb-3"><i class="fas fa-users-gear"></i> Technician Workload</h5>
@@ -1826,17 +1826,17 @@ new Chart(c, {type:'line', data:{labels:t.labels, datasets:[
 {label:'In Progress', data:t.in_progress, borderColor:C.purple, borderWidth:2, fill:false, tension:0.4, pointRadius:0, pointHoverRadius:5}
 ]}, options:{responsive:true, maintainAspectRatio:false, interaction:{intersect:false, mode:'index'}, plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8, boxHeight:8, padding:14, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}, scales:{x:{grid:{color:'rgba(245,158,11,0.05)'}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:10}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
 (function(){var el = document.getElementById('chartStatus'); if(!el) return; var s = D.statuses; if(!s || !s.labels || !s.labels.length){em(el,'fa-chart-pie','No data available'); return;} var map = {'Pending':C.amber, 'Approved':C.blue, 'Assigned':C.purple, 'In Progress':C.purple, 'Completed':C.green, 'Verified':C.cyan, 'Closed':'#16a34a', 'Rejected':C.red, 'Overdue':C.red};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[{data:s.values, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
+new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:s.labels, datasets:[{data:s.counts, backgroundColor:s.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
 (function(){var el = document.getElementById('chartDept'); if(!el) return; var d = D.departments; if(!d || !d.labels || !d.labels.length){em(el,'fa-building','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[{label:'Requests', data:d.values, backgroundColor:gr(c,'rgba(245,158,11,0.95)','rgba(236,72,153,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
+new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[{label:'Requests', data:d.counts, backgroundColor:gr(c,'rgba(245,158,11,0.95)','rgba(236,72,153,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
 (function(){var el = document.getElementById('chartDeptCompletion'); if(!el) return; var d = D.dept_completion; if(!d || !d.labels || !d.labels.length){em(el,'fa-check-double','No data available'); return;} var c = el.getContext('2d');
 new Chart(c, {type:'bar', data:{labels:d.labels, datasets:[{label:'Total', data:d.totals, backgroundColor:'rgba(148,163,184,0.35)', borderRadius:8, borderSkipped:false, maxBarThickness:28}, {label:'Completed', data:d.completed, backgroundColor:gr(c,'rgba(34,197,94,0.95)','rgba(16,185,129,0.5)'), borderRadius:8, borderSkipped:false, maxBarThickness:28}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'top', labels:{boxWidth:8, boxHeight:8, padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:10}}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
 (function(){var el = document.getElementById('chartPriority'); if(!el) return; var p = D.priorities; if(!p || !p.labels || !p.labels.length){em(el,'fa-fire','No data available'); return;} var map = {'URGENT':C.red, 'HIGH':C.amber, 'MEDIUM':C.blue, 'LOW':C.green};
-new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[{data:p.values, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
+new Chart(el.getContext('2d'), {type:'doughnut', data:{labels:p.labels, datasets:[{data:p.counts, backgroundColor:p.labels.map(function(l){return map[l] || C.gray;}), borderColor:'#1e293b', borderWidth:3, hoverOffset:8}]}, options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{position:'bottom', labels:{boxWidth:8, boxHeight:8, padding:8, usePointStyle:true, pointStyle:'circle', font:{size:10, weight:'600'}}}, tooltip:TT}}});})();
 (function(){var el = document.getElementById('chartCategories'); if(!el) return; var x = D.categories; if(!x || !x.labels || !x.labels.length){em(el,'fa-tags','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
+new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.counts, backgroundColor:gr(c,'rgba(56,189,248,0.95)','rgba(139,92,246,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:30}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}, ticks:{maxRotation:45, font:{size:9}}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
 (function(){var el = document.getElementById('chartFloors'); if(!el) return; var x = D.floors; if(!x || !x.labels || !x.labels.length){em(el,'fa-layer-group','No data available'); return;} var c = el.getContext('2d');
-new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.values, backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
+new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', data:x.counts, backgroundColor:gr(c,'rgba(139,92,246,0.95)','rgba(56,189,248,0.4)'), borderRadius:8, borderSkipped:false, maxBarThickness:36}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:TT}, scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(245,158,11,0.07)'}, ticks:{precision:0}}}}});})();
 })();
 </script></body></html>"""
 
@@ -2096,7 +2096,6 @@ def workorders_list():
     if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
     if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
 
-    # ── STAFF VIEW: own work orders only, rich cards ──
     if current_user.role in STAFF_ROLES:
         wos = (WorkOrder.query
                .filter_by(assigned_to_id=current_user.id)
@@ -2186,7 +2185,6 @@ def workorders_list():
         )
         return page("My Tasks", content)
 
-    # ── MANAGER / ADMIN VIEW: all work orders ──
     wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
     rows = []
     for wo in wos:
@@ -2247,7 +2245,6 @@ def workorder_create():
 def workorder_detail(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
 
-    # ── SECURITY: staff can only view their own work orders ──
     if current_user.role in STAFF_ROLES and wo.assigned_to_id != current_user.id:
         abort(403)
 
