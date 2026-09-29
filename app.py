@@ -40,6 +40,16 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
+# ══════════════════════════════════════════ RORI HOTEL ROOM STRUCTURE
+# ONLY these 100 guest rooms exist. NO 1st floor rooms.
+# 2F: 201-225 (25) | 3F: 301-325 (25) | 4F: 401-425 (25) | 5F: 501-525 (25)
+RORI_ROOM_STRUCTURE = {
+    2: list(range(201, 226)),
+    3: list(range(301, 326)),
+    4: list(range(401, 426)),
+    5: list(range(501, 526)),
+}
+
 # ══════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -864,10 +874,13 @@ def seed_data():
     for f in [2,3,4,5]:
         if not Floor.query.filter_by(floor_number=f).first():
             db.session.add(Floor(floor_number=f))
+    # ═══ RORI HOTEL ROOM STRUCTURE: EXACTLY 100 ROOMS ═══
+    # 2F: 201-225 | 3F: 301-325 | 4F: 401-425 | 5F: 501-525
+    # No rooms on 1st floor. No rooms 226-300, 326-400, 426-500.
     if Room.query.count() == 0:
-        for num in range(201, 301):
-            floor = 2 if num <= 225 else 3 if num <= 250 else 4 if num <= 275 else 5
-            db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
+        for floor, nums in RORI_ROOM_STRUCTURE.items():
+            for num in nums:
+                db.session.add(Room(floor=floor, room_number=str(num), status="Available"))
     for n, d in [("Buduchalley","F&B"),("Sillanto","Unknown"),("Fura","Unknown"),("Executive","Unknown"),("Mitima","Unknown"),("Odako","Unknown"),("Gudumale","Unknown"),("Bubble","Unknown"),("Bubbles","Unknown"),("Fura Corridor","Unknown"),("Executive Meeting Room","Unknown"),("Counter","Unknown")]:
         if not Area.query.filter_by(name=n).first(): db.session.add(Area(name=n, department=d))
     for c in ["Electrical","Plumbing","HVAC","Painting","Carpentry","Civil","Safety","General","Other"]:
@@ -943,6 +956,58 @@ def seed_data():
             existing.authorized_name = cfg["name"]; existing.is_active = True
     db.session.commit()
     print("✅ Seed data loaded")
+
+def fix_room_structure():
+    """Enforce Rori Hotel's exact 100-room layout:
+       2F=201-225, 3F=301-325, 4F=401-425, 5F=501-525.
+       Removes any stray rooms (1F, 226-300, 326-400, 426-500, etc.),
+       fixes wrong floor numbers, and inserts any missing valid rooms.
+       Linked maintenance requests of removed rooms are safely unlinked."""
+    valid = {}
+    for floor, nums in RORI_ROOM_STRUCTURE.items():
+        for n in nums:
+            valid[str(n)] = floor
+
+    changed = False
+
+    # 1) Remove rooms that don't belong to the canonical set
+    for r in Room.query.all():
+        if r.room_number not in valid:
+            MaintenanceRequest.query.filter_by(room_id=r.id).update({"room_id": None})
+            db.session.delete(r)
+            changed = True
+
+    # 2) Fix floor mismatches on surviving rooms
+    for r in Room.query.all():
+        correct_floor = valid.get(r.room_number)
+        if correct_floor is not None and r.floor != correct_floor:
+            r.floor = correct_floor
+            changed = True
+
+    db.session.flush()
+
+    # 3) Insert any missing rooms from the canonical set
+    existing = {r.room_number for r in Room.query.all()}
+    for num_str, floor in valid.items():
+        if num_str not in existing:
+            db.session.add(Room(floor=floor, room_number=num_str, status="Available"))
+            changed = True
+
+    # 4) Keep Floor table in sync (only 2,3,4,5 — never 1)
+    for f in [2, 3, 4, 5]:
+        if not Floor.query.filter_by(floor_number=f).first():
+            db.session.add(Floor(floor_number=f))
+            changed = True
+
+    db.session.commit()
+
+    total = Room.query.count()
+    print(f"✅ Room structure enforced: {total} rooms (expected 100)")
+    if changed:
+        print("   → Stray rooms removed / missing rooms added / floors corrected.")
+    else:
+        print("   → Room structure already correct, no changes needed.")
+    return total
 
 # ══════════════════════════════════════════ AUTH & MAIN ROUTES
 @app.route("/")
@@ -1026,6 +1091,7 @@ def requests_list():
     elif current_user.role in STAFF_ROLES: q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
     if request.args.get("status"): q = q.filter(MaintenanceRequest.status == request.args["status"])
     if request.args.get("priority"): q = q.filter(MaintenanceRequest.priority == request.args["priority"])
+    if request.args.get("room_id", type=int): q = q.filter(MaintenanceRequest.room_id == request.args.get("room_id", type=int))
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     is_mgr = current_user.role in ["MANAGER","ADMIN"]
@@ -1047,7 +1113,8 @@ def request_create():
     depts = Department.query.order_by(Department.name).all()
     cats = Category.query.order_by(Category.name).all()
     items = WorkingItem.query.order_by(WorkingItem.name).all()
-    rooms = Room.query.order_by(Room.room_number).all()
+    # Rooms ordered strictly ascending (201..225, 301..325, 401..425, 501..525)
+    rooms = Room.query.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     areas = Area.query.order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
     sig_profile = get_user_signature_profile(current_user)
@@ -1582,7 +1649,7 @@ def dashboard():
     recent_reqs = build_filtered_query(args).order_by(MaintenanceRequest.created_at.desc()).limit(15).all()
     all_depts = Department.query.order_by(Department.name).all()
     all_cats = Category.query.order_by(Category.name).all()
-    all_rooms = Room.query.order_by(Room.room_number).all()
+    all_rooms = Room.query.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     all_areas = Area.query.order_by(Area.name).all()
     all_floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
     if not all_floors: all_floors = sorted({r.floor for r in Room.query.all()})
@@ -1743,7 +1810,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#f59e0b">{{ inventory.low_stock }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ef4444">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div></div>
+<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div></div></div>
 <script>
 window.DASHBOARD_DATA = {{ chart_data|tojson }};
 (function(){
@@ -2083,16 +2150,16 @@ def workorder_create():
 def workorder_detail(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
-    can_parts = (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+    can_parts_flag = (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
     pr, pt = [], 0
     for p in parts:
         pname = p.part.part_name if p.part else "Part #" + str(p.part_id)
         psupp = p.part.supplier.company_name if p.part and p.part.supplier else "—"
         pun = p.part.unit if p.part else "pcs"
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
-        rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
+        rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
         pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + rem + '</td></tr>')
-    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
+    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
     parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts</div>' + apb + '</div>'
                   '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
     ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
@@ -2679,7 +2746,8 @@ def rooms_list():
     if floor_f: base_q = base_q.filter(Room.floor == floor_f)
     if status_f: base_q = base_q.filter(Room.status == status_f)
     if q: base_q = base_q.filter(Room.room_number.like("%" + q + "%"))
-    rooms = base_q.order_by(Room.room_number).all()
+    # Strict numeric ascending: 201..225, 301..325, 401..425, 501..525
+    rooms = base_q.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     stats = defaultdict(lambda: {"total":0,"open":0,"in_progress":0,"completed":0,"last_date":None})
     room_ids = [r.id for r in rooms]
     if room_ids:
@@ -2734,7 +2802,7 @@ def rooms_list():
     content = (
         '<div class="page-header">'
         '<div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span> Management</h1>'
-        '<p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors</p></div></div>'
+        '<p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors (2F-5F)</p></div></div>'
         '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
         '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-door-open"></i></div><div class="kpi-value">' + str(total_rooms) + '</div><div class="kpi-label">Total Rooms</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(available) + '</div><div class="kpi-label">Available</div></div>'
@@ -2836,7 +2904,10 @@ def debug():
     return jsonify({"users": User.query.count(), "departments": Department.query.count(),
                     "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
                     "work_orders": WorkOrder.query.count(), "notifications": Notification.query.count(),
-                    "department_signatures": DepartmentSignature.query.count()})
+                    "department_signatures": DepartmentSignature.query.count(),
+                    "rooms_total": Room.query.count(),
+                    "rooms_by_floor": {str(f): Room.query.filter_by(floor=f).count() for f in [2,3,4,5]},
+                    "floors_present": sorted({r.floor for r in Room.query.all()})})
 
 @app.route("/manifest.json")
 def manifest():
@@ -2866,6 +2937,7 @@ def e500(e):
 with app.app_context():
     ensure_database_schema()
     seed_data()
+    fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized")
 
 if __name__ == "__main__":
