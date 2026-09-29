@@ -506,9 +506,9 @@ def page(title, content):
                    ('<i class="fas fa-tasks"></i> Work Orders', url_for('workorders_list')),
                    ('<i class="fas fa-door-open"></i> Rooms', url_for('rooms_list')),
                    ('<i class="fas fa-map-marked-alt"></i> Areas', url_for('areas_list')),
+                   ('<i class="fas fa-users-cog"></i> Engineering Staff', url_for('employees_list')),
                    ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
-                   ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list')),
-                   ('<i class="fas fa-users"></i> Employees', url_for('employees_list'))]
+                   ('<i class="fas fa-truck"></i> Suppliers', url_for('suppliers_list'))]
         if r == "ADMIN":
             nav += [('<i class="fas fa-user-cog"></i> Users', url_for('admin_users')),
                     ('<i class="fas fa-history"></i> Audit Log', url_for('audit_logs')),
@@ -855,6 +855,69 @@ if(document.querySelector('.header-icon')){
 </script>
 </body></html>"""
 
+# ══════════════════════════════════════════ STAFF HELPERS
+def _infer_employee_role(job_title):
+    t = (job_title or "").lower()
+    if "manager" in t or "head" in t or "director" in t:
+        return "MANAGER"
+    if "supervisor" in t or "lead" in t:
+        return "SUPERVISOR"
+    if "mechanic" in t or "technician" in t or "tech" in t:
+        return "TECHNICIAN"
+    if "staff" in t or "attendant" in t:
+        return "MAINTENANCE STAFF"
+    return "STAFF"
+
+def _emp_workload(user):
+    if not user:
+        return {"total": 0, "pending": 0, "assigned": 0, "in_progress": 0, "completed": 0}
+    wos = WorkOrder.query.filter_by(assigned_to_id=user.id).all()
+    return {
+        "total": len(wos),
+        "pending": sum(1 for w in wos if w.status == "Pending"),
+        "assigned": sum(1 for w in wos if w.status == "Assigned"),
+        "in_progress": sum(1 for w in wos if w.status == "In Progress"),
+        "completed": sum(1 for w in wos if w.status in ("Completed", "Verified", "Closed")),
+    }
+
+def _match_employee_user(employee):
+    if not employee or not employee.name:
+        return None
+    name_key = employee.name.strip().lower()
+    for u in User.query.all():
+        if u.full_name and u.full_name.strip().lower() == name_key:
+            return u
+    return None
+
+def _get_assigned_by(wo):
+    if not wo or not wo.request_id:
+        return None
+    h = (StatusHistory.query
+         .filter_by(request_id=wo.request_id, status="Assigned")
+         .order_by(StatusHistory.timestamp.asc())
+         .first())
+    return h.user if h and h.user else None
+
+def _get_started_date(wo):
+    if not wo or not wo.request_id:
+        return None
+    h = (StatusHistory.query
+         .filter_by(request_id=wo.request_id, status="In Progress")
+         .order_by(StatusHistory.timestamp.asc())
+         .first())
+    return h.timestamp if h else None
+
+def _user_role_badge(role):
+    return {
+        "MANAGER": "warning",
+        "SUPERVISOR": "info",
+        "TECHNICIAN": "success",
+        "MAINTENANCE STAFF": "primary",
+        "ADMIN": "danger",
+        "EMPLOYEE": "secondary",
+        "DEPARTMENT": "secondary",
+    }.get(role, "secondary")
+
 # ══════════════════════════════════════════ SEED DATA
 def seed_data():
     for name in ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other","SPA","GM"]:
@@ -1003,7 +1066,7 @@ def profile():
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1></div></div>'
-         '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name) + '</h4>'
+         '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name or u.username) + '</h4>'
          '<p>@' + str(u.username) + ' · <span class="badge badge-warning">' + str(u.role) + '</span></p>'
          '<p style="color:var(--text-secondary);">📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p>'
          '<p style="color:var(--text-secondary);"> Department: <strong style="color:var(--text-primary);">' + str(u.department.name if u.department else "Not assigned") + '</strong></p><hr style="border-color:var(--border-color);">'
@@ -1212,10 +1275,10 @@ def request_detail(req_id):
         + kv("Completed", req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else None)
         + '</div>'
         + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div>'
-           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">'
            + str(req.description or "No description provided.") + '</div></div>')
         + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div>'
-           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">'
            + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
         + '</div>'
     )
@@ -1319,7 +1382,7 @@ def request_approve(req_id):
         req = get_or_404(MaintenanceRequest, req_id)
         if req.status != "Pending": flash("Not pending","warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.status = "Approved"; req.manager_id = current_user.id
-        log_status_change(req.id,"Approved",notes="Approved by " + str(current_user.full_name))
+        log_status_change(req.id,"Approved",notes="Approved by " + str(current_user.full_name or current_user.username))
         log_audit("Approve","MaintenanceRequest",req.id,"Pending","Approved")
         notify_users([req.requested_by_id], req.id, "Request Approved", "Your request " + str(req.request_no) + " has been approved", "Approved", link=url_for("request_detail", req_id=req.id))
         db.session.commit(); flash("✅ Request approved!","success")
@@ -1336,7 +1399,7 @@ def request_verify(req_id):
         if not req.completed_date: req.completed_date = datetime.utcnow()
         wo = WorkOrder.query.filter_by(request_id=req.id).first()
         if wo: wo.status = "Verified"; wo.verified_by_id = current_user.id; wo.verified_date = datetime.utcnow()
-        log_status_change(req.id,"Verified",notes="Verified by " + str(current_user.full_name))
+        log_status_change(req.id,"Verified",notes="Verified by " + str(current_user.full_name or current_user.username))
         log_audit("Verify","MaintenanceRequest",req.id,"Completed","Verified")
         notify_users([req.requested_by_id], req.id, "✅ Work Verified", "Request " + str(req.request_no) + " verified", "Verified", link=url_for("request_detail", req_id=req.id))
         db.session.commit(); flash("✅ Work verified!","success")
@@ -1350,7 +1413,7 @@ def request_close(req_id):
         req = get_or_404(MaintenanceRequest, req_id)
         if req.status != "Verified": flash("Only verified can be closed","warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.status = "Closed"
-        log_status_change(req.id,"Closed",notes="Closed by " + str(current_user.full_name))
+        log_status_change(req.id,"Closed",notes="Closed by " + str(current_user.full_name or current_user.username))
         log_audit("Close","MaintenanceRequest",req.id,"Verified","Closed")
         notify_users([req.requested_by_id], req.id, "Request Closed", "Request " + str(req.request_no) + " closed", "Closed")
         db.session.commit(); flash("Request closed","success")
@@ -1656,9 +1719,9 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 <a class="nav-link" href="{{ url_for('workorders_list') }}"><i class="fas fa-clipboard-list"></i> Work Orders</a>
 <a class="nav-link" href="{{ url_for('rooms_list') }}"><i class="fas fa-door-open"></i> Rooms</a>
 <a class="nav-link" href="{{ url_for('areas_list') }}"><i class="fas fa-map-marked-alt"></i> Areas</a>
+<a class="nav-link" href="{{ url_for('employees_list') }}"><i class="fas fa-users-cog"></i> Engineering Staff</a>
 <a class="nav-link" href="{{ url_for('inventory_list') }}"><i class="fas fa-boxes"></i> Inventory</a>
 <a class="nav-link" href="{{ url_for('suppliers_list') }}"><i class="fas fa-truck"></i> Suppliers</a>
-<a class="nav-link" href="{{ url_for('employees_list') }}"><i class="fas fa-users"></i> Employees</a>
 {% if current_user.role == 'ADMIN' %}
 <a class="nav-link" href="{{ url_for('admin_users') }}"><i class="fas fa-user-cog"></i> Users</a>
 <a class="nav-link" href="{{ url_for('audit_logs') }}"><i class="fas fa-history"></i> Audit</a>
@@ -2026,21 +2089,122 @@ def employee_dashboard():
          '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No requests yet</td></tr>') + '</tbody></table></div></div>')
     return page("Employee Dashboard", c)
 
-# ══════════════════════════════════════════ WORK ORDERS
+# ══════════════════════════════════════════ WORK ORDERS (STAFF DASHBOARD)
 @app.route("/workorders")
 @login_required
 def workorders_list():
     if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
     if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
-    if current_user.role in STAFF_ROLES: wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id, WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
-    else: wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
+
+    # ── STAFF VIEW: own work orders only, rich cards ──
+    if current_user.role in STAFF_ROLES:
+        wos = (WorkOrder.query
+               .filter_by(assigned_to_id=current_user.id)
+               .order_by(WorkOrder.created_at.desc()).all())
+
+        total = len(wos)
+        assigned_count = sum(1 for w in wos if w.status == "Assigned")
+        in_progress = sum(1 for w in wos if w.status == "In Progress")
+        completed = sum(1 for w in wos if w.status in ("Completed","Verified","Closed"))
+        overdue = sum(1 for w in wos if w.request and w.request.is_overdue)
+
+        cards = []
+        for wo in wos:
+            req = wo.request
+            bc = {"Pending":"warning","Assigned":"warning","In Progress":"info",
+                  "Completed":"success","Verified":"success","Closed":"secondary"}.get(wo.status, "secondary")
+            pc = {"URGENT":"danger","HIGH":"warning","MEDIUM":"info","LOW":"secondary"}.get(
+                (req.priority if req else "MEDIUM"), "secondary")
+
+            loc_line = req.location_name if req else "—"
+            item_line = req.working_item.name if req and req.working_item else "—"
+            cat_line = req.category.name if req and req.category else "—"
+            dept_line = req.department.name if req and req.department else "—"
+            desc_line = (req.description or "").strip() if req else ""
+            if not desc_line: desc_line = "(No description provided)"
+            created_str = wo.created_at.strftime("%b %d, %Y · %H:%M") if wo.created_at else "—"
+            due_str = req.due_date.strftime("%b %d, %Y · %H:%M") if req and req.due_date else "—"
+
+            actions = []
+            actions.append('<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="padding:.55rem 1rem;font-size:.82rem;"><i class="fas fa-eye"></i> View Full Details</a>')
+            if wo.status == "Assigned":
+                actions.append('<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '" style="display:inline;"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.55rem 1rem;font-size:.82rem;"><i class="fas fa-play"></i> Start Work</button></form>')
+            elif wo.status == "In Progress":
+                actions.append('<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary" style="background:var(--success);padding:.55rem 1rem;font-size:.82rem;"><i class="fas fa-check"></i> Mark Completed</a>')
+
+            overdue_badge = ('<span class="badge badge-danger" style="margin-left:.4rem;"><i class="fas fa-exclamation-triangle"></i> OVERDUE</span>'
+                             if req and req.is_overdue else "")
+
+            cards.append(
+                '<div class="rpro-card" style="border-left:4px solid var(--rori-gold);margin-bottom:1rem;">'
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">'
+                '<div><div style="font-size:1.1rem;font-weight:800;color:var(--rori-gold);letter-spacing:.3px;">' + str(wo.work_order_no) + overdue_badge + '</div>'
+                '<div style="font-size:.75rem;color:var(--text-secondary);margin-top:.2rem;"><i class="fas fa-hashtag"></i> Request: ' + str(req.request_no if req else "—") + '</div></div>'
+                '<div style="display:flex;gap:.4rem;flex-wrap:wrap;">'
+                '<span class="badge badge-' + bc + '">' + str(wo.status) + '</span>'
+                '<span class="badge badge-' + pc + '">' + str(req.priority if req else "—") + '</span>'
+                '</div></div>'
+
+                '<div class="rpro-kv" style="gap:.75rem;margin-bottom:.75rem;">'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-building"></i> Department</div><div class="rpro-kv-value">' + str(dept_line) + '</div></div>'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-map-marker-alt"></i> Location</div><div class="rpro-kv-value">' + str(loc_line) + '</div></div>'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-tools"></i> Item</div><div class="rpro-kv-value">' + str(item_line) + '</div></div>'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-tag"></i> Category</div><div class="rpro-kv-value">' + str(cat_line) + '</div></div>'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-calendar-plus"></i> Assigned</div><div class="rpro-kv-value">' + str(created_str) + '</div></div>'
+                '<div class="rpro-kv-item"><div class="rpro-kv-label"><i class="fas fa-hourglass-half"></i> Due</div><div class="rpro-kv-value">' + str(due_str) + '</div></div>'
+                '</div>'
+
+                '<div style="margin-bottom:.75rem;">'
+                '<div class="rpro-kv-label">Full Description</div>'
+                '<div style="margin-top:.35rem;padding:.75rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.88rem;line-height:1.55;white-space:pre-wrap;">'
+                + desc_line +
+                '</div></div>'
+
+                '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">' + "".join(actions) + '</div>'
+                '</div>'
+            )
+
+        cards_html = "".join(cards) if cards else (
+            '<div class="rpro-card" style="text-align:center;padding:3rem;">'
+            '<i class="fas fa-clipboard-check" style="font-size:2.5rem;color:var(--rori-gold);opacity:.5;"></i>'
+            '<p style="color:var(--text-secondary);margin-top:.75rem;">No work orders assigned to you yet.</p>'
+            '</div>')
+
+        content = (
+            '<div class="page-header">'
+            '<div class="page-title"><h1><i class="fas fa-tools"></i> <span>My</span> Tasks</h1>'
+            '<p>All work orders assigned to you</p></div>'
+            '</div>'
+            '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
+            '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total Assigned</div></div>'
+            '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-inbox"></i></div><div class="kpi-value">' + str(assigned_count) + '</div><div class="kpi-label">Pending Start</div></div>'
+            '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info)"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div>'
+            '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Completed</div></div>'
+            '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(overdue) + '</div><div class="kpi-label">Overdue</div></div>'
+            '</div>'
+            + cards_html
+        )
+        return page("My Tasks", content)
+
+    # ── MANAGER / ADMIN VIEW: all work orders ──
+    wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
     rows = []
     for wo in wos:
         assigned = (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
-        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td></tr>')
+        rows.append(
+            '<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td>'
+            '<td>' + str(wo.request.location_name if wo.request else "—") + '</td>'
+            '<td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td>'
+            '<td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td>'
+            '<td>' + str(wo.request.priority if wo.request else "—") + '</td>'
+            '<td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td>'
+            '<td>' + str(assigned) + '</td></tr>'
+        )
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No work orders</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead><tbody>'
+         + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No work orders</td></tr>')
+         + '</tbody></table></div></div>')
     return page("Work Orders", c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
@@ -2074,7 +2238,7 @@ def workorder_create():
          '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
-         '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
+         '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="5" placeholder="Enter detailed instructions for the technician..."></textarea></div>'
          '<button class="btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
     return page("Assign Work Order", c)
 
@@ -2082,40 +2246,221 @@ def workorder_create():
 @login_required
 def workorder_detail(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
+
+    # ── SECURITY: staff can only view their own work orders ──
+    if current_user.role in STAFF_ROLES and wo.assigned_to_id != current_user.id:
+        abort(403)
+
+    req = wo.request
     parts = WorkOrderPart.query.filter_by(work_order_id=wo.id).all()
-    can_parts = (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+    history = []
+    if req:
+        history = (StatusHistory.query.filter_by(request_id=req.id)
+                   .order_by(StatusHistory.timestamp.asc()).all())
+
+    can_parts = (current_user.role in ["MANAGER","ADMIN"] or
+                 (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
+    is_owner = (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id)
+
+    assigned_by = _get_assigned_by(wo)
+    started_dt = _get_started_date(wo)
+
+    def badge(st):
+        return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
+                "Completed":"success","Verified":"success","Closed":"secondary",
+                "Rejected":"danger","Overdue":"danger"}.get(st, "secondary")
+
+    def kv(label, value, mono=False, color=None):
+        c = (' style="color:' + color + '"') if color else ""
+        cls = "rpro-kv-value mono" if mono else "rpro-kv-value"
+        return ('<div class="rpro-kv-item"><div class="rpro-kv-label">' + label + '</div>'
+                '<div class="' + cls + '"' + c + '>' + (str(value) if value not in (None, "") else "—") + '</div></div>')
+
+    actions = []
+    if is_owner:
+        if wo.status == "Assigned":
+            actions.append('<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '" style="display:inline;"><button type="submit" class="btn-primary" style="background:var(--warning);"><i class="fas fa-play"></i> Start Work</button></form>')
+        elif wo.status == "In Progress":
+            actions.append('<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary" style="background:var(--success);"><i class="fas fa-check"></i> Mark Completed</a>')
+    if current_user.role in ["MANAGER","ADMIN"] and wo.status == "Completed":
+        actions.append('<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '" style="display:inline;"><button type="submit" class="btn-primary" style="background:var(--info);"><i class="fas fa-check-double"></i> Verify</button></form>')
+    actions_html = " ".join(actions)
+
+    req_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
+        '<div class="rpro-kv">'
+        + kv("Request ID", req.request_no if req else None, mono=True)
+        + kv("Work Order", wo.work_order_no, mono=True)
+        + kv("Status", '<span class="badge badge-' + badge(wo.status) + '">' + str(wo.status) + '</span>')
+        + kv("Priority", '<span class="badge badge-' + ("danger" if (req and req.priority=="URGENT") else "warning" if (req and req.priority=="HIGH") else "info" if (req and req.priority=="MEDIUM") else "secondary") + '">' + str(req.priority if req else "—") + '</span>')
+        + kv("Created", req.created_at.strftime("%Y-%m-%d %H:%M") if req and req.created_at else None)
+        + kv("Department", req.department.name if req and req.department else None)
+        + kv("Working Item", req.working_item.name if req and req.working_item else None)
+        + kv("Category", req.category.name if req and req.category else None)
+        + '</div>'
+        + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Full Description</div>'
+           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.55;white-space:pre-wrap;">'
+           + str(req.description or "No description provided.") + '</div></div>' if req else "")
+        + '</div>'
+    )
+
+    location_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-map-marker-alt"></i> Location</div>'
+        '<div class="rpro-kv">'
+        + kv("Location Type", req.location_type if req else None)
+        + kv("Location Name", req.location_name if req else None)
+        + kv("Floor", req.floor if req and req.floor else None)
+        + kv("Room Number", req.room.room_number if req and req.room else None)
+        + kv("Area", req.area.name if req and req.area else None)
+        + '</div></div>'
+    )
+
+    requester_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-user"></i> Requester Information</div>'
+        '<div class="rpro-kv">'
+        + kv("Requested By", (req.requested_by.full_name or req.requested_by.username) if req and req.requested_by else None)
+        + kv("Signature Name", req.signature_name if req else None)
+        + kv("Signature Department", req.signature_department if req else None)
+        + kv("Signed At", req.signature_signed_at.strftime("%Y-%m-%d %H:%M") if req and req.signature_signed_at else None)
+        + '</div>'
+        + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Digital Signature</div>'
+           '<div class="rpro-sig-box" style="margin-top:.4rem;"><img src="' + str(req.signature_data) + '" alt="Signature"></div></div>'
+           if req and req.signature_data else "")
+        + '</div>'
+    )
+
+    assignment_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-user-check"></i> Assignment Information</div>'
+        '<div class="rpro-kv">'
+        + kv("Assigned Technician", (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned")
+        + kv("Assigned By", (assigned_by.full_name or assigned_by.username) if assigned_by else None)
+        + kv("Assignment Date", wo.created_at.strftime("%Y-%m-%d %H:%M") if wo.created_at else None)
+        + kv("Due Date", req.due_date.strftime("%Y-%m-%d %H:%M") if req and req.due_date else None)
+        + kv("Started Date", started_dt.strftime("%Y-%m-%d %H:%M") if started_dt else None)
+        + kv("Completed Date", wo.completed_date.strftime("%Y-%m-%d %H:%M") if wo.completed_date else None)
+        + '</div></div>'
+    )
+
+    instr_text = (wo.work_performed or "").strip()
+    if not instr_text:
+        instr_text = "No specific instructions were provided. Please follow the standard maintenance procedure."
+    instructions_card = (
+        '<div class="rpro-card" style="border-left:3px solid var(--rori-gold);">'
+        '<div class="rpro-card-title"><i class="fas fa-clipboard-check"></i> Work Instructions</div>'
+        '<div style="padding:1rem;background:var(--bg-secondary);border-radius:10px;color:var(--text-primary);font-size:.92rem;line-height:1.6;white-space:pre-wrap;">'
+        + str(instr_text) + '</div></div>'
+    )
+
     pr, pt = [], 0
     for p in parts:
         pname = p.part.part_name if p.part else "Part #" + str(p.part_id)
         psupp = p.part.supplier.company_name if p.part and p.part.supplier else "—"
         pun = p.part.unit if p.part else "pcs"
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
-        rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
+        rem = ('<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>'
+               if can_parts and wo.status in ["Assigned","In Progress"] else "")
         pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + rem + '</td></tr>')
-    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts and wo.status in ["Assigned","In Progress"] else ""
-    parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts</div>' + apb + '</div>'
-                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
-    ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
-    actions = ""
-    if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
-        if wo.status == "Assigned": actions += '<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--warning);margin-bottom:0.75rem;"><i class="fas fa-play"></i> Start Work</button></form>'
-        if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--success);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-check"></i> Complete Work</a>'
-    if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
-        actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;"><i class="fas fa-check-double"></i> Verify</button></form>'
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> Work Order <span>' + str(wo.work_order_no) + '</span></h1></div><a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a></div>'
-         '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th style="width:150px;color:var(--text-secondary);">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Status</th><td><span class="badge badge-info">' + str(wo.status) + '</span></td></tr><tr><th style="color:var(--text-secondary);">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th style="color:var(--text-secondary);">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;">Actions</h5>' + (actions if actions else "<p style='color:var(--text-secondary);'>No actions available</p>") + '</div></div></div>')
-    return page("Work Order Detail", c)
+    apb = ('<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:.5rem 1rem;font-size:.82rem;"><i class="fas fa-plus"></i> Add Part</a>'
+           if can_parts and wo.status in ["Assigned","In Progress"] else "")
+    parts_card = (
+        '<div class="rpro-card">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">'
+        '<div class="rpro-card-title" style="margin:0;"><i class="fas fa-boxes"></i> Parts / Materials</div>' + apb + '</div>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>'
+        + ("".join(pr) if pr else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:2rem;">No parts recorded.</td></tr>')
+        + '</tbody></table></div>'
+        + ('<p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);font-size:1rem;">Total Materials: ' + str(pt) + '</p>' if parts else "")
+        + '</div>'
+    )
+
+    completion_card = ""
+    if wo.status in ("Completed","Verified","Closed"):
+        ch = ""
+        if wo.completion_photo:
+            ch = ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Photo</div>'
+                  '<a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank" style="display:inline-block;margin-top:.4rem;">'
+                  '<img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:300px;border-radius:12px;border:1px solid var(--border-color);"></a></div>')
+        completion_card = (
+            '<div class="rpro-card" style="border-left:3px solid var(--success);">'
+            '<div class="rpro-card-title"><i class="fas fa-check-circle"></i> Completion Information</div>'
+            '<div class="rpro-kv">'
+            + kv("Completed By", (wo.completed_by.full_name or wo.completed_by.username) if wo.completed_by else None)
+            + kv("Completed Date", wo.completed_date.strftime("%Y-%m-%d %H:%M") if wo.completed_date else None)
+            + kv("Labor Hours", str(wo.labor_hours or 0) + " hrs")
+            + '</div>'
+            '<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Notes</div>'
+            '<div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.55;white-space:pre-wrap;">'
+            + str(wo.completion_notes or "—") + '</div></div>'
+            + ch + '</div>'
+        )
+
+    verification_card = ""
+    if wo.status in ("Verified","Closed"):
+        verification_card = (
+            '<div class="rpro-card" style="border-left:3px solid var(--info);">'
+            '<div class="rpro-card-title"><i class="fas fa-shield-alt"></i> Verification</div>'
+            '<div class="rpro-kv">'
+            + kv("Verified By", (wo.verified_by.full_name or wo.verified_by.username) if wo.verified_by else None)
+            + kv("Verified Date", wo.verified_date.strftime("%Y-%m-%d %H:%M") if wo.verified_date else None)
+            + kv("Verification Status", "✓ Verified", color="var(--success)")
+            + '</div></div>'
+        )
+
+    tl_items = []
+    for h in history:
+        who = (h.user.full_name or h.user.username) if h.user else "System"
+        when = h.timestamp.strftime("%d %b %Y · %H:%M") if h.timestamp else ""
+        note_html = ('<div class="rpro-timeline-note">' + str(h.notes) + '</div>') if h.notes else ""
+        tl_items.append(
+            '<div class="rpro-timeline-item">'
+            '<div class="rpro-timeline-dot"></div>'
+            '<div class="rpro-timeline-status">' + str(h.status) + '</div>'
+            '<div class="rpro-timeline-meta">' + str(who) + ' · ' + when + '</div>'
+            + note_html + '</div>'
+        )
+    timeline_card = (
+        '<div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-history"></i> Activity Timeline</div>'
+        '<div class="rpro-timeline">'
+        + ("".join(tl_items) if tl_items else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No activity yet.</p>')
+        + '</div></div>'
+    )
+
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title">'
+        '<h1><i class="fas fa-tasks"></i> Work Order <span>' + str(wo.work_order_no) + '</span></h1>'
+        '<p>' + (req.location_name if req else "—") + ' · ' + (req.department.name if req and req.department else "No Department") + '</p>'
+        '</div>'
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'
+        + actions_html
+        + '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
+        '</div></div>'
+        '<div class="row g-3">'
+        '<div class="col-lg-8">'
+        + req_card + instructions_card + parts_card + completion_card
+        + '</div>'
+        '<div class="col-lg-4">'
+        + location_card + requester_card + assignment_card + verification_card + timeline_card
+        + '</div>'
+        + '</div>'
+    )
+    return page("Work Order " + str(wo.work_order_no), content)
 
 @app.route("/workorders/<int:wo_id>/start", methods=["POST"])
 @login_required
 def workorder_start(wo_id):
     try:
         wo = get_or_404(WorkOrder, wo_id)
-        if current_user.id != wo.assigned_to_id: flash("Not authorized","danger"); return redirect(url_for("workorder_detail", wo_id=wo_id))
+        if wo.assigned_to_id != current_user.id: abort(403)
         if wo.status != "Assigned": flash("Cannot start","warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
         wo.status = "In Progress"
         if wo.request: wo.request.status = "In Progress"
-        log_status_change(wo.request_id,"In Progress",notes="Started by " + str(current_user.full_name))
+        log_status_change(wo.request_id,"In Progress",notes="Started by " + str(current_user.full_name or current_user.username))
         log_audit("Start","WorkOrder",wo.id,"Assigned","In Progress")
         db.session.commit(); flash("Work started","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -2125,7 +2470,7 @@ def workorder_start(wo_id):
 @role_required(*STAFF_ROLES)
 def workorder_complete(wo_id):
     wo = get_or_404(WorkOrder, wo_id)
-    if current_user.id != wo.assigned_to_id: flash("Not authorized","danger"); return redirect(url_for("workorder_detail", wo_id=wo_id))
+    if wo.assigned_to_id != current_user.id: abort(403)
     if wo.status != "In Progress": flash("Not in progress","warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
     if request.method == "POST":
         try:
@@ -2143,7 +2488,7 @@ def workorder_complete(wo_id):
             wo.completed_by_id = current_user.id; wo.completed_date = datetime.utcnow()
             if fname: wo.completion_photo = fname
             if wo.request: wo.request.status = "Completed"; wo.request.completed_date = datetime.utcnow(); wo.request.completion_note = note
-            log_status_change(wo.request_id,"Completed",notes="Completed by " + str(current_user.full_name))
+            log_status_change(wo.request_id,"Completed",notes="Completed by " + str(current_user.full_name or current_user.username))
             log_audit("Complete","WorkOrder",wo.id,"In Progress","Completed")
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()
             notify_users([u.id for u in managers], wo.request_id, "🔔 Work Completed", "WO " + str(wo.work_order_no) + " ready for verification", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
@@ -2152,8 +2497,8 @@ def workorder_complete(wo_id):
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-check-circle"></i> <span>Complete</span> Work Order ' + str(wo.work_order_no) + '</h1></div></div>'
          '<div class="card"><form method="post" enctype="multipart/form-data">'
-         '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>'
-         '<div class="mb-3"><label class="form-label">Photo</label><input type="file" name="photo" accept="image/*" class="form-control"></div>'
+         '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="5" required placeholder="Describe the work performed..."></textarea></div>'
+         '<div class="mb-3"><label class="form-label">Photo (optional)</label><input type="file" name="photo" accept="image/*" class="form-control"></div>'
          '<div class="mb-3"><label class="form-label">Labor Hours</label><input type="number" step="0.5" name="labor_hours" class="form-control" value="0"></div>'
          '<button class="btn-primary w-100" style="background:var(--success);"><i class="fas fa-check-circle"></i> Complete</button></form></div>')
     return page("Complete Work Order", c)
@@ -2167,7 +2512,7 @@ def workorder_verify(wo_id):
         wo.status = "Verified"; wo.verified_by_id = current_user.id; wo.verified_date = datetime.utcnow()
         if wo.request: wo.request.status = "Verified"; wo.request.manager_id = current_user.id
         if not wo.request.completed_date: wo.request.completed_date = datetime.utcnow()
-        log_status_change(wo.request_id,"Verified",notes="Verified by " + str(current_user.full_name))
+        log_status_change(wo.request_id,"Verified",notes="Verified by " + str(current_user.full_name or current_user.username))
         log_audit("Verify","WorkOrder",wo.id,"Completed","Verified")
         if wo.request: notify_users([wo.request.requested_by_id], wo.request_id, "✅ Verified", "Request " + str(wo.request.request_no) + " verified", "Verified", link=url_for("request_detail", req_id=wo.request_id))
         db.session.commit(); flash("✅ Verified!","success")
@@ -2753,30 +3098,183 @@ def rooms_list():
            else '<div class="rpro-card" style="text-align:center;padding:3rem;"><i class="fas fa-search" style="font-size:2rem;color:var(--rori-gold);opacity:.5;"></i><p style="color:var(--text-secondary);margin-top:.75rem;">No rooms match your filters.</p></div>'))
     return page("Rooms", content)
 
-# ══════════════════════════════════════════ OTHER PAGES
-@app.route("/inventory")
-@role_required("ADMIN","MANAGER")
-def inventory_list():
-    ps = InventoryPart.query.order_by(InventoryPart.part_name).all()
-    rows = []
-    for p in ps:
-        bg = 'badge-danger' if p.quantity <= 0 else 'badge-warning' if p.is_low else 'badge-success'
-        label = "Out" if p.quantity <= 0 else "Low" if p.is_low else "OK"
-        sn = p.supplier.company_name if p.supplier else "—"
-        rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td><a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-edit"></i></a></td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-boxes"></i> <span>Inventory</span></h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '"><i class="fas fa-plus"></i> Add Part</a></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div></div>')
-    return page("Inventory", c)
-
+# ══════════════════════════════════════════ EMPLOYEES (ENGINEERING STAFF)
 @app.route("/employees")
 @role_required("ADMIN","MANAGER")
 def employees_list():
-    es = Employee.query.all()
-    rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td><td>' + str(e.department or "—") + '</td></tr>' for e in es)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-users"></i> <span>Employees</span></h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
-    return page("Employees", c)
+    employees = Employee.query.order_by(Employee.id).all()
 
+    staff_rows = []
+    for e in employees:
+        matched_user = _match_employee_user(e)
+        role = matched_user.role if matched_user else _infer_employee_role(e.job_title)
+        wl = _emp_workload(matched_user)
+
+        if wl["in_progress"] > 0:
+            status, status_color = "Working", "info"
+        elif wl["assigned"] > 0 or wl["pending"] > 0:
+            status, status_color = "Assigned", "warning"
+        else:
+            status, status_color = "Available", "success"
+
+        staff_rows.append({
+            "id": e.id,
+            "name": e.name or "—",
+            "position": e.job_title or "—",
+            "department": e.department or "Engineering",
+            "role": role,
+            "role_badge": _user_role_badge(role),
+            "status": status,
+            "status_color": status_color,
+            "workload": wl["total"],
+            "assigned": wl["assigned"],
+            "pending": wl["pending"],
+            "in_progress": wl["in_progress"],
+            "completed": wl["completed"],
+            "user_id": matched_user.id if matched_user else None,
+        })
+
+    total_staff = len(staff_rows)
+    available = sum(1 for s in staff_rows if s["status"] == "Available")
+    working = sum(1 for s in staff_rows if s["status"] == "Working")
+    total_active = sum(s["assigned"] + s["in_progress"] + s["pending"] for s in staff_rows)
+
+    rows_html = ""
+    for s in staff_rows:
+        view_url = url_for("staff_detail", staff_id=s["id"])
+        rows_html += (
+            '<tr>'
+            '<td><span style="color:var(--rori-gold);font-weight:700;">#' + str(s["id"]) + '</span></td>'
+            '<td><strong>' + str(s["name"]) + '</strong></td>'
+            '<td>' + str(s["position"]) + '</td>'
+            '<td>' + str(s["department"]) + '</td>'
+            '<td><span class="badge badge-' + s["role_badge"] + '">' + str(s["role"]) + '</span></td>'
+            '<td><span class="badge badge-' + s["status_color"] + '">' + str(s["status"]) + '</span></td>'
+            '<td style="text-align:center;"><strong style="color:var(--rori-gold);font-size:1.05rem;">' + str(s["workload"]) + '</strong></td>'
+            '<td style="text-align:center;">' + str(s["assigned"]) + '</td>'
+            '<td style="text-align:center;">' + str(s["in_progress"]) + '</td>'
+            '<td style="text-align:center;color:var(--success);">' + str(s["completed"]) + '</td>'
+            '<td><a href="' + view_url + '" class="btn-primary" style="padding:.4rem .9rem;font-size:.78rem;"><i class="fas fa-eye"></i> View</a></td>'
+            '</tr>'
+        )
+    if not rows_html:
+        rows_html = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);padding:2.5rem;">No engineering staff found.</td></tr>'
+
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-users-cog"></i> <span>Engineering</span> Staff Management</h1>'
+        '<p>Rori Hotel · Engineering &amp; Maintenance Team</p></div>'
+        '</div>'
+
+        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
+        '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-users"></i></div><div class="kpi-value">' + str(total_staff) + '</div><div class="kpi-label">Total Staff</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(available) + '</div><div class="kpi-label">Available</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info)"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(working) + '</div><div class="kpi-label">Working</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-tasks"></i></div><div class="kpi-value">' + str(total_active) + '</div><div class="kpi-label">Active Assignments</div></div>'
+        '</div>'
+
+        '<div class="card">'
+        '<div class="card-header"><div class="card-title"><i class="fas fa-list"></i> Staff Directory</div></div>'
+        '<div style="overflow-x:auto;">'
+        '<table class="table"><thead><tr>'
+        '<th>ID</th><th>Full Name</th><th>Position</th><th>Department</th>'
+        '<th>Role</th><th>Status</th><th>Workload</th><th>Assigned</th>'
+        '<th>In Progress</th><th>Completed</th><th>Action</th>'
+        '</tr></thead><tbody>' + rows_html + '</tbody></table>'
+        '</div></div>'
+    )
+    return page("Engineering Staff", content)
+
+@app.route("/employees/<int:staff_id>")
+@role_required("ADMIN","MANAGER")
+def staff_detail(staff_id):
+    e = get_or_404(Employee, staff_id)
+    matched_user = _match_employee_user(e)
+    role = matched_user.role if matched_user else _infer_employee_role(e.job_title)
+
+    wos = []
+    if matched_user:
+        wos = (WorkOrder.query.filter_by(assigned_to_id=matched_user.id)
+               .order_by(WorkOrder.created_at.desc()).all())
+
+    total = len(wos)
+    assigned_count = sum(1 for w in wos if w.status == "Assigned")
+    pending_count = sum(1 for w in wos if w.status == "Pending")
+    in_progress = sum(1 for w in wos if w.status == "In Progress")
+    completed = sum(1 for w in wos if w.status in ("Completed","Verified","Closed"))
+
+    wo_rows = ""
+    for wo in wos[:50]:
+        bc = {"Pending":"warning","Assigned":"warning","In Progress":"info",
+              "Completed":"success","Verified":"success","Closed":"secondary"}.get(wo.status, "secondary")
+        loc = wo.request.location_name if wo.request else "—"
+        item = wo.request.working_item.name if wo.request and wo.request.working_item else "—"
+        dept = wo.request.department.name if wo.request and wo.request.department else "—"
+        wo_rows += (
+            '<tr>'
+            '<td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(wo.work_order_no) + '</a></td>'
+            '<td>' + str(loc) + '</td>'
+            '<td>' + str(item) + '</td>'
+            '<td>' + str(dept) + '</td>'
+            '<td><span class="badge badge-' + bc + '">' + str(wo.status) + '</span></td>'
+            '<td>' + (wo.created_at.strftime("%Y-%m-%d %H:%M") if wo.created_at else "—") + '</td>'
+            '</tr>'
+        )
+    if not wo_rows:
+        wo_rows = '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:2.5rem;">No work orders assigned yet.</td></tr>'
+
+    username_display = matched_user.username if matched_user else "Not linked to a user account"
+    email_display = (matched_user.email if matched_user and matched_user.email else "—")
+    phone_display = (matched_user.phone if matched_user and matched_user.phone else "—")
+    dept_name = matched_user.department.name if matched_user and matched_user.department else (e.department or "Engineering")
+
+    def kv(label, value, mono=False):
+        cls = "rpro-kv-value mono" if mono else "rpro-kv-value"
+        return ('<div class="rpro-kv-item"><div class="rpro-kv-label">' + label + '</div>'
+                '<div class="' + cls + '">' + (str(value) if value not in (None, "") else "—") + '</div></div>')
+
+    content = (
+        '<div class="page-header">'
+        '<div class="page-title"><h1><i class="fas fa-user-cog"></i> <span>' + str(e.name) + '</span></h1>'
+        '<p>' + str(e.job_title or "Staff") + ' · ' + str(dept_name) + '</p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("employees_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
+        '</div>'
+
+        '<div class="row g-3">'
+        '<div class="col-lg-5"><div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-id-card"></i> Staff Information</div>'
+        '<div class="rpro-kv" style="grid-template-columns:1fr;">'
+        + kv("Staff ID", "#" + str(e.id), mono=True)
+        + kv("Full Name", e.name)
+        + kv("Position", e.job_title)
+        + kv("Department", dept_name)
+        + kv("Role", role)
+        + kv("Username", username_display, mono=True)
+        + kv("Email", email_display)
+        + kv("Phone", phone_display)
+        + '</div></div></div>'
+
+        '<div class="col-lg-7"><div class="rpro-card">'
+        '<div class="rpro-card-title"><i class="fas fa-chart-simple"></i> Workload Summary</div>'
+        '<div class="rpro-kv">'
+        '<div class="rpro-kv-item"><div class="rpro-kv-label">Total Assigned</div><div class="rpro-kv-value" style="font-size:1.6rem;color:var(--rori-gold);">' + str(total) + '</div></div>'
+        '<div class="rpro-kv-item"><div class="rpro-kv-label">Pending</div><div class="rpro-kv-value" style="font-size:1.6rem;color:var(--warning);">' + str(pending_count) + '</div></div>'
+        '<div class="rpro-kv-item"><div class="rpro-kv-label">Assigned</div><div class="rpro-kv-value" style="font-size:1.6rem;color:var(--warning);">' + str(assigned_count) + '</div></div>'
+        '<div class="rpro-kv-item"><div class="rpro-kv-label">In Progress</div><div class="rpro-kv-value" style="font-size:1.6rem;color:var(--info);">' + str(in_progress) + '</div></div>'
+        '<div class="rpro-kv-item"><div class="rpro-kv-label">Completed</div><div class="rpro-kv-value" style="font-size:1.6rem;color:var(--success);">' + str(completed) + '</div></div>'
+        '</div></div></div>'
+        '</div>'
+
+        '<div class="rpro-card" style="margin-top:1rem;">'
+        '<div class="rpro-card-title"><i class="fas fa-clipboard-list"></i> Assigned Work Orders</div>'
+        '<div style="overflow-x:auto;"><table class="table">'
+        '<thead><tr><th>Work Order</th><th>Location</th><th>Item</th><th>Department</th><th>Status</th><th>Created</th></tr></thead>'
+        '<tbody>' + wo_rows + '</tbody></table></div>'
+        '</div>'
+    )
+    return page("Staff: " + str(e.name), content)
+
+# ══════════════════════════════════════════ ADMIN PAGES
 @app.route("/admin/users")
 @role_required("ADMIN")
 def admin_users():
@@ -2836,7 +3334,9 @@ def debug():
     return jsonify({"users": User.query.count(), "departments": Department.query.count(),
                     "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
                     "work_orders": WorkOrder.query.count(), "notifications": Notification.query.count(),
-                    "department_signatures": DepartmentSignature.query.count()})
+                    "department_signatures": DepartmentSignature.query.count(),
+                    "employees": Employee.query.count(), "areas": Area.query.count(),
+                    "rooms": Room.query.count()})
 
 @app.route("/manifest.json")
 def manifest():
@@ -2853,7 +3353,7 @@ def logo():
     return Response("", mimetype="image/png")
 
 @app.errorhandler(403)
-def e403(e): return page("Forbidden",'<div class="alert alert-danger">Access denied.</div>'), 403
+def e403(e): return page("Forbidden",'<div class="alert alert-danger"><i class="fas fa-lock"></i> Access denied. You do not have permission to access this resource.</div>'), 403
 @app.errorhandler(404)
 def e404(e): return page("Not Found",'<div class="alert alert-warning">Page not found.</div>'), 404
 @app.errorhandler(405)
