@@ -41,7 +41,6 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ══════════════════════════════════════════ RORI HOTEL ROOM STRUCTURE
 RORI_ROOM_STRUCTURE = {
     2: list(range(201, 226)),
     3: list(range(301, 326)),
@@ -49,7 +48,6 @@ RORI_ROOM_STRUCTURE = {
     5: list(range(501, 526)),
 }
 
-# ══════════════════════════════════════════ DEPARTMENT MAINTENANCE ITEMS
 NEW_ITEMS_BY_DEPT = {
     "Food & Beverage": [
         "🪑 Table, Chair, Sofa", "🚪 Door / Lock / Handle", "💡 Lights / Switch / Socket",
@@ -75,14 +73,11 @@ NEW_ITEMS_BY_DEPT = {
         "🔌 Network Cables/Switches for CCTV/Access Control",
     ],
     "SPA": [
-        "🚿 Shower — Tap, Shower Head, Water Leakage",
-        "🛁 Jacuzzi / Hot Tub — Pump, Heater, Water Circulation",
-        "♨️ Sauna — Heater, Temperature Control, Door",
-        "💨 Steam Room — Steam Generator, Control, Ventilation",
-        "❄️ AC / Air Conditioning", "💡 Lights / Switch / Socket",
-        "🚰 Sink / Tap / Drainage", "🚪 Doors / Locks / Handles", "🪞 Mirror",
-        "🪑 Massage Bed / Treatment Bed", "🛏️ Furniture / Sofa / Chair",
-        "🧺 Towel Warmer / Laundry Equipment", "🔌 Electrical Equipment",
+        "🚿 Shower — Tap, Shower Head, Water Leakage", "🛁 Jacuzzi / Hot Tub — Pump, Heater, Water Circulation",
+        "♨️ Sauna — Heater, Temperature Control, Door", "💨 Steam Room — Steam Generator, Control, Ventilation",
+        "❄️ AC / Air Conditioning", "💡 Lights / Switch / Socket", "🚰 Sink / Tap / Drainage",
+        "🚪 Doors / Locks / Handles", "🪞 Mirror", "🪑 Massage Bed / Treatment Bed",
+        "🛏️ Furniture / Sofa / Chair", "🧺 Towel Warmer / Laundry Equipment", "🔌 Electrical Equipment",
         "💧 Water Leakage / Plumbing", "🧱 Floor / Wall / Ceiling", "🎵 Sound System",
         "🧯 Fire & Safety Equipment", "🏊 Pool-Related Equipment",
     ],
@@ -95,28 +90,16 @@ NEW_ITEMS_BY_DEPT = {
         "🖼️ Display / Poster Frames", "🏢 Marketing Office Maintenance",
     ],
     "IT": [
-        "💡 Lights / Switch / Socket",
-        "🚪 Door / Lock / Handle",
-        "🪟 Window / Curtain / Blind",
-        "❄️ AC / Air Conditioning",
-        "🌬️ Ventilation / Exhaust Fan",
-        "🔌 Electrical Power / Wiring",
-        "⚡ Electrical Panel / Breaker",
-        "🔋 UPS Power Supply Area",
-        "🧱 Floor / Wall / Ceiling",
-        "💧 Water Leakage",
-        "🚰 Sink / Tap / Drainage",
-        "🔥 Fire Extinguisher / Safety Equipment",
-        "🪑 Desk / Chair / Office Furniture",
-        "🗄️ Cabinet / Shelf",
-        "🏢 IT Office / Server Room Maintenance",
-        "🧹 Cleaning / Preventive Maintenance",
-        "🌡️ Server Room Cooling / Temperature",
-        "🛠️ General Civil / Plumbing Maintenance",
+        "💡 Lights / Switch / Socket", "🚪 Door / Lock / Handle", "🪟 Window / Curtain / Blind",
+        "❄️ AC / Air Conditioning", "🌬️ Ventilation / Exhaust Fan", "🔌 Electrical Power / Wiring",
+        "⚡ Electrical Panel / Breaker", "🔋 UPS Power Supply Area", "🧱 Floor / Wall / Ceiling",
+        "💧 Water Leakage", "🚰 Sink / Tap / Drainage", "🔥 Fire Extinguisher / Safety Equipment",
+        "🪑 Desk / Chair / Office Furniture", "🗄️ Cabinet / Shelf",
+        "🏢 IT Office / Server Room Maintenance", "🧹 Cleaning / Preventive Maintenance",
+        "🌡️ Server Room Cooling / Temperature", "🛠️ General Civil / Plumbing Maintenance",
     ],
 }
 
-# Housekeeping Laundry items — belong to Housekeeping department, tied to "Laundry Area"
 LAUNDRY_ITEMS = [
     "Washing Machine", "Dryer", "Ironing Machine / Press", "Sewing Machine",
     "Laundry Extractor / Spinner", "Steam Boiler / Steam System", "Steam Iron",
@@ -128,7 +111,6 @@ LAUNDRY_ITEMS = [
 ]
 LAUNDRY_AREA_NAME = "Laundry Area"
 
-# ══════════════════════════════════════════ HOTEL AREAS
 HOTEL_AREAS = [
     "Main Hotel Entrance Gate", "VIP Parking Area", "Expansion Building Area",
     "Staff Gate Area", "Customer Restroom", "Fountain Area", "Garden Area",
@@ -137,6 +119,100 @@ HOTEL_AREAS = [
     "Dukale Compound Area", "X-Ray Gate Area", "Main Site / General Hotel Area",
     "Kalicheral Kitchen Area",
 ]
+
+# ══════════════════════════════════════════ ENGINEERING INVENTORY CATEGORIES & SEED ITEMS
+INVENTORY_CATEGORIES = [
+    "Tools",
+    "Hardware / Fasteners",
+    "Electrical Parts",
+    "Plumbing Parts",
+    "AC / HVAC Parts",
+    "Door & Window Parts",
+    "Civil / Building Materials",
+    "Welding / Metal Work",
+    "Safety / PPE",
+    "Maintenance Consumables",
+    "General Maintenance Equipment",
+]
+
+INVENTORY_ITEMS_BY_CATEGORY = {
+    "Tools": [
+        ("Hammer / መዶሻ", "pcs"), ("Scissors / መቀስ", "pcs"), ("Screwdriver", "pcs"),
+        ("Pliers", "pcs"), ("Spanner", "pcs"), ("Wrench", "pcs"), ("Allen Key", "set"),
+        ("Socket Set", "set"), ("Pipe Wrench", "pcs"), ("Wire Cutter", "pcs"),
+        ("Wire Stripper", "pcs"), ("Measuring Tape", "pcs"), ("Spirit Level", "pcs"),
+        ("Saw", "pcs"), ("Hacksaw", "pcs"), ("Chisel", "pcs"), ("File", "pcs"),
+        ("Drill", "pcs"), ("Drill Bits", "set"), ("Utility Knife", "pcs"),
+        ("Bolt Cutter", "pcs"), ("Crowbar", "pcs"),
+    ],
+    "Hardware / Fasteners": [
+        ("Nails / ሚስማር", "kg"), ("Bolts / ብሎን", "pcs"), ("Nuts", "pcs"),
+        ("Washers", "pcs"), ("Screws", "pcs"), ("Wall Plugs", "pcs"),
+        ("Anchors", "pcs"), ("Rivets", "pcs"), ("Threaded Rod", "pcs"),
+        ("U-Bolts", "pcs"), ("Cable Ties", "pcs"), ("Hose Clamps", "pcs"),
+        ("Pipe Clamps", "pcs"), ("Brackets", "pcs"),
+    ],
+    "Electrical Parts": [
+        ("LED Bulb", "pcs"), ("Tube Light", "pcs"), ("Light Holder", "pcs"),
+        ("Switch", "pcs"), ("Electrical Socket", "pcs"), ("Plug", "pcs"),
+        ("Electrical Cable / Wire", "m"), ("Fuse", "pcs"), ("MCB", "pcs"),
+        ("RCCB / RCD", "pcs"), ("Contactor", "pcs"), ("Relay", "pcs"),
+        ("Capacitor", "pcs"), ("Terminal Block", "pcs"), ("Junction Box", "pcs"),
+        ("Electrical Tape", "roll"), ("Heat Shrink", "m"), ("PVC Conduit", "m"),
+    ],
+    "Plumbing Parts": [
+        ("Water Tap", "pcs"), ("Flexible Hose", "pcs"), ("PVC Pipe", "m"),
+        ("PPR Pipe", "m"), ("Elbow", "pcs"), ("Tee", "pcs"), ("Coupling", "pcs"),
+        ("Union", "pcs"), ("Valve", "pcs"), ("Ball Valve", "pcs"),
+        ("Check Valve", "pcs"), ("Drain Pipe", "m"), ("Drain Trap", "pcs"),
+        ("Gasket", "pcs"), ("O-Ring", "pcs"), ("Teflon Tape", "roll"),
+        ("Silicone", "tube"), ("Pipe Glue", "tube"),
+    ],
+    "AC / HVAC Parts": [
+        ("AC Filter", "pcs"), ("Capacitor", "pcs"), ("Relay", "pcs"),
+        ("Contactor", "pcs"), ("Fan Motor", "pcs"), ("Fan Blade", "pcs"),
+        ("Thermostat", "pcs"), ("Drain Hose", "m"), ("Copper Pipe", "m"),
+        ("Copper Fittings", "pcs"), ("Pipe Insulation", "m"), ("Refrigerant", "kg"),
+        ("Exhaust Fan", "pcs"), ("Ventilation Fan", "pcs"),
+    ],
+    "Door & Window Parts": [
+        ("Door Lock", "pcs"), ("Door Handle", "pcs"), ("Door Hinge", "pcs"),
+        ("Door Closer", "pcs"), ("Door Stopper", "pcs"), ("Door Bolt", "pcs"),
+        ("Window Handle", "pcs"), ("Window Lock", "pcs"), ("Curtain Rod", "pcs"),
+        ("Curtain Bracket", "pcs"), ("Curtain Hook", "pcs"),
+    ],
+    "Civil / Building Materials": [
+        ("Cement", "kg"), ("Sand", "m³"), ("Floor Tile", "pcs"), ("Wall Tile", "pcs"),
+        ("Tile Adhesive", "kg"), ("Grout", "kg"), ("Wall Putty", "kg"),
+        ("Paint", "L"), ("Primer", "L"), ("Paint Brush", "pcs"),
+        ("Paint Roller", "pcs"), ("Paint Scraper", "pcs"), ("Sandpaper", "pcs"),
+        ("Silicone Sealant", "tube"),
+    ],
+    "Welding / Metal Work": [
+        ("Welding Electrode", "kg"), ("Welding Wire", "kg"), ("Welding Rod", "kg"),
+        ("Grinding Disc", "pcs"), ("Cutting Disc", "pcs"), ("Metal Sheet", "pcs"),
+        ("Flat Bar", "m"), ("Angle Iron", "m"), ("Steel Pipe", "m"),
+        ("Steel Plate", "pcs"), ("Welding Clamp", "pcs"),
+    ],
+    "Safety / PPE": [
+        ("Safety Helmet", "pcs"), ("Safety Shoes", "pair"), ("Safety Gloves", "pair"),
+        ("Welding Gloves", "pair"), ("Safety Goggles", "pcs"), ("Face Shield", "pcs"),
+        ("Ear Protection", "pcs"), ("Dust Mask", "pcs"), ("Reflective Vest", "pcs"),
+        ("Safety Harness", "pcs"),
+    ],
+    "Maintenance Consumables": [
+        ("Cleaning Cloth", "pcs"), ("Cotton Waste", "kg"), ("Wire Brush", "pcs"),
+        ("Brush", "pcs"), ("Sponge", "pcs"), ("Degreaser", "L"),
+        ("Lubricating Oil", "L"), ("Grease", "kg"), ("Penetrating Oil", "L"),
+        ("Rust Remover", "L"), ("Contact Cleaner", "L"),
+    ],
+    "General Maintenance Equipment": [
+        ("Ladder", "pcs"), ("Extension Ladder", "pcs"), ("Toolbox", "pcs"),
+        ("Tool Bag", "pcs"), ("Wheelbarrow", "pcs"), ("Bucket", "pcs"),
+        ("Flashlight", "pcs"), ("Work Light", "pcs"), ("Extension Cord", "pcs"),
+        ("Maintenance Cart", "pcs"),
+    ],
+}
 
 # ══════════════════════════════════════════ MODELS
 class User(UserMixin, db.Model):
@@ -317,24 +393,49 @@ class WorkOrderPart(db.Model):
     part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"), nullable=False)
     quantity = db.Column(db.Float, default=1)
     unit_cost = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     part = db.relationship("InventoryPart", foreign_keys=[part_id])
 
 class InventoryPart(db.Model):
     __tablename__ = "inventory_parts"
     id = db.Column(db.Integer, primary_key=True)
-    part_name = db.Column(db.String(120), unique=True, nullable=False)
-    category = db.Column(db.String(80))
+    part_name = db.Column(db.String(150), unique=True, nullable=False)
+    category = db.Column(db.String(120))
+    description = db.Column(db.Text)
     quantity = db.Column(db.Float, default=0)
     minimum_stock = db.Column(db.Float, default=5)
     unit = db.Column(db.String(20), default="pcs")
     unit_cost = db.Column(db.Float, default=0)
-    storage_location = db.Column(db.String(120))
+    storage_location = db.Column(db.String(150))
     status = db.Column(db.String(20), default="Active")
+    is_active = db.Column(db.Boolean, default=True)
     supplier_id = db.Column(db.Integer, db.ForeignKey("suppliers.id"))
     supplier = db.relationship("Supplier", foreign_keys=[supplier_id])
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     @property
-    def is_low(self): return self.quantity <= self.minimum_stock
+    def is_low(self): return (self.quantity or 0) <= (self.minimum_stock or 0)
+    @property
+    def is_out(self): return (self.quantity or 0) <= 0
+
+class InventoryStockHistory(db.Model):
+    __tablename__ = "inventory_stock_history"
+    id = db.Column(db.Integer, primary_key=True)
+    part_id = db.Column(db.Integer, db.ForeignKey("inventory_parts.id"), nullable=False)
+    action = db.Column(db.String(20), nullable=False)  # IN, OUT, ADJUST, USE, RETURN
+    quantity = db.Column(db.Float, default=0)
+    previous_qty = db.Column(db.Float, default=0)
+    new_qty = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(20))
+    unit_cost = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_orders.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    part = db.relationship("InventoryPart", foreign_keys=[part_id])
+    user = db.relationship("User", foreign_keys=[user_id])
+    work_order = db.relationship("WorkOrder", foreign_keys=[work_order_id])
 
 class Photo(db.Model):
     __tablename__ = "photos"
@@ -454,6 +555,19 @@ def log_audit(action, object_type=None, object_id=None, old_value=None, new_valu
         ))
     except Exception as e: print("Audit error: " + str(e))
 
+def log_stock_history(part, action, quantity, prev_qty, new_qty, notes=None, work_order_id=None, unit_cost=None):
+    try:
+        db.session.add(InventoryStockHistory(
+            part_id=part.id, action=action, quantity=quantity,
+            previous_qty=prev_qty, new_qty=new_qty,
+            unit=(part.unit if part else None),
+            unit_cost=(unit_cost if unit_cost is not None else (part.unit_cost if part else 0)),
+            notes=notes,
+            user_id=current_user.id if current_user.is_authenticated else None,
+            work_order_id=work_order_id,
+        ))
+    except Exception as e: print("Stock history error: " + str(e))
+
 def create_notification(user_id, request_id, title, message, ntype="General", link=None, work_order_id=None):
     if not user_id: return None
     recent = Notification.query.filter_by(user_id=user_id, request_id=request_id, notification_type=ntype).order_by(Notification.created_at.desc()).first()
@@ -567,7 +681,15 @@ def ensure_database_schema():
                     conn.execute(text("UPDATE suppliers SET is_active = CASE WHEN status = 'Active' THEN TRUE ELSE FALSE END"))
             add_column_if_missing("suppliers","created_at","ALTER TABLE suppliers ADD COLUMN created_at " + dt)
             add_column_if_missing("suppliers","updated_at","ALTER TABLE suppliers ADD COLUMN updated_at " + dt)
+            # inventory_parts extensions
             add_column_if_missing("inventory_parts","supplier_id","ALTER TABLE inventory_parts ADD COLUMN supplier_id INTEGER")
+            add_column_if_missing("inventory_parts","description","ALTER TABLE inventory_parts ADD COLUMN description TEXT")
+            add_column_if_missing("inventory_parts","is_active","ALTER TABLE inventory_parts ADD COLUMN is_active BOOLEAN " + bd_t)
+            add_column_if_missing("inventory_parts","created_at","ALTER TABLE inventory_parts ADD COLUMN created_at " + dt)
+            add_column_if_missing("inventory_parts","updated_at","ALTER TABLE inventory_parts ADD COLUMN updated_at " + dt)
+            # work_order_parts notes
+            add_column_if_missing("work_order_parts","notes","ALTER TABLE work_order_parts ADD COLUMN notes TEXT")
+            # working_items & areas
             add_column_if_missing("working_items","department_id","ALTER TABLE working_items ADD COLUMN department_id INTEGER")
             add_column_if_missing("working_items","area_id","ALTER TABLE working_items ADD COLUMN area_id INTEGER")
             add_column_if_missing("working_items","is_active","ALTER TABLE working_items ADD COLUMN is_active BOOLEAN " + bd_t)
@@ -576,6 +698,7 @@ def ensure_database_schema():
                 with db.engine.begin() as conn:
                     conn.execute(text("UPDATE areas SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
                     conn.execute(text("UPDATE working_items SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
+                    conn.execute(text("UPDATE inventory_parts SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
             except Exception: pass
             print("✅ Schema OK")
         except Exception as e: print("⚠️ Schema error: " + str(e))
@@ -599,6 +722,7 @@ def page(title, content):
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         elif r in STAFF_ROLES:
             nav = [('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
+                   ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
@@ -923,6 +1047,24 @@ def seed_data():
         db.session.commit()
         print(f"✅ Laundry items ensured under Housekeeping → {LAUNDRY_AREA_NAME}")
 
+    # ─── Engineering / Maintenance Inventory seeding ───
+    inv_added = 0
+    for cat_name, items in INVENTORY_ITEMS_BY_CATEGORY.items():
+        for item_name, default_unit in items:
+            existing = InventoryPart.query.filter(func.lower(InventoryPart.part_name) == item_name.lower()).first()
+            if not existing:
+                p = InventoryPart(part_name=item_name, category=cat_name, description="",
+                                  quantity=0, minimum_stock=5, unit=default_unit,
+                                  unit_cost=0, storage_location="Engineering Store",
+                                  status="Active", is_active=True)
+                db.session.add(p); inv_added += 1
+            else:
+                # ensure category is set (only if not already set to another category)
+                if not existing.category or existing.category.strip() == "":
+                    existing.category = cat_name
+    db.session.commit()
+    print(f"✅ Engineering Inventory items seeded: {inv_added} new items")
+
     for eid, n, t in [(1,"Mechanic 1","General Mechanic"),(2,"Mechanic 2","General Mechanic"),(3,"Mechanic 3","General Mechanic"),(4,"Supervisor 1","Supervisor"),(5,"Amir Awel","Manager")]:
         if not db.session.get(Employee, eid):
             db.session.add(Employee(id=eid, name=n, job_title=t, department="Engineering"))
@@ -953,36 +1095,25 @@ def seed_data():
         else:
             ex.full_name = s["n"]; ex.role = s["r"]; ex.department_id = s["d"]
 
-    # ─── Marketing department users ───
     mkt_dept = Department.query.filter_by(name="Marketing").first()
-
-    # Marketing manager: Yordanose Tegegn (MANAGER role, Marketing department)
     yord = User.query.filter_by(username="yordanose").first()
-    if not yord:
-        # Also try to find any user with full_name Yordanose Tegegn
-        yord = User.query.filter_by(full_name="Yordanose Tegegn").first()
+    if not yord: yord = User.query.filter_by(full_name="Yordanose Tegegn").first()
     if not yord:
         u = User(username="yordanose", full_name="Yordanose Tegegn", role="MANAGER",
-                 department_id=mkt_dept.id if mkt_dept else None,
-                 email="yordanose@rorihotel.local")
+                 department_id=mkt_dept.id if mkt_dept else None, email="yordanose@rorihotel.local")
         u.set_password("123456"); db.session.add(u)
         print("✅ Marketing Manager 'Yordanose Tegegn' created (yordanose / 123456)")
     else:
-        yord.full_name = "Yordanose Tegegn"
-        yord.role = "MANAGER"
+        yord.full_name = "Yordanose Tegegn"; yord.role = "MANAGER"
         if mkt_dept: yord.department_id = mkt_dept.id
 
-    # Generic marketing user
     mkt_user = User.query.filter_by(username="marketing").first()
     if not mkt_user:
         u = User(username="marketing", full_name="Marketing User", role="DEPARTMENT",
-                 department_id=mkt_dept.id if mkt_dept else None,
-                 email="marketing@rorihotel.local")
+                 department_id=mkt_dept.id if mkt_dept else None, email="marketing@rorihotel.local")
         u.set_password("123456"); db.session.add(u)
-        print("✅ Marketing user created (marketing / 123456)")
     else:
-        if mkt_dept and mkt_user.department_id != mkt_dept.id:
-            mkt_user.department_id = mkt_dept.id
+        if mkt_dept and mkt_user.department_id != mkt_dept.id: mkt_user.department_id = mkt_dept.id
         if mkt_user.role != "DEPARTMENT": mkt_user.role = "DEPARTMENT"
 
     dept_map = {
@@ -1180,26 +1311,21 @@ def items_add():
         dept_id = request.form.get("department_id", type=int)
         area_id = request.form.get("area_id", type=int) or None
         desc = (request.form.get("description") or "").strip()
-        if not name:
-            flash("Item name is required","danger"); return redirect(url_for("items_add"))
+        if not name: flash("Item name is required","danger"); return redirect(url_for("items_add"))
         existing = WorkingItem.query.filter(func.lower(WorkingItem.name) == name.lower()).first()
-        if existing:
-            flash("An item with this name already exists.","warning"); return redirect(url_for("items_add"))
+        if existing: flash("An item with this name already exists.","warning"); return redirect(url_for("items_add"))
         try:
             it = WorkingItem(name=name, description=desc, department_id=dept_id, area_id=area_id, is_active=True)
             db.session.add(it); db.session.flush()
             log_audit("Item Created","WorkingItem",it.id,new_value=name)
-            db.session.commit()
-            flash("✅ Item added successfully","success")
-            return redirect(url_for("items_list"))
+            db.session.commit(); flash("✅ Item added successfully","success"); return redirect(url_for("items_list"))
         except Exception as e:
             db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">-- Select Department --</option>' + "".join('<option value="' + str(d.id) + '">' + d.name + '</option>' for d in depts)
     area_opts = '<option value="">-- No specific area (available for all areas) --</option>' + "".join('<option value="' + str(a.id) + '">' + a.name + '</option>' for a in areas)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Maintenance Item</h1>'
         '<p>Create a new maintenance item and assign it to a department</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
-        '</div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="name" required autofocus></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required>' + dept_opts + '</select></div>'
@@ -1222,34 +1348,28 @@ def items_edit(item_id):
         dept_id = request.form.get("department_id", type=int)
         area_id = request.form.get("area_id", type=int) or None
         desc = (request.form.get("description") or "").strip()
-        if not name:
-            flash("Item name is required","danger"); return redirect(url_for("items_edit", item_id=it.id))
+        if not name: flash("Item name is required","danger"); return redirect(url_for("items_edit", item_id=it.id))
         dup = WorkingItem.query.filter(func.lower(WorkingItem.name) == name.lower(), WorkingItem.id != it.id).first()
-        if dup:
-            flash("Another item with this name already exists.","warning"); return redirect(url_for("items_edit", item_id=it.id))
+        if dup: flash("Another item with this name already exists.","warning"); return redirect(url_for("items_edit", item_id=it.id))
         try:
             old = it.name
             it.name = name; it.description = desc; it.department_id = dept_id; it.area_id = area_id
             log_audit("Item Updated","WorkingItem",it.id,old_value=old,new_value=name)
-            db.session.commit()
-            flash("✅ Item updated","success")
-            return redirect(url_for("items_list"))
+            db.session.commit(); flash("✅ Item updated","success"); return redirect(url_for("items_list"))
         except Exception as e:
             db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">-- Select Department --</option>' + "".join('<option value="' + str(d.id) + '"' + (' selected' if it.department_id==d.id else '') + '>' + d.name + '</option>' for d in depts)
     area_opts = '<option value="">-- No specific area (available for all areas) --</option>' + "".join('<option value="' + str(a.id) + '"' + (' selected' if it.area_id==a.id else '') + '>' + a.name + '</option>' for a in areas)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Item</h1>'
         '<p>' + str(it.name) + '</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
-        '</div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="name" value="' + str(it.name) + '" required></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required>' + dept_opts + '</select></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Area (optional)</label><select class="form-select" name="area_id">' + area_opts + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="2">' + str(it.description or "") + '</textarea></div>'
         '<div class="col-12 d-flex gap-2"><a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div>'
-        '</div></form></div>')
+        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
     return page("Edit Item", content)
 
 @app.route("/items/<int:item_id>/deactivate", methods=["POST"])
@@ -1260,8 +1380,7 @@ def items_deactivate(item_id):
         it.is_active = False
         log_audit("Item Deactivated","WorkingItem",it.id,old_value="active",new_value="inactive")
         db.session.commit(); flash("Item deactivated","success")
-    except Exception as e:
-        db.session.rollback(); flash("Error: " + str(e),"danger")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("items_list"))
 
 @app.route("/items/<int:item_id>/activate", methods=["POST"])
@@ -1272,8 +1391,7 @@ def items_activate(item_id):
         it.is_active = True
         log_audit("Item Activated","WorkingItem",it.id,old_value="inactive",new_value="active")
         db.session.commit(); flash("Item activated","success")
-    except Exception as e:
-        db.session.rollback(); flash("Error: " + str(e),"danger")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("items_list"))
 
 # ══════════════════════════════════════════ REQUESTS
@@ -1297,8 +1415,7 @@ def requests_list():
     for r in reqs:
         del_html = ""
         if is_mgr:
-            del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');">'
-                        '<input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
+            del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>' + ('<th></th>' if is_mgr else '') + '</tr></thead>'
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
@@ -1334,14 +1451,12 @@ def request_create():
                 if rm: fl = rm.floor
             elif lt == "Area": rid = None
             else: rid = None; aid = None
-            if not desc:
-                flash("Description is required","danger"); return redirect(url_for("request_create"))
+            if not desc: flash("Description is required","danger"); return redirect(url_for("request_create"))
             sig_data = request.form.get("signature_data", "").strip()
             sig_name_from_form = request.form.get("signature_name", "").strip()
             if current_user.role in ["DEPARTMENT", "EMPLOYEE"]:
                 ok, err = validate_signature_for_user(current_user, sig_data)
-                if not ok:
-                    flash(err, "danger"); return redirect(url_for("request_create"))
+                if not ok: flash(err, "danger"); return redirect(url_for("request_create"))
                 if sig_profile and sig_name_from_form and sig_name_from_form != sig_profile.authorized_name:
                     flash("Signature name mismatch.", "danger"); return redirect(url_for("request_create"))
             authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
@@ -1360,9 +1475,7 @@ def request_create():
             log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
             notify_users([u.id for u in managers], req.id, "📝 NEW MAINTENANCE REQUEST", "Request " + str(req.request_no) + " [" + str(prio) + "] from " + str(user_dept_name or "N/A") + " is pending approval", "New Request", link=url_for("request_detail", req_id=req.id))
-            db.session.commit()
-            flash("✅ Request created successfully!","success")
-            return redirect(url_for("request_detail", req_id=req.id))
+            db.session.commit(); flash("✅ Request created successfully!","success"); return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
@@ -1452,9 +1565,7 @@ def request_detail(req_id):
         if not req.is_deleted:
             actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
     actions_html = " ".join(actions)
-    info_card = (
-        '<div class="rpro-card">'
-        '<div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
+    info_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
         '<div class="rpro-kv">'
         + kv("Request ID", req.request_no, mono=True)
         + kv("Status", '<span class="badge badge-' + badge(req.status) + '">' + str(req.status) + '</span>')
@@ -1473,14 +1584,11 @@ def request_detail(req_id):
         + kv("Due Date", req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else None)
         + kv("Completed", req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else None)
         + '</div>'
-        + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div>'
-           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+        + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
            + str(req.description or "No description provided.") + '</div></div>')
-        + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div>'
-           '<div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
+        + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;">'
            + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
-        + '</div>'
-    )
+        + '</div>')
     sig_card = ""
     if req.signature_status == "SIGNED" and req.signature_data:
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "—"
@@ -1507,25 +1615,18 @@ def request_detail(req_id):
         who = (h.user.full_name or h.user.username) if h.user else "System"
         when = h.timestamp.strftime("%d %b %Y · %H:%M") if h.timestamp else ""
         note_html = ('<div class="rpro-timeline-note">' + str(h.notes) + '</div>') if h.notes else ""
-        tl_items.append('<div class="rpro-timeline-item"><div class="rpro-timeline-dot"></div>'
-            '<div class="rpro-timeline-status">' + str(h.status) + '</div>'
-            '<div class="rpro-timeline-meta">' + str(who) + ' · ' + when + '</div>' + note_html + '</div>')
-    timeline_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-history"></i> Status Timeline</div>'
-        '<div class="rpro-timeline">'
+        tl_items.append('<div class="rpro-timeline-item"><div class="rpro-timeline-dot"></div><div class="rpro-timeline-status">' + str(h.status) + '</div><div class="rpro-timeline-meta">' + str(who) + ' · ' + when + '</div>' + note_html + '</div>')
+    timeline_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-history"></i> Status Timeline</div><div class="rpro-timeline">'
         + ("".join(tl_items) if tl_items else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No status changes recorded.</p>')
         + '</div></div>')
     verify_card = ""
     if req.status in ("Verified","Closed"):
         wo_verifier = wos[0].verified_by if wos and wos[0].verified_by else req.manager
-        verify_card = ('<div class="rpro-card" style="border-color:rgba(56,189,248,.4);">'
-            '<div class="rpro-card-title"><i class="fas fa-shield-alt"></i> Verification</div>'
-            '<div class="rpro-kv">'
+        verify_card = ('<div class="rpro-card" style="border-color:rgba(56,189,248,.4);"><div class="rpro-card-title"><i class="fas fa-shield-alt"></i> Verification</div><div class="rpro-kv">'
             + kv("Verified By", (wo_verifier.full_name or wo_verifier.username) if wo_verifier else "—")
             + kv("Verified Date", wos[0].verified_date.strftime("%Y-%m-%d %H:%M") if wos and wos[0].verified_date else (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—"))
             + '</div></div>')
-    content = (
-        '<div class="page-header">'
-        '<div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1>'
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1>'
         '<p>' + str(req.location_name) + ' · ' + (req.department.name if req.department else "No Department") + '</p></div>'
         '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">' + actions_html + '</div></div>'
         '<div class="row g-3"><div class="col-lg-8">' + info_card + sig_card + wo_card + '</div>'
@@ -2029,7 +2130,6 @@ def management_reports():
     total = len(reqs)
     completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
     pending = sum(1 for r in reqs if r.status in ["Pending","Approved"])
-    in_progress = sum(1 for r in reqs if r.status in ["Assigned","In Progress"])
     work_orders = WorkOrder.query.filter(WorkOrder.request_id.in_([r.id for r in reqs])).all()
     total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
     dept_counts = defaultdict(int)
@@ -2135,29 +2235,11 @@ def central_maintenance():
         bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info",
               "Completed":"success","Verified":"success","Closed":"secondary",
               "Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
-        recent_rows.append('<tr>'
-            '<td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td>'
-            '<td>' + str(r.location_name) + '</td>'
-            '<td>' + str(r.department.name if r.department else "—") + '</td>'
-            '<td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td>'
-            '<td>' + str(r.priority) + '</td>'
-            '<td>' + ((r.assigned_to.full_name or r.assigned_to.username) if r.assigned_to else "—") + '</td>'
-            '</tr>')
-    tech_rows_html = "".join(
-        '<tr><td><strong>' + ((t["user"].full_name or t["user"].username)) + '</strong><br>'
-        '<small style="color:var(--text-secondary)">' + str(t["user"].role) + '</small></td>'
-        '<td><span class="rpro-chip gold">' + str(t["assigned"]) + '</span></td>'
-        '<td><span class="rpro-chip orange">' + str(t["pending"]) + '</span></td>'
-        '<td><span class="rpro-chip blue">' + str(t["in_progress"]) + '</span></td>'
-        '<td><span class="rpro-chip green">' + str(t["completed"]) + '</span></td></tr>'
-        for t in tech_rows)
+        recent_rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + str(r.priority) + '</td><td>' + ((r.assigned_to.full_name or r.assigned_to.username) if r.assigned_to else "—") + '</td></tr>')
+    tech_rows_html = "".join('<tr><td><strong>' + ((t["user"].full_name or t["user"].username)) + '</strong><br><small style="color:var(--text-secondary)">' + str(t["user"].role) + '</small></td><td><span class="rpro-chip gold">' + str(t["assigned"]) + '</span></td><td><span class="rpro-chip orange">' + str(t["pending"]) + '</span></td><td><span class="rpro-chip blue">' + str(t["in_progress"]) + '</span></td><td><span class="rpro-chip green">' + str(t["completed"]) + '</span></td></tr>' for t in tech_rows)
     def status_tile(label, value, color):
-        return ('<div class="kpi-card" style="padding:1rem .75rem;text-align:center;">'
-                '<div class="kpi-value" style="font-size:1.6rem;color:' + color + ';">' + str(value) + '</div>'
-                '<div class="kpi-label" style="font-size:.68rem;">' + label + '</div></div>')
-    content = (
-        '<div class="page-header">'
-        '<div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1>'
+        return ('<div class="kpi-card" style="padding:1rem .75rem;text-align:center;"><div class="kpi-value" style="font-size:1.6rem;color:' + color + ';">' + str(value) + '</div><div class="kpi-label" style="font-size:.68rem;">' + label + '</div></div>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1>'
         '<p>Unified view of Rooms · Areas · Requests · Work Orders · Technicians</p></div></div>'
         '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
         + status_tile("Total", total, "var(--text-primary)")
@@ -2190,15 +2272,11 @@ def central_maintenance():
         '</div></div>'
         '</div>'
         '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-users-cog"></i> Technician Workload</div>'
-        '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
-        '<th>Technician</th><th>Assigned</th><th>Pending</th><th>In Progress</th><th>Completed</th>'
-        '</tr></thead><tbody>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Technician</th><th>Assigned</th><th>Pending</th><th>In Progress</th><th>Completed</th></tr></thead><tbody>'
         + (tech_rows_html if tech_rows_html else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No active technicians.</td></tr>')
         + '</tbody></table></div></div>'
         '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clock-rotate-left"></i> Recent Requests</div>'
-        '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
-        '<th>Request #</th><th>Location</th><th>Department</th><th>Status</th><th>Priority</th><th>Assigned</th>'
-        '</tr></thead><tbody>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Department</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead><tbody>'
         + ("".join(recent_rows) if recent_rows else '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);">No requests.</td></tr>')
         + '</tbody></table></div></div>')
     return page("Central Maintenance", content)
@@ -2308,10 +2386,10 @@ def workorder_detail(wo_id):
         pun = p.part.unit if p.part else "pcs"
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
         rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
-        pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + rem + '</td></tr>')
+        pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + str(p.notes or "") + '</td><td>' + rem + '</td></tr>')
     apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
-    parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts</div>' + apb + '</div>'
-                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
+    parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts &amp; Materials Used</div>' + apb + '</div>'
+                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th>Notes</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
     ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
     actions = ""
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
@@ -2472,7 +2550,7 @@ def supplier_deactivate(supplier_id):
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("suppliers_list"))
 
-# ══════════════════════════════════════════ INVENTORY
+# ══════════════════════════════════════════ INVENTORY (Engineering / Maintenance)
 def part_form(p, action):
     def v(f, d=""):
         if p: val = getattr(p, f); return str(val if val is not None else d)
@@ -2480,48 +2558,278 @@ def part_form(p, action):
     sups = Supplier.query.filter_by(is_active=True).order_by(Supplier.company_name).all()
     so = '<option value="">-- Select --</option>'
     for s in sups: so += '<option value="' + str(s.id) + '"' + (' selected' if p and p.supplier_id == s.id else '') + '>' + str(s.company_name) + '</option>'
-    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-box"></i> <span>' + ("Edit" if p else "Add") + '</span> Part</h1></div></div>'
+    cat_opts = '<option value="">-- Select Category --</option>'
+    for c in INVENTORY_CATEGORIES:
+        cat_opts += '<option value="' + c + '"' + (' selected' if p and (p.category or "") == c else '') + '>' + c + '</option>'
+    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-box"></i> <span>' + ("Edit" if p else "Add") + '</span> Inventory Item</h1></div></div>'
             '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
-            '<div class="col-md-6 mb-3"><label class="form-label">Part Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
-            '<div class="col-md-6 mb-3"><label class="form-label">Category</label><input type="text" class="form-control" name="category" value="' + v("category") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category" required>' + cat_opts + '</select></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Quantity</label><input type="number" step="0.01" class="form-control" name="quantity" value="' + v("quantity","0") + '"></div>'
-            '<div class="col-md-6 mb-3"><label class="form-label">Min Stock</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="' + v("minimum_stock","5") + '"></div>'
-            '<div class="col-md-6 mb-3"><label class="form-label">Unit</label><input type="text" class="form-control" name="unit" value="' + v("unit","pcs") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Minimum Stock Level</label><input type="number" step="0.01" class="form-control" name="minimum_stock" value="' + v("minimum_stock","5") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Unit</label><input type="text" class="form-control" name="unit" value="' + v("unit","pcs") + '" placeholder="pcs, kg, L, m, roll, set, tube..."></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" class="form-control" name="unit_cost" value="' + v("unit_cost","0") + '"></div>'
-            '<div class="col-md-6 mb-3"><label class="form-label">Storage</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '"></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Location / Store</label><input type="text" class="form-control" name="storage_location" value="' + v("storage_location") + '" placeholder="e.g. Engineering Store"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
+            '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="2">' + v("description") + '</textarea></div>'
+            '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (p and (p.status or "Active")=="Active") or not p else '') + '>Active</option><option value="Inactive"' + (' selected' if p and (p.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
             '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
+@app.route("/inventory")
+@role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
+def inventory_list():
+    q = request.args.get("q", "").strip()
+    cat_f = request.args.get("category", "").strip()
+    status_f = request.args.get("status", "").strip()
+    low_f = request.args.get("low", "") == "1"
+    show_inactive = request.args.get("show_inactive", "") == "1"
+    base = InventoryPart.query
+    if q: base = base.filter(InventoryPart.part_name.like("%" + q + "%"))
+    if cat_f: base = base.filter(InventoryPart.category == cat_f)
+    if status_f: base = base.filter(InventoryPart.status == status_f)
+    if not show_inactive: base = base.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None))
+    all_items = base.order_by(InventoryPart.category, InventoryPart.part_name).all()
+    if low_f:
+        all_items = [p for p in all_items if (p.quantity or 0) <= (p.minimum_stock or 0)]
+    rows = []
+    for p in all_items:
+        if (p.quantity or 0) <= 0: bg, label = 'badge-danger', 'Out'
+        elif p.is_low: bg, label = 'badge-warning', 'Low'
+        else: bg, label = 'badge-success', 'OK'
+        sn = p.supplier.company_name if p.supplier else "—"
+        inactive = (p.is_active is False)
+        st_badge = '<span class="badge badge-secondary">Inactive</span>' if inactive else '<span class="badge badge-success">Active</span>'
+        actions = ('<a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-edit"></i> Edit</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_history", part_id=p.id) + '" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-history"></i> History</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_in", part_id=p.id) + '" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-plus"></i> In</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_out", part_id=p.id) + '" style="background:var(--warning);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-minus"></i> Out</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_adjust", part_id=p.id) + '" style="background:var(--info);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-sliders-h"></i> Adjust</a> ')
+        if inactive:
+            actions += '<form method="post" action="' + url_for("inventory_activate", part_id=p.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-undo"></i></button></form>'
+        else:
+            actions += '<form method="post" action="' + url_for("inventory_deactivate", part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate this item?\')"><button type="submit" class="btn-primary" style="background:var(--danger);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-ban"></i></button></form>'
+        rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td><strong>' + str(p.quantity) + '</strong></td><td>' + str(p.minimum_stock) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.storage_location or "—") + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td>' + st_badge + '</td><td style="white-space:nowrap;">' + actions + '</td></tr>')
+    total_items = InventoryPart.query.count()
+    active_items = InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None)).count()
+    low_items = len([p for p in InventoryPart.query.all() if 0 < (p.quantity or 0) <= (p.minimum_stock or 0)])
+    out_items = len([p for p in InventoryPart.query.all() if (p.quantity or 0) <= 0])
+    cat_opts = '<option value="">All Categories</option>' + "".join('<option value="' + c + '"' + (' selected' if cat_f == c else '') + '>' + c + '</option>' for c in INVENTORY_CATEGORIES)
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-boxes"></i> <span>Engineering / Maintenance</span> Inventory</h1>'
+        '<p>Tools · Spare parts · Materials · Consumables — used by Engineering on any department\'s facility</p></div>'
+        '<a class="btn-primary" href="' + url_for("inventory_add") + '"><i class="fas fa-plus"></i> Add Item</a></div>'
+        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
+        '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-boxes"></i></div><div class="kpi-value">' + str(total_items) + '</div><div class="kpi-label">Total Items</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(active_items) + '</div><div class="kpi-label">Active</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(low_items) + '</div><div class="kpi-label">Low Stock</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-times-circle"></i></div><div class="kpi-value">' + str(out_items) + '</div><div class="kpi-label">Out of Stock</div></div>'
+        '</div>'
+        '<form method="get" class="rpro-toolbar">'
+        '<input type="text" class="form-control" name="q" placeholder="Search item name..." value="' + str(q) + '">'
+        '<select class="form-select" name="category">' + cat_opts + '</select>'
+        '<select class="form-select" name="status"><option value="">All Statuses</option><option value="Active"' + (' selected' if status_f=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if status_f=="Inactive" else '') + '>Inactive</option></select>'
+        '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;"><input type="checkbox" name="low" value="1"' + (' checked' if low_f else '') + '> Low stock only</label>'
+        '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Filter</button>'
+        '<a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
+        '</form>'
+        '<div class="card"><div style="overflow-x:auto;"><table class="table">'
+        '<thead><tr><th>Item</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Min</th><th>Unit</th><th>Location</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>'
+        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary);padding:2rem;">No inventory items found.</td></tr>') + '</tbody>'
+        '</table></div></div>')
+    return page("Engineering Inventory", content)
+
 @app.route("/inventory/add", methods=["GET","POST"])
-@role_required("ADMIN","MANAGER")
+@role_required("ADMIN","MANAGER","SUPERVISOR")
 def inventory_add():
     if request.method == "POST":
         name = request.form.get("part_name","").strip()
         if not name: flash("Name required","danger"); return redirect(url_for("inventory_add"))
-        if InventoryPart.query.filter_by(part_name=name).first(): flash("Exists","warning"); return redirect(url_for("inventory_add"))
+        if InventoryPart.query.filter(func.lower(InventoryPart.part_name) == name.lower()).first():
+            flash("An inventory item with this name already exists.","warning"); return redirect(url_for("inventory_add"))
         try:
-            p = InventoryPart(part_name=name, category=request.form.get("category","").strip(), quantity=request.form.get("quantity", type=float) or 0, minimum_stock=request.form.get("minimum_stock", type=float) or 5, unit=request.form.get("unit","pcs").strip() or "pcs", unit_cost=request.form.get("unit_cost", type=float) or 0, storage_location=request.form.get("storage_location","").strip(), status="Active", supplier_id=request.form.get("supplier_id", type=int))
+            st = request.form.get("status","Active")
+            p = InventoryPart(
+                part_name=name, category=request.form.get("category","").strip(),
+                description=request.form.get("description","").strip(),
+                quantity=request.form.get("quantity", type=float) or 0,
+                minimum_stock=request.form.get("minimum_stock", type=float) or 5,
+                unit=request.form.get("unit","pcs").strip() or "pcs",
+                unit_cost=request.form.get("unit_cost", type=float) or 0,
+                storage_location=request.form.get("storage_location","").strip(),
+                status=st, is_active=(st=="Active"),
+                supplier_id=request.form.get("supplier_id", type=int)
+            )
             db.session.add(p); db.session.flush()
-            log_audit("Inventory Part Created","InventoryPart",p.id,new_value=name)
-            db.session.commit(); flash("✅ Saved","success"); return redirect(url_for("inventory_list"))
+            if (p.quantity or 0) > 0:
+                log_stock_history(p, "IN", p.quantity, 0, p.quantity, notes="Initial stock on creation")
+            log_audit("Inventory Item Created","InventoryPart",p.id,new_value=name)
+            db.session.commit(); flash("✅ Inventory item saved","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("inventory_add"))
-    return page("Add Part", part_form(None, url_for("inventory_add")))
+    return page("Add Inventory Item", part_form(None, url_for("inventory_add")))
 
 @app.route("/inventory/<int:part_id>/edit", methods=["GET","POST"])
-@role_required("ADMIN","MANAGER")
+@role_required("ADMIN","MANAGER","SUPERVISOR")
 def inventory_edit(part_id):
     p = get_or_404(InventoryPart, part_id)
     if request.method == "POST":
         name = request.form.get("part_name","").strip()
         if not name: flash("Name required","danger"); return redirect(url_for("inventory_edit", part_id=p.id))
-        dup = InventoryPart.query.filter(InventoryPart.part_name == name, InventoryPart.id != p.id).first()
-        if dup: flash("Exists","warning"); return redirect(url_for("inventory_edit", part_id=p.id))
+        dup = InventoryPart.query.filter(func.lower(InventoryPart.part_name) == name.lower(), InventoryPart.id != p.id).first()
+        if dup: flash("Another item with this name already exists.","warning"); return redirect(url_for("inventory_edit", part_id=p.id))
         try:
-            p.part_name = name; p.category = request.form.get("category","").strip(); p.quantity = request.form.get("quantity", type=float) or 0; p.minimum_stock = request.form.get("minimum_stock", type=float) or 5; p.unit = request.form.get("unit","pcs").strip() or "pcs"; p.unit_cost = request.form.get("unit_cost", type=float) or 0; p.storage_location = request.form.get("storage_location","").strip(); p.supplier_id = request.form.get("supplier_id", type=int)
-            log_audit("Inventory Part Updated","InventoryPart",p.id,new_value=name)
-            db.session.commit(); flash("✅ Updated","success"); return redirect(url_for("inventory_list"))
+            old_qty = p.quantity or 0
+            new_qty = request.form.get("quantity", type=float) or 0
+            st = request.form.get("status","Active")
+            p.part_name = name; p.category = request.form.get("category","").strip()
+            p.description = request.form.get("description","").strip()
+            p.quantity = new_qty
+            p.minimum_stock = request.form.get("minimum_stock", type=float) or 5
+            p.unit = request.form.get("unit","pcs").strip() or "pcs"
+            p.unit_cost = request.form.get("unit_cost", type=float) or 0
+            p.storage_location = request.form.get("storage_location","").strip()
+            p.status = st; p.is_active = (st=="Active")
+            p.supplier_id = request.form.get("supplier_id", type=int)
+            if new_qty != old_qty:
+                log_stock_history(p, "ADJUST", new_qty - old_qty, old_qty, new_qty, notes="Edited from inventory form")
+            log_audit("Inventory Item Updated","InventoryPart",p.id,new_value=name)
+            db.session.commit(); flash("✅ Inventory item updated","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
-    return page("Edit Part", part_form(p, url_for("inventory_edit", part_id=p.id)))
+    return page("Edit Inventory Item", part_form(p, url_for("inventory_edit", part_id=p.id)))
+
+@app.route("/inventory/<int:part_id>/deactivate", methods=["POST"])
+@role_required("ADMIN","MANAGER","SUPERVISOR")
+def inventory_deactivate(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    try:
+        p.is_active = False; p.status = "Inactive"
+        log_audit("Inventory Item Deactivated","InventoryPart",p.id,old_value="active",new_value="inactive")
+        db.session.commit(); flash("Item deactivated","success")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
+    return redirect(url_for("inventory_list"))
+
+@app.route("/inventory/<int:part_id>/activate", methods=["POST"])
+@role_required("ADMIN","MANAGER","SUPERVISOR")
+def inventory_activate(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    try:
+        p.is_active = True; p.status = "Active"
+        log_audit("Inventory Item Activated","InventoryPart",p.id,old_value="inactive",new_value="active")
+        db.session.commit(); flash("Item activated","success")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
+    return redirect(url_for("inventory_list"))
+
+@app.route("/inventory/<int:part_id>/stock-in", methods=["GET","POST"])
+@role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
+def inventory_stock_in(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    if request.method == "POST":
+        try:
+            qty = request.form.get("quantity", type=float) or 0
+            notes = (request.form.get("notes") or "").strip()
+            uc = request.form.get("unit_cost", type=float)
+            if qty <= 0: flash("Quantity must be > 0","danger"); return redirect(url_for("inventory_stock_in", part_id=p.id))
+            prev = p.quantity or 0
+            new_qty = prev + qty
+            p.quantity = new_qty
+            if uc is not None and uc > 0: p.unit_cost = uc
+            log_stock_history(p, "IN", qty, prev, new_qty, notes=notes or "Stock In", unit_cost=uc)
+            log_audit("Stock In","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            db.session.commit(); flash("✅ Stock added","success"); return redirect(url_for("inventory_list"))
+        except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Stock In</span> — ' + str(p.part_name) + '</h1>'
+        '<p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-4 mb-3"><label class="form-label">Quantity to Add *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
+        '<div class="col-md-4 mb-3"><label class="form-label">Unit Cost (optional)</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost" value="' + str(p.unit_cost or "") + '"></div>'
+        '<div class="col-md-4 mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes" placeholder="e.g. Purchase from supplier"></div>'
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        '<button type="submit" class="btn-primary" style="background:var(--success);"><i class="fas fa-plus"></i> Add Stock</button></div>'
+        '</div></form></div>')
+    return page("Stock In", c)
+
+@app.route("/inventory/<int:part_id>/stock-out", methods=["GET","POST"])
+@role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
+def inventory_stock_out(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    if request.method == "POST":
+        try:
+            qty = request.form.get("quantity", type=float) or 0
+            notes = (request.form.get("notes") or "").strip()
+            if qty <= 0: flash("Quantity must be > 0","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
+            prev = p.quantity or 0
+            if qty > prev: flash("Not enough stock available (only " + str(prev) + " " + str(p.unit or "pcs") + ").","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
+            new_qty = prev - qty
+            p.quantity = new_qty
+            log_stock_history(p, "OUT", qty, prev, new_qty, notes=notes or "Stock Out")
+            log_audit("Stock Out","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            db.session.commit(); flash("✅ Stock removed","success"); return redirect(url_for("inventory_list"))
+        except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-minus-circle"></i> <span>Stock Out</span> — ' + str(p.part_name) + '</h1>'
+        '<p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-4 mb-3"><label class="form-label">Quantity to Remove *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
+        '<div class="col-md-8 mb-3"><label class="form-label">Notes / Reason</label><input type="text" class="form-control" name="notes" placeholder="e.g. Used on WO-..., Damaged, Damaged return..."></div>'
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        '<button type="submit" class="btn-primary" style="background:var(--warning);"><i class="fas fa-minus"></i> Remove Stock</button></div>'
+        '</div></form></div>')
+    return page("Stock Out", c)
+
+@app.route("/inventory/<int:part_id>/adjust", methods=["GET","POST"])
+@role_required("ADMIN","MANAGER","SUPERVISOR")
+def inventory_adjust(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    if request.method == "POST":
+        try:
+            new_qty = request.form.get("new_quantity", type=float)
+            notes = (request.form.get("notes") or "").strip()
+            if new_qty is None or new_qty < 0: flash("New quantity must be >= 0","danger"); return redirect(url_for("inventory_adjust", part_id=p.id))
+            prev = p.quantity or 0
+            if new_qty == prev: flash("No change made","info"); return redirect(url_for("inventory_list"))
+            p.quantity = new_qty
+            log_stock_history(p, "ADJUST", new_qty - prev, prev, new_qty, notes=notes or "Manual adjustment")
+            log_audit("Stock Adjust","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            db.session.commit(); flash("✅ Stock adjusted","success"); return redirect(url_for("inventory_list"))
+        except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-sliders-h"></i> <span>Adjust Stock</span> — ' + str(p.part_name) + '</h1>'
+        '<p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-4 mb-3"><label class="form-label">New Quantity (exact) *</label><input type="number" step="0.01" min="0" class="form-control" name="new_quantity" value="' + str(p.quantity or 0) + '" required autofocus></div>'
+        '<div class="col-md-8 mb-3"><label class="form-label">Reason</label><input type="text" class="form-control" name="notes" placeholder="e.g. Physical count reconciliation"></div>'
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        '<button type="submit" class="btn-primary" style="background:var(--info);"><i class="fas fa-save"></i> Save Adjustment</button></div>'
+        '</div></form></div>')
+    return page("Adjust Stock", c)
+
+@app.route("/inventory/<int:part_id>/history")
+@role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
+def inventory_history(part_id):
+    p = get_or_404(InventoryPart, part_id)
+    hist = InventoryStockHistory.query.filter_by(part_id=p.id).order_by(InventoryStockHistory.created_at.desc()).limit(500).all()
+    rows = []
+    for h in hist:
+        act_color = {"IN":"success","OUT":"warning","ADJUST":"info","USE":"danger","RETURN":"success"}.get(h.action, "secondary")
+        wo_link = ""
+        if h.work_order_id:
+            wo_link = ' <a href="' + url_for("workorder_detail", wo_id=h.work_order_id) + '" style="color:var(--rori-gold);font-size:.8rem;">WO#' + str(h.work_order_id) + '</a>'
+        rows.append('<tr><td>' + (h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else "—") + '</td>'
+            '<td><span class="badge badge-' + act_color + '">' + str(h.action) + '</span>' + wo_link + '</td>'
+            '<td>' + str(h.quantity) + '</td>'
+            '<td>' + str(h.previous_qty) + '</td>'
+            '<td>' + str(h.new_qty) + '</td>'
+            '<td>' + str(h.unit or "") + '</td>'
+            '<td>' + str((h.user.full_name or h.user.username) if h.user else "System") + '</td>'
+            '<td>' + str(h.notes or "") + '</td></tr>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-history"></i> <span>Stock History</span> — ' + str(p.part_name) + '</h1>'
+        '<p>Category: ' + str(p.category or "—") + ' · Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="card"><div style="overflow-x:auto;"><table class="table">'
+        '<thead><tr><th>Date</th><th>Action</th><th>Qty</th><th>Prev</th><th>New</th><th>Unit</th><th>By</th><th>Notes</th></tr></thead>'
+        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:2rem;">No stock history yet.</td></tr>') + '</tbody>'
+        '</table></div></div>')
+    return page("Stock History", content)
 
 def can_parts(wo): return (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
 
@@ -2534,25 +2842,39 @@ def workorder_part_add(wo_id):
     if request.method == "POST":
         try:
             pid = request.form.get("part_id", type=int); qty = request.form.get("quantity", type=float); uc = request.form.get("unit_cost", type=float)
+            notes = (request.form.get("notes") or "").strip()
             part = get_one(InventoryPart, pid)
             if not part: flash("Select valid part","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
             if not qty or qty <= 0: flash("Qty > 0","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
-            if qty > part.quantity: flash("Only " + str(part.quantity) + " available","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
+            if qty > (part.quantity or 0): flash("Only " + str(part.quantity) + " available","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
             if uc is None or uc < 0: uc = part.unit_cost or 0
-            wop = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=qty, unit_cost=uc)
-            part.quantity = (part.quantity or 0) - qty
+            prev = part.quantity or 0
+            new_qty = prev - qty
+            wop = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=qty, unit_cost=uc, notes=notes)
+            part.quantity = new_qty
             db.session.add(wop)
-            log_audit("Part Added","WorkOrder",wo.id,new_value=str(part.part_name) + " x " + str(qty))
-            db.session.commit(); flash("✅ Part added","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
+            log_stock_history(part, "USE", qty, prev, new_qty, notes=notes or ("Used on WO " + str(wo.work_order_no)), work_order_id=wo.id)
+            log_audit("Part Used","WorkOrder",wo.id,new_value=str(part.part_name) + " x " + str(qty))
+            db.session.commit(); flash("✅ Part recorded","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
-    parts = InventoryPart.query.filter(InventoryPart.status == "Active", InventoryPart.quantity > 0).order_by(InventoryPart.part_name).all()
-    po = "".join('<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ')</option>' for p in parts)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus"></i> <span>Add Part</span> — WO ' + str(wo.work_order_no) + '</h1></div></div>'
+    parts = InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None), InventoryPart.quantity > 0).order_by(InventoryPart.category, InventoryPart.part_name).all()
+    by_cat = defaultdict(list)
+    for p in parts:
+        by_cat[p.category or "Uncategorized"].append(p)
+    po = '<option value="">-- Select Item --</option>'
+    for cat in sorted(by_cat.keys()):
+        po += '<optgroup label="' + cat + '">'
+        for p in by_cat[cat]:
+            po += '<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ' ' + str(p.unit or "pcs") + ')</option>'
+        po += '</optgroup>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus"></i> <span>Add Part / Material</span> — WO ' + str(wo.work_order_no) + '</h1></div>'
+         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("workorder_detail", wo_id=wo.id) + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
          '<div class="card"><form method="post"><div class="row">'
-         '<div class="col-md-6 mb-3"><label class="form-label">Part *</label><select class="form-select" name="part_id" required><option value="">-- Select --</option>' + po + '</select></div>'
-         '<div class="col-md-3 mb-3"><label class="form-label">Qty *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Item / Part / Material *</label><select class="form-select" name="part_id" required>' + po + '</select></div>'
+         '<div class="col-md-3 mb-3"><label class="form-label">Quantity *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Add</button></div></div></form></div>')
+         '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2" placeholder="Where/how it was used"></textarea></div>'
+         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Add &amp; Deduct Stock</button></div></div></form></div>')
     return page("Add Part", c)
 
 @app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
@@ -2565,10 +2887,14 @@ def workorder_part_remove(wo_id, part_id):
         wop = WorkOrderPart.query.filter_by(work_order_id=wo.id, id=part_id).first()
         if not wop: flash("Not found","warning"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         part = get_one(InventoryPart, wop.part_id)
-        if part: part.quantity = (part.quantity or 0) + (wop.quantity or 0)
+        if part:
+            prev = part.quantity or 0
+            new_qty = prev + (wop.quantity or 0)
+            part.quantity = new_qty
+            log_stock_history(part, "RETURN", wop.quantity or 0, prev, new_qty, notes="Returned from WO " + str(wo.work_order_no), work_order_id=wo.id)
         db.session.delete(wop)
         log_audit("Part Removed","WorkOrder",wo.id,old_value=str(part.part_name if part else "?"))
-        db.session.commit(); flash("Part removed","success")
+        db.session.commit(); flash("Part returned to stock","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
@@ -2695,53 +3021,40 @@ def areas_list():
             '<div class="area-card' + ("" if is_active else " inactive") + '">' + new_badge
             + '<div class="area-card-header">'
             + '<div class="area-card-name">' + str(a.name) + '</div>'
-            + '<div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div>'
-            + '</div>'
+            + '<div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div></div>'
             + '<div class="area-stat-grid">'
             + '<div class="area-stat"><div class="area-stat-val">' + str(s["total"]) + '</div><div class="area-stat-lbl">Total</div></div>'
             + '<div class="area-stat"><div class="area-stat-val" style="color:var(--warning)">' + str(s["open"]) + '</div><div class="area-stat-lbl">Open</div></div>'
             + '<div class="area-stat"><div class="area-stat-val" style="color:var(--info)">' + str(s["in_progress"]) + '</div><div class="area-stat-lbl">In Progress</div></div>'
-            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Completed</div></div>'
-            + '</div>'
+            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Completed</div></div></div>'
             + '<div class="area-status-row" style="color:' + st_color + '"><i class="fas fa-circle" style="font-size:.55rem"></i> <span>' + st_label + '</span></div>'
             + '<div class="area-last-row"><i class="fas fa-clock"></i> Last: ' + last_str + '</div>'
             + '<div class="area-card-actions">'
             + '<a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-eye"></i> View</a>'
-            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '" title="Edit"><i class="fas fa-edit"></i></a>'
-            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;" title="Deactivate"><i class="fas fa-ban"></i></button></form>' if is_active else
-               '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;" title="Activate"><i class="fas fa-undo"></i></button></form>')
+            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i></a>'
+            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;"><i class="fas fa-ban"></i></button></form>' if is_active else
+               '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;"><i class="fas fa-undo"></i></button></form>')
             + '</div></div>')
     cards_html = "".join(cards) if cards else ('<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match the current filter.</p></div>')
     dept_options = '<option value="">All Departments</option>' + "".join('<option value="' + d + '"' + (' selected' if dept_filter == d else '') + '>' + d + '</option>' for d in dept_set)
     def _sel(m): return ' selected' if mode == m else ''
-    filter_options = ('<option value="all"' + _sel("all") + '>All Areas</option>'
-        '<option value="active"' + _sel("active") + '>Has Active Request</option>'
-        '<option value="no_active"' + _sel("no_active") + '>No Active Request</option>'
-        '<option value="in_progress"' + _sel("in_progress") + '>In Progress</option>'
-        '<option value="completed"' + _sel("completed") + '>All Completed</option>')
-    content = (
-        '<div class="page-header">'
-        '<div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span> &amp; Maintenance</h1>'
-        '<p>Rori Hotel | Engineering &amp; Maintenance Area Management</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;">'
-        '<a href="' + url_for("area_add") + '" class="btn-primary"><i class="fas fa-plus"></i> Add Area</a>'
-        '</div></div>'
+    filter_options = ('<option value="all"' + _sel("all") + '>All Areas</option><option value="active"' + _sel("active") + '>Has Active Request</option><option value="no_active"' + _sel("no_active") + '>No Active Request</option><option value="in_progress"' + _sel("in_progress") + '>In Progress</option><option value="completed"' + _sel("completed") + '>All Completed</option>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span> &amp; Maintenance</h1><p>Rori Hotel | Engineering &amp; Maintenance Area Management</p></div>'
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("area_add") + '" class="btn-primary"><i class="fas fa-plus"></i> Add Area</a></div></div>'
         '<div class="kpi-mini">'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas with Active Requests</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas without Active</div><div class="kpi-mini-value" style="color:var(--success)">' + str(areas_without_active) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Maintenance Requests</div><div class="kpi-mini-value">' + str(total_requests) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Open Work Orders</div><div class="kpi-mini-value" style="color:var(--info)">' + str(open_work_orders) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Completed Requests</div><div class="kpi-mini-value" style="color:var(--success)">' + str(total_completed) + '</div></div>'
-        + '</div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Completed Requests</div><div class="kpi-mini-value" style="color:var(--success)">' + str(total_completed) + '</div></div></div>'
         + '<form method="get" class="area-toolbar">'
         + '<input type="text" class="form-control" name="q" placeholder="Search area, department..." value="' + str(q) + '">'
         + '<select class="form-select" name="filter">' + filter_options + '</select>'
         + '<select class="form-select" name="dept">' + dept_options + '</select>'
         + '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;white-space:nowrap;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
         + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Apply</button>'
-        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
-        + '</form>'
+        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
         + '<div class="area-grid">' + cards_html + '</div>')
     return page("Areas & Maintenance", content)
 
@@ -2761,19 +3074,16 @@ def area_add():
             db.session.add(a); db.session.flush()
             log_audit("Area Created","Area",a.id,new_value=name)
             db.session.commit(); flash("✅ Area added successfully.","success"); return redirect(url_for("areas_list"))
-        except Exception as e:
-            db.session.rollback(); flash("Error: " + str(e),"danger")
+        except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d.name + '">' + d.name + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Area</h1>'
-        '<p>Create a new Area / Location for the hotel</p></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Area</h1><p>Create a new Area / Location for the hotel</p></div>'
         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" required autofocus placeholder="e.g. Pool Bar Area"></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" required autofocus></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + dept_opts + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="3"></textarea></div>'
         '<div class="col-12 d-flex gap-2"><a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Area</button></div>'
-        '</div></form></div>')
+        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Area</button></div></div></form></div>')
     return page("Add Area", content)
 
 @app.route("/areas/<int:area_id>")
@@ -2799,25 +3109,15 @@ def area_detail(area_id):
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.category.name if r.category else "—") + '</td><td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td><td>' + str(r.assigned_to.full_name if r.assigned_to else "Unassigned") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td></tr>')
     table_html = ('<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Item</th><th>Category</th><th>Requested By</th><th>Assigned To</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:2rem;">No requests for this area.</td></tr>') + '</tbody></table></div>')
     def chip(val, label, color):
-        return ('<div style="background:var(--bg-secondary);padding:.75rem;border-radius:10px;border:1px solid var(--border-color);text-align:center;">'
-                '<div style="font-size:1.3rem;font-weight:800;color:' + color + ';">' + str(val) + '</div>'
-                '<div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div></div>')
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>' + str(a.name) + '</span></h1>'
-        '<p><i class="fas fa-building"></i> ' + str(dept_label) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;">'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
-        '<a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i> Edit Area</a>'
-        '</div></div>'
+        return ('<div style="background:var(--bg-secondary);padding:.75rem;border-radius:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-size:1.3rem;font-weight:800;color:' + color + ';">' + str(val) + '</div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div></div>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>' + str(a.name) + '</span></h1><p><i class="fas fa-building"></i> ' + str(dept_label) + '</p></div>'
+        '<div style="display:flex;gap:.6rem;"><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
+        '<a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i> Edit Area</a></div></div>'
         + '<div class="card" style="border-left:3px solid ' + st_color + ';"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Current Status</div>'
-        + '<div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div>'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Department</div>'
-        + '<div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div>'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Active Staff</div>'
-        + '<div style="font-size:1.15rem;font-weight:800;color:var(--text-primary);">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div>'
-        + '</div></div>'
-        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-chart-simple"></i> Status Breakdown</h5>'
-        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;">'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Current Status</div><div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div>'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Department</div><div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div>'
+        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Active Staff</div><div style="font-size:1.15rem;font-weight:800;color:var(--text-primary);">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div></div></div>'
+        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-chart-simple"></i> Status Breakdown</h5><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;">'
         + chip(counts["pending"], "Pending", "var(--warning)")
         + chip(counts["approved"], "Approved", "var(--info)")
         + chip(counts["assigned"], "Assigned", "var(--info)")
@@ -2826,8 +3126,7 @@ def area_detail(area_id):
         + chip(counts["verified"], "Verified", "var(--success)")
         + chip(counts["closed"], "Closed", "var(--text-secondary)")
         + '</div></div>'
-        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-list"></i> Recent Requests</h5>'
-        + table_html + '</div>')
+        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-list"></i> Recent Requests</h5>' + table_html + '</div>')
     return page("Area: " + str(a.name), content)
 
 @app.route("/areas/<int:area_id>/edit", methods=["GET","POST"])
@@ -2852,19 +3151,15 @@ def area_edit(area_id):
     current = (a.department or "").strip()
     if current and current not in depts and current.lower() != "unknown": depts = [current] + depts
     opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d + '"' + (' selected' if d == current else '') + '>' + d + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Area</h1>'
-        + '<p>' + str(a.name) + '</p></div>'
-        + '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
-        + '<div class="card"><form method="post"><div class="row">'
-        + '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
-        + '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
-        + '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status">'
-        + '<option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option>'
-        + '<option value="Inactive"' + (' selected' if (a.status or "")=="Inactive" else '') + '>Inactive</option>'
-        + '</select></div>'
-        + '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3">' + str(a.description or "") + '</textarea></div>'
-        + '<div class="col-12 d-flex gap-2"><a href="' + url_for("area_detail", area_id=a.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        + '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Area</h1><p>' + str(a.name) + '</p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="card"><form method="post"><div class="row">'
+        '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if (a.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
+        '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3">' + str(a.description or "") + '</textarea></div>'
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("area_detail", area_id=a.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
+        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
     return page("Edit Area", content)
 
 @app.route("/areas/<int:area_id>/deactivate", methods=["POST"])
@@ -2875,8 +3170,7 @@ def area_deactivate(area_id):
         a.is_active = False; a.status = "Inactive"
         log_audit("Area Deactivated","Area",a.id,old_value="active",new_value="inactive")
         db.session.commit(); flash("Area deactivated","success")
-    except Exception as e:
-        db.session.rollback(); flash("Error: " + str(e),"danger")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("areas_list"))
 
 @app.route("/areas/<int:area_id>/activate", methods=["POST"])
@@ -2887,8 +3181,7 @@ def area_activate(area_id):
         a.is_active = True; a.status = "Active"
         log_audit("Area Activated","Area",a.id,old_value="inactive",new_value="active")
         db.session.commit(); flash("Area activated","success")
-    except Exception as e:
-        db.session.rollback(); flash("Error: " + str(e),"danger")
+    except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("areas_list"))
 
 # ══════════════════════════════════════════ ROOMS
@@ -2929,60 +3222,33 @@ def rooms_list():
         status_class = {"Available":"green","Occupied":"blue","Reserved":"gold","Maintenance":"orange","Out of Service":"red"}.get(r.status, "gold")
         last = s["last_date"].strftime("%Y-%m-%d") if s["last_date"] else "—"
         open_badge = ('<span class="rpro-chip orange"><i class="fas fa-tools"></i> ' + str(s["open"]) + ' open</span>' if s["open"] else '<span class="rpro-chip green"><i class="fas fa-check"></i> Clear</span>')
-        cards.append(
-            '<div class="rpro-room-card">'
-            '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-            '<div><div class="rpro-room-num">' + str(r.room_number) + '</div>'
-            '<div class="rpro-room-floor"><i class="fas fa-layer-group"></i> Floor ' + str(r.floor) + '</div></div>'
-            '<span class="rpro-chip ' + status_class + '">' + str(r.status) + '</span>'
-            '</div>'
+        cards.append('<div class="rpro-room-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+            '<div><div class="rpro-room-num">' + str(r.room_number) + '</div><div class="rpro-room-floor"><i class="fas fa-layer-group"></i> Floor ' + str(r.floor) + '</div></div>'
+            '<span class="rpro-chip ' + status_class + '">' + str(r.status) + '</span></div>'
             '<div class="rpro-room-stats">' + open_badge
             + '<span class="rpro-chip"><i class="fas fa-list"></i> ' + str(s["total"]) + ' total</span>'
-            + ('<span class="rpro-chip blue"><i class="fas fa-spinner"></i> ' + str(s["in_progress"]) + '</span>' if s["in_progress"] else "")
-            + '</div>'
+            + ('<span class="rpro-chip blue"><i class="fas fa-spinner"></i> ' + str(s["in_progress"]) + '</span>' if s["in_progress"] else "") + '</div>'
             '<div style="font-size:.7rem;color:var(--text-secondary);margin-top:.6rem;"><i class="fas fa-clock"></i> Last: ' + last + '</div>'
-            '<a href="' + url_for("requests_list") + '?room_id=' + str(r.id) + '" class="btn-primary" style="margin-top:.75rem;width:100%;justify-content:center;padding:.45rem;font-size:.8rem;"><i class="fas fa-eye"></i> View Requests</a>'
-            '</div>')
+            '<a href="' + url_for("requests_list") + '?room_id=' + str(r.id) + '" class="btn-primary" style="margin-top:.75rem;width:100%;justify-content:center;padding:.45rem;font-size:.8rem;"><i class="fas fa-eye"></i> View Requests</a></div>')
     all_floors = sorted({r.floor for r in all_rooms})
     floor_opts = '<option value="">All Floors</option>' + "".join('<option value="' + str(f) + '"' + (' selected' if floor_f == f else '') + '>Floor ' + str(f) + '</option>' for f in all_floors)
     status_opts = '<option value="">All Statuses</option>' + "".join('<option value="' + s + '"' + (' selected' if status_f == s else '') + '>' + s + '</option>' for s in ROOM_STATUSES)
-    content = (
-        '<div class="page-header">'
-        '<div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span> Management</h1>'
-        '<p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors (2F-5F)</p></div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span> Management</h1><p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors (2F-5F)</p></div></div>'
         '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
         '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-door-open"></i></div><div class="kpi-value">' + str(total_rooms) + '</div><div class="kpi-label">Total Rooms</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(available) + '</div><div class="kpi-label">Available</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info)"><i class="fas fa-user-check"></i></div><div class="kpi-value">' + str(occupied) + '</div><div class="kpi-label">Occupied</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-tools"></i></div><div class="kpi-value">' + str(maintenance) + '</div><div class="kpi-label">Maintenance</div></div>'
-        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open Requests</div></div>'
-        '</div>'
-        '<form method="get" class="rpro-toolbar">'
-        '<input type="text" class="form-control" name="q" placeholder="Search room number..." value="' + q + '">'
-        '<select class="form-select" name="floor">' + floor_opts + '</select>'
-        '<select class="form-select" name="status">' + status_opts + '</select>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open Requests</div></div></div>'
+        '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Search room number..." value="' + q + '">'
+        '<select class="form-select" name="floor">' + floor_opts + '</select><select class="form-select" name="status">' + status_opts + '</select>'
         '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-filter"></i> Filter</button>'
-        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a>'
-        '</form>'
+        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
         + ('<div class="rpro-room-grid">' + "".join(cards) + '</div>' if cards
            else '<div class="rpro-card" style="text-align:center;padding:3rem;"><i class="fas fa-search" style="font-size:2rem;color:var(--rori-gold);opacity:.5;"></i><p style="color:var(--text-secondary);margin-top:.75rem;">No rooms match your filters.</p></div>'))
     return page("Rooms", content)
 
 # ══════════════════════════════════════════ OTHER PAGES
-@app.route("/inventory")
-@role_required("ADMIN","MANAGER")
-def inventory_list():
-    ps = InventoryPart.query.order_by(InventoryPart.part_name).all()
-    rows = []
-    for p in ps:
-        bg = 'badge-danger' if p.quantity <= 0 else 'badge-warning' if p.is_low else 'badge-success'
-        label = "Out" if p.quantity <= 0 else "Low" if p.is_low else "OK"
-        sn = p.supplier.company_name if p.supplier else "—"
-        rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td>' + str(p.quantity) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.unit_cost or 0) + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td><a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-edit"></i></a></td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-boxes"></i> <span>Inventory</span></h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '"><i class="fas fa-plus"></i> Add Part</a></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div></div>')
-    return page("Inventory", c)
-
 @app.route("/employees")
 @role_required("ADMIN","MANAGER")
 def employees_list():
@@ -3053,18 +3319,17 @@ def debug():
         "users": User.query.count(), "departments": Department.query.count(),
         "requests": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "work_orders": WorkOrder.query.count(), "notifications": Notification.query.count(),
-        "department_signatures": DepartmentSignature.query.count(),
         "rooms_total": Room.query.count(),
-        "rooms_by_floor": {str(f): Room.query.filter_by(floor=f).count() for f in [2,3,4,5]},
-        "floors_present": sorted({r.floor for r in Room.query.all()}),
         "areas_total": Area.query.count(),
         "areas_active": Area.query.filter_by(is_active=True).count(),
         "working_items_total": WorkingItem.query.count(),
         "working_items_active": WorkingItem.query.filter_by(is_active=True).count(),
-        "items_by_department": {d.name: WorkingItem.query.filter_by(department_id=d.id).count() for d in Department.query.all()},
+        "inventory_total": InventoryPart.query.count(),
+        "inventory_active": InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None)).count(),
+        "inventory_by_category": {c: InventoryPart.query.filter_by(category=c).count() for c in INVENTORY_CATEGORIES},
+        "inventory_stock_history": InventoryStockHistory.query.count(),
         "laundry_items_under_housekeeping": WorkingItem.query.filter_by(area_id=la.id).count() if la else 0,
         "marketing_manager_exists": bool(User.query.filter_by(username="yordanose").first()),
-        "marketing_user_exists": bool(User.query.filter_by(username="marketing").first()),
         "it_items_count": WorkingItem.query.filter_by(department_id=(Department.query.filter_by(name="IT").first().id if Department.query.filter_by(name="IT").first() else -1)).count(),
     })
 
