@@ -591,7 +591,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 .user-name{font-weight:600;font-size:0.9rem;color:var(--text-primary)}
 .user-role{font-size:0.75rem;color:var(--text-secondary)}
 .sound-control{display:flex;gap:0.5rem}
-.btn-icon{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);width:36px;height:36px;border-radius:8px;cursor:pointer;transition:all 0.3s}
+.btn-icon{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);width:36px;height:36px;border-radius:8px;cursor:pointer;transition:all 0.3s;display:inline-flex;align-items:center;justify-content:center}
 .btn-icon:hover{background:var(--bg-card-hover);color:var(--rori-gold);border-color:var(--rori-gold)}
 .sidebar{position:fixed;left:0;top:70px;bottom:0;width:260px;background:var(--bg-secondary);border-right:1px solid var(--border-color);padding:1.5rem 0;overflow-y:auto;z-index:999;transition:transform 0.3s}
 .sidebar-nav{list-style:none}
@@ -618,10 +618,18 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
 .card-title{font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:0.5rem}
 .card-title i{color:var(--rori-gold)}
-.table{width:100%;border-collapse:collapse}
-.table thead th{background:var(--bg-secondary);color:var(--rori-gold);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;padding:1rem;text-align:left;border-bottom:2px solid var(--border-color)}
-.table tbody td{padding:1rem;border-bottom:1px solid var(--border-color);color:var(--text-primary);font-size:0.9rem}
-.table tbody tr:hover{background:var(--bg-card-hover)}
+.table{--bs-table-color:var(--text-primary)!important;--bs-table-bg:transparent!important;--bs-table-accent-bg:transparent!important;--bs-table-striped-color:var(--text-primary)!important;--bs-table-striped-bg:rgba(197,160,89,0.04)!important;--bs-table-active-color:var(--text-primary)!important;--bs-table-active-bg:rgba(197,160,89,0.08)!important;--bs-table-hover-color:var(--text-primary)!important;--bs-table-hover-bg:rgba(197,160,89,0.10)!important;width:100%;margin-bottom:0;color:var(--text-primary)!important;vertical-align:middle;border-color:var(--border-color)!important;background:transparent!important;border-collapse:collapse}
+.table>:not(caption)>*>*{padding:1rem;background-color:transparent!important;box-shadow:none!important;color:var(--text-primary)!important;border-color:var(--border-color)!important}
+.table>thead{vertical-align:bottom;background:transparent!important}
+.table>thead th{background:var(--bg-secondary)!important;color:var(--rori-gold)!important;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;padding:1rem;text-align:left;border-bottom:2px solid var(--border-color)!important;font-weight:700}
+.table>tbody{vertical-align:inherit;background:transparent!important}
+.table>tbody td{padding:1rem;border-bottom:1px solid var(--border-color)!important;color:var(--text-primary)!important;font-size:0.9rem;background-color:transparent!important}
+.table>tbody tr{background:transparent!important}
+.table>tbody tr:hover>*{background-color:rgba(197,160,89,0.10)!important;color:var(--text-primary)!important}
+.table-hover>tbody>tr:hover>*{color:var(--text-primary)!important;background-color:rgba(197,160,89,0.10)!important}
+.table-responsive{background:transparent;border-radius:12px;overflow-x:auto;overflow-y:hidden}
+.table a{color:var(--rori-gold)!important;text-decoration:none;font-weight:600}
+.table a:hover{text-decoration:underline}
 .badge{padding:0.4rem 0.8rem;border-radius:20px;font-size:0.75rem;font-weight:600;display:inline-block}
 .badge-success{background:rgba(34,197,94,0.2);color:var(--success)}
 .badge-warning{background:rgba(245,158,11,0.2);color:var(--warning)}
@@ -636,10 +644,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 .alert-info{border-left:4px solid var(--info)}
 .form-control,.form-select{background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;color:var(--text-primary);padding:0.75rem 1rem;font-size:0.9rem}
 .form-control:focus,.form-select:focus{background:var(--bg-card-hover);border-color:var(--rori-gold);box-shadow:0 0 0 3px rgba(197,160,89,0.15);color:var(--text-primary)}
+.form-control::placeholder{color:var(--text-secondary);opacity:.7}
 .form-label{color:var(--text-secondary);font-weight:500;font-size:0.85rem;margin-bottom:0.5rem}
+select.form-select option{background:var(--bg-card);color:var(--text-primary)}
+.list-group-item{background:var(--bg-card)!important;color:var(--text-primary)!important;border-color:var(--border-color)!important}
 .menu-toggle{display:none;background:none;border:none;color:var(--text-primary);font-size:1.5rem;cursor:pointer}
 @media(max-width:1024px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0}.menu-toggle{display:block}}
-@media(max-width:768px){.header{padding:0 1rem}.user-info{display:none}.main-content{padding:1rem}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem}.kpi-value{font-size:2rem}.page-header{flex-direction:column;align-items:flex-start}}
+@media(max-width:768px){.header{padding:0 1rem}.user-info{display:none}.main-content{padding:1rem}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem}.kpi-value{font-size:2rem}.page-header{flex-direction:column;align-items:flex-start}.table>:not(caption)>*>*{padding:.7rem .6rem;font-size:.82rem}.table>thead th{font-size:.68rem;padding:.7rem .6rem}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
 .pulse{animation:pulse 2s infinite}
 ::-webkit-scrollbar{width:8px;height:8px}
@@ -648,6 +659,8 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-primary);col
 ::-webkit-scrollbar-thumb:hover{background:var(--rori-gold-dark)}
 .rpro-section{margin-bottom:1.5rem}
 .rpro-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:1.25rem 1.5rem;margin-bottom:1rem}
+.rpro-card .table{background:transparent!important}
+.rpro-card .table>:not(caption)>*>*{background:transparent!important}
 .rpro-card-title{font-size:.78rem;font-weight:700;color:var(--rori-gold);text-transform:uppercase;letter-spacing:.8px;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
 .rpro-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
 .rpro-kv-label{font-size:.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:.25rem}
@@ -1113,7 +1126,6 @@ def request_create():
     depts = Department.query.order_by(Department.name).all()
     cats = Category.query.order_by(Category.name).all()
     items = WorkingItem.query.order_by(WorkingItem.name).all()
-    # Rooms ordered strictly ascending (201..225, 301..325, 401..425, 501..525)
     rooms = Room.query.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     areas = Area.query.order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
@@ -1680,15 +1692,16 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 .metric-value{font-size:2rem;font-weight:800;color:#f8fafc;line-height:1}
 .metric-label{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-top:.35rem}
 .metric-icon{font-size:1.4rem;color:#f59e0b;margin-bottom:.35rem}
-.table{color:#e2e8f0}
-.table thead th{color:#f59e0b;border-bottom:2px solid rgba(245,158,11,0.2);font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap}
-.table td{padding:10px;border-color:rgba(245,158,11,0.08);font-size:.85rem}
-.table-hover tbody tr:hover{background-color:rgba(245,158,11,0.06)}
+.table{--bs-table-color:#e2e8f0!important;--bs-table-bg:transparent!important;--bs-table-accent-bg:transparent!important;--bs-table-hover-color:#f8fafc!important;--bs-table-hover-bg:rgba(245,158,11,0.08)!important;color:#e2e8f0!important;background:transparent!important;width:100%;margin-bottom:0;border-color:rgba(245,158,11,0.1)!important}
+.table>:not(caption)>*>*{background-color:transparent!important;color:#e2e8f0!important;border-color:rgba(245,158,11,0.08)!important;box-shadow:none!important;padding:10px;font-size:.85rem}
+.table thead th{color:#f59e0b!important;border-bottom:2px solid rgba(245,158,11,0.2)!important;font-size:.72rem;text-transform:uppercase;padding:10px;white-space:nowrap;background:transparent!important;font-weight:700}
+.table-hover tbody tr:hover>*{background-color:rgba(245,158,11,0.08)!important;color:#f8fafc!important}
 .btn{border-radius:40px;font-weight:600;padding:.6rem 1.6rem;border:none}
 .btn-primary{background:linear-gradient(135deg,#f59e0b,#d97706);color:#0f172a}
 .btn-sm{padding:.35rem .8rem;font-size:.78rem}
 .form-control,.form-select{background:rgba(15,23,42,0.6);border:1px solid rgba(245,158,11,0.2);border-radius:12px;color:#e2e8f0;padding:.65rem .9rem}
 .form-control:focus,.form-select:focus{background:rgba(15,23,42,0.9);color:#f8fafc;border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,0.15)}
+.form-control::placeholder{color:#94a3b8;opacity:.7}
 .form-label{color:#cbd5e1;font-weight:500;font-size:.82rem}
 .badge{padding:.35rem .75rem;border-radius:20px;font-weight:600;font-size:.72rem}
 .chart-box{position:relative;width:100%;height:280px}
@@ -1710,7 +1723,7 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,rgba(15,23
 .empty i{font-size:1.6rem;color:#f59e0b;opacity:.4;display:block;margin-bottom:.5rem}
 .filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:rgba(15,23,42,0.75);backdrop-filter:blur(10px);border-radius:16px;border:1px solid rgba(245,158,11,0.2);margin-bottom:1.5rem}
 .filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
-@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}}
+@media(max-width:768px){.nav-link{padding:.5rem .8rem!important;font-size:.85rem}.metric-value{font-size:1.5rem}.chart-box{height:220px}.table>:not(caption)>*>*{padding:.6rem .5rem;font-size:.78rem}.table thead th{font-size:.65rem;padding:.6rem .5rem}}
 </style></head><body>
 <nav class="navbar navbar-expand-lg fixed-top"><div class="container-fluid">
 <a class="navbar-brand" href="{{ url_for('dashboard') }}"><i class="fas fa-hotel"></i> Rori Hotel</a>
@@ -1908,7 +1921,7 @@ def management_reports():
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
          '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(total_hours) + ' hrs</div><div class="kpi-label">Work Hours</div></div></div>'
          '<div class="row g-3"><div class="col-md-6"><div class="card"><h5>Department Workload</h5><ul class="list-group list-group-flush" style="background:transparent;">' +
-         "".join('<li class="list-group-item d-flex justify-content-between align-items-center" style="background:var(--bg-card);border-color:var(--border-color);color:var(--text-primary);"><span>' + k + '</span><span class="badge badge-info rounded-pill">' + str(v) + '</span></li>' for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])) +
+         "".join('<li class="list-group-item d-flex justify-content-between align-items-center"><span>' + k + '</span><span class="badge badge-info rounded-pill">' + str(v) + '</span></li>' for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])) +
          '</ul></div></div>'
          '<div class="col-md-6"><div class="card"><h5>Staff Performance</h5><div class="table-responsive"><table class="table"><thead><tr><th>Staff</th><th>Assigned</th><th>Completed</th><th>Hours</th></tr></thead><tbody>' +
          "".join('<tr><td>' + k + '</td><td><span class="badge badge-info">' + str(v["assigned"]) + '</span></td><td><span class="badge badge-success">' + str(v["completed"]) + '</span></td><td>' + str(round(v["hours"],1)) + ' hrs</td></tr>' for k, v in sorted(staff_work.items(), key=lambda x: -x[1]["hours"])) +
