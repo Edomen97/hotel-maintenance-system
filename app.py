@@ -1,6 +1,6 @@
 # app.py - Rori Hotel Maintenance Management System
 # Developer: Edom Adinew
-import csv, io, json, os, re, sqlite3, uuid, traceback, calendar
+import csv, io, json, os, re, sqlite3, uuid, traceback, calendar, shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -24,8 +24,26 @@ os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db"))
+
+# ══════════════════════════════════════════ DATABASE CONFIG — CRITICAL
+# On Render, SQLite files are EPHEMERAL. You MUST use PostgreSQL.
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if DATABASE_URL:
+    # Render gives "postgres://..." but SQLAlchemy needs "postgresql://..."
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+    print("✅ Using DATABASE_URL (persistent database)")
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "hotel_maintenance.db")
+    print("⚠️ WARNING: Using local SQLite file. On Render, this WILL be wiped on every deploy/restart.")
+    print("⚠️ Set DATABASE_URL environment variable to a PostgreSQL database to preserve data.")
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280,
+}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -128,82 +146,17 @@ INVENTORY_CATEGORIES = [
 ]
 
 INVENTORY_ITEMS_BY_CATEGORY = {
-    "Tools": [
-        ("Hammer / መዶሻ", "pcs"), ("Scissors / መቀስ", "pcs"), ("Screwdriver", "pcs"),
-        ("Pliers", "pcs"), ("Spanner", "pcs"), ("Wrench", "pcs"), ("Allen Key", "set"),
-        ("Socket Set", "set"), ("Pipe Wrench", "pcs"), ("Wire Cutter", "pcs"),
-        ("Wire Stripper", "pcs"), ("Measuring Tape", "pcs"), ("Spirit Level", "pcs"),
-        ("Saw", "pcs"), ("Hacksaw", "pcs"), ("Chisel", "pcs"), ("File", "pcs"),
-        ("Drill", "pcs"), ("Drill Bits", "set"), ("Utility Knife", "pcs"),
-        ("Bolt Cutter", "pcs"), ("Crowbar", "pcs"),
-    ],
-    "Hardware / Fasteners": [
-        ("Nails / ሚስማር", "kg"), ("Bolts / ብሎን", "pcs"), ("Nuts", "pcs"),
-        ("Washers", "pcs"), ("Screws", "pcs"), ("Wall Plugs", "pcs"),
-        ("Anchors", "pcs"), ("Rivets", "pcs"), ("Threaded Rod", "pcs"),
-        ("U-Bolts", "pcs"), ("Cable Ties", "pcs"), ("Hose Clamps", "pcs"),
-        ("Pipe Clamps", "pcs"), ("Brackets", "pcs"),
-    ],
-    "Electrical Parts": [
-        ("LED Bulb", "pcs"), ("Tube Light", "pcs"), ("Light Holder", "pcs"),
-        ("Switch", "pcs"), ("Electrical Socket", "pcs"), ("Plug", "pcs"),
-        ("Electrical Cable / Wire", "m"), ("Fuse", "pcs"), ("MCB", "pcs"),
-        ("RCCB / RCD", "pcs"), ("Contactor", "pcs"), ("Relay", "pcs"),
-        ("Capacitor", "pcs"), ("Terminal Block", "pcs"), ("Junction Box", "pcs"),
-        ("Electrical Tape", "roll"), ("Heat Shrink", "m"), ("PVC Conduit", "m"),
-    ],
-    "Plumbing Parts": [
-        ("Water Tap", "pcs"), ("Flexible Hose", "pcs"), ("PVC Pipe", "m"),
-        ("PPR Pipe", "m"), ("Elbow", "pcs"), ("Tee", "pcs"), ("Coupling", "pcs"),
-        ("Union", "pcs"), ("Valve", "pcs"), ("Ball Valve", "pcs"),
-        ("Check Valve", "pcs"), ("Drain Pipe", "m"), ("Drain Trap", "pcs"),
-        ("Gasket", "pcs"), ("O-Ring", "pcs"), ("Teflon Tape", "roll"),
-        ("Silicone", "tube"), ("Pipe Glue", "tube"),
-    ],
-    "AC / HVAC Parts": [
-        ("AC Filter", "pcs"), ("Capacitor", "pcs"), ("Relay", "pcs"),
-        ("Contactor", "pcs"), ("Fan Motor", "pcs"), ("Fan Blade", "pcs"),
-        ("Thermostat", "pcs"), ("Drain Hose", "m"), ("Copper Pipe", "m"),
-        ("Copper Fittings", "pcs"), ("Pipe Insulation", "m"), ("Refrigerant", "kg"),
-        ("Exhaust Fan", "pcs"), ("Ventilation Fan", "pcs"),
-    ],
-    "Door & Window Parts": [
-        ("Door Lock", "pcs"), ("Door Handle", "pcs"), ("Door Hinge", "pcs"),
-        ("Door Closer", "pcs"), ("Door Stopper", "pcs"), ("Door Bolt", "pcs"),
-        ("Window Handle", "pcs"), ("Window Lock", "pcs"), ("Curtain Rod", "pcs"),
-        ("Curtain Bracket", "pcs"), ("Curtain Hook", "pcs"),
-    ],
-    "Civil / Building Materials": [
-        ("Cement", "kg"), ("Sand", "m³"), ("Floor Tile", "pcs"), ("Wall Tile", "pcs"),
-        ("Tile Adhesive", "kg"), ("Grout", "kg"), ("Wall Putty", "kg"),
-        ("Paint", "L"), ("Primer", "L"), ("Paint Brush", "pcs"),
-        ("Paint Roller", "pcs"), ("Paint Scraper", "pcs"), ("Sandpaper", "pcs"),
-        ("Silicone Sealant", "tube"),
-    ],
-    "Welding / Metal Work": [
-        ("Welding Electrode", "kg"), ("Welding Wire", "kg"), ("Welding Rod", "kg"),
-        ("Grinding Disc", "pcs"), ("Cutting Disc", "pcs"), ("Metal Sheet", "pcs"),
-        ("Flat Bar", "m"), ("Angle Iron", "m"), ("Steel Pipe", "m"),
-        ("Steel Plate", "pcs"), ("Welding Clamp", "pcs"),
-    ],
-    "Safety / PPE": [
-        ("Safety Helmet", "pcs"), ("Safety Shoes", "pair"), ("Safety Gloves", "pair"),
-        ("Welding Gloves", "pair"), ("Safety Goggles", "pcs"), ("Face Shield", "pcs"),
-        ("Ear Protection", "pcs"), ("Dust Mask", "pcs"), ("Reflective Vest", "pcs"),
-        ("Safety Harness", "pcs"),
-    ],
-    "Maintenance Consumables": [
-        ("Cleaning Cloth", "pcs"), ("Cotton Waste", "kg"), ("Wire Brush", "pcs"),
-        ("Brush", "pcs"), ("Sponge", "pcs"), ("Degreaser", "L"),
-        ("Lubricating Oil", "L"), ("Grease", "kg"), ("Penetrating Oil", "L"),
-        ("Rust Remover", "L"), ("Contact Cleaner", "L"),
-    ],
-    "General Maintenance Equipment": [
-        ("Ladder", "pcs"), ("Extension Ladder", "pcs"), ("Toolbox", "pcs"),
-        ("Tool Bag", "pcs"), ("Wheelbarrow", "pcs"), ("Bucket", "pcs"),
-        ("Flashlight", "pcs"), ("Work Light", "pcs"), ("Extension Cord", "pcs"),
-        ("Maintenance Cart", "pcs"),
-    ],
+    "Tools": [("Hammer / መዶሻ", "pcs"), ("Scissors / መቀስ", "pcs"), ("Screwdriver", "pcs"), ("Pliers", "pcs"), ("Spanner", "pcs"), ("Wrench", "pcs"), ("Allen Key", "set"), ("Socket Set", "set"), ("Pipe Wrench", "pcs"), ("Wire Cutter", "pcs"), ("Wire Stripper", "pcs"), ("Measuring Tape", "pcs"), ("Spirit Level", "pcs"), ("Saw", "pcs"), ("Hacksaw", "pcs"), ("Chisel", "pcs"), ("File", "pcs"), ("Drill", "pcs"), ("Drill Bits", "set"), ("Utility Knife", "pcs"), ("Bolt Cutter", "pcs"), ("Crowbar", "pcs")],
+    "Hardware / Fasteners": [("Nails / ሚስማር", "kg"), ("Bolts / ብሎን", "pcs"), ("Nuts", "pcs"), ("Washers", "pcs"), ("Screws", "pcs"), ("Wall Plugs", "pcs"), ("Anchors", "pcs"), ("Rivets", "pcs"), ("Threaded Rod", "pcs"), ("U-Bolts", "pcs"), ("Cable Ties", "pcs"), ("Hose Clamps", "pcs"), ("Pipe Clamps", "pcs"), ("Brackets", "pcs")],
+    "Electrical Parts": [("LED Bulb", "pcs"), ("Tube Light", "pcs"), ("Light Holder", "pcs"), ("Switch", "pcs"), ("Electrical Socket", "pcs"), ("Plug", "pcs"), ("Electrical Cable / Wire", "m"), ("Fuse", "pcs"), ("MCB", "pcs"), ("RCCB / RCD", "pcs"), ("Contactor", "pcs"), ("Relay", "pcs"), ("Capacitor", "pcs"), ("Terminal Block", "pcs"), ("Junction Box", "pcs"), ("Electrical Tape", "roll"), ("Heat Shrink", "m"), ("PVC Conduit", "m")],
+    "Plumbing Parts": [("Water Tap", "pcs"), ("Flexible Hose", "pcs"), ("PVC Pipe", "m"), ("PPR Pipe", "m"), ("Elbow", "pcs"), ("Tee", "pcs"), ("Coupling", "pcs"), ("Union", "pcs"), ("Valve", "pcs"), ("Ball Valve", "pcs"), ("Check Valve", "pcs"), ("Drain Pipe", "m"), ("Drain Trap", "pcs"), ("Gasket", "pcs"), ("O-Ring", "pcs"), ("Teflon Tape", "roll"), ("Silicone", "tube"), ("Pipe Glue", "tube")],
+    "AC / HVAC Parts": [("AC Filter", "pcs"), ("Capacitor", "pcs"), ("Relay", "pcs"), ("Contactor", "pcs"), ("Fan Motor", "pcs"), ("Fan Blade", "pcs"), ("Thermostat", "pcs"), ("Drain Hose", "m"), ("Copper Pipe", "m"), ("Copper Fittings", "pcs"), ("Pipe Insulation", "m"), ("Refrigerant", "kg"), ("Exhaust Fan", "pcs"), ("Ventilation Fan", "pcs")],
+    "Door & Window Parts": [("Door Lock", "pcs"), ("Door Handle", "pcs"), ("Door Hinge", "pcs"), ("Door Closer", "pcs"), ("Door Stopper", "pcs"), ("Door Bolt", "pcs"), ("Window Handle", "pcs"), ("Window Lock", "pcs"), ("Curtain Rod", "pcs"), ("Curtain Bracket", "pcs"), ("Curtain Hook", "pcs")],
+    "Civil / Building Materials": [("Cement", "kg"), ("Sand", "m³"), ("Floor Tile", "pcs"), ("Wall Tile", "pcs"), ("Tile Adhesive", "kg"), ("Grout", "kg"), ("Wall Putty", "kg"), ("Paint", "L"), ("Primer", "L"), ("Paint Brush", "pcs"), ("Paint Roller", "pcs"), ("Paint Scraper", "pcs"), ("Sandpaper", "pcs"), ("Silicone Sealant", "tube")],
+    "Welding / Metal Work": [("Welding Electrode", "kg"), ("Welding Wire", "kg"), ("Welding Rod", "kg"), ("Grinding Disc", "pcs"), ("Cutting Disc", "pcs"), ("Metal Sheet", "pcs"), ("Flat Bar", "m"), ("Angle Iron", "m"), ("Steel Pipe", "m"), ("Steel Plate", "pcs"), ("Welding Clamp", "pcs")],
+    "Safety / PPE": [("Safety Helmet", "pcs"), ("Safety Shoes", "pair"), ("Safety Gloves", "pair"), ("Welding Gloves", "pair"), ("Safety Goggles", "pcs"), ("Face Shield", "pcs"), ("Ear Protection", "pcs"), ("Dust Mask", "pcs"), ("Reflective Vest", "pcs"), ("Safety Harness", "pcs")],
+    "Maintenance Consumables": [("Cleaning Cloth", "pcs"), ("Cotton Waste", "kg"), ("Wire Brush", "pcs"), ("Brush", "pcs"), ("Sponge", "pcs"), ("Degreaser", "L"), ("Lubricating Oil", "L"), ("Grease", "kg"), ("Penetrating Oil", "L"), ("Rust Remover", "L"), ("Contact Cleaner", "L")],
+    "General Maintenance Equipment": [("Ladder", "pcs"), ("Extension Ladder", "pcs"), ("Toolbox", "pcs"), ("Tool Bag", "pcs"), ("Wheelbarrow", "pcs"), ("Bucket", "pcs"), ("Flashlight", "pcs"), ("Work Light", "pcs"), ("Extension Cord", "pcs"), ("Maintenance Cart", "pcs")],
 }
 
 # ══════════════════════════════════════════ MODELS
@@ -665,7 +618,6 @@ def ensure_database_schema():
             add_column_if_missing("maintenance_requests","signature_user_id","ALTER TABLE maintenance_requests ADD COLUMN signature_user_id INTEGER")
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
-            # --- WorkOrder columns: safe additions ---
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
             add_column_if_missing("work_orders","verified_date","ALTER TABLE work_orders ADD COLUMN verified_date " + dt)
             add_column_if_missing("work_orders","root_cause","ALTER TABLE work_orders ADD COLUMN root_cause TEXT")
@@ -1849,19 +1801,15 @@ def get_inventory_summary():
 
 # ══════════════════════════════════════════ DETAILED REPORT BUILDERS
 def _build_detailed_report_pack(req):
-    """Gather ALL detail for one request / its primary WO from the live database."""
     wo = WorkOrder.query.filter_by(request_id=req.id).order_by(WorkOrder.created_at.asc()).first()
     hist = StatusHistory.query.filter_by(request_id=req.id).order_by(StatusHistory.timestamp.asc()).all()
     def _dt_first(statuses):
         for h in hist:
             if h.status in statuses: return h.timestamp
         return None
-    accepted_dt = _dt_first(["Approved"])
-    assigned_dt = _dt_first(["Assigned"])
-    started_dt = _dt_first(["In Progress"])
-    completed_dt = _dt_first(["Completed"])
-    verified_dt = _dt_first(["Verified"])
-    closed_dt = _dt_first(["Closed"])
+    accepted_dt = _dt_first(["Approved"]); assigned_dt = _dt_first(["Assigned"])
+    started_dt = _dt_first(["In Progress"]); completed_dt = _dt_first(["Completed"])
+    verified_dt = _dt_first(["Verified"]); closed_dt = _dt_first(["Closed"])
     assigned_by = None
     if assigned_dt:
         for h in hist:
@@ -1876,33 +1824,23 @@ def _build_detailed_report_pack(req):
         for h in hist:
             if h.status == "Closed" and h.timestamp == closed_dt: closer = h.user; break
     if not closer and req.manager: closer = req.manager
-    parts_used = []
-    total_cost = 0.0
+    parts_used = []; total_cost = 0.0
     if wo:
         for wp in WorkOrderPart.query.filter_by(work_order_id=wo.id).all():
             cat = wp.part.category if wp.part else "—"
             unit = wp.part.unit if wp.part else "pcs"
-            lt = (wp.quantity or 0) * (wp.unit_cost or 0)
-            total_cost += lt
-            parts_used.append({
-                "name": wp.part.part_name if wp.part else ("Part #" + str(wp.part_id)),
-                "category": cat, "quantity": wp.quantity, "unit": unit,
-                "unit_cost": wp.unit_cost or 0, "line_total": lt,
-                "notes": wp.notes or ""
-            })
-    # Attach any photos
+            lt = (wp.quantity or 0) * (wp.unit_cost or 0); total_cost += lt
+            parts_used.append({"name": wp.part.part_name if wp.part else ("Part #" + str(wp.part_id)), "category": cat, "quantity": wp.quantity, "unit": unit, "unit_cost": wp.unit_cost or 0, "line_total": lt, "notes": wp.notes or ""})
     photos = []
     try:
         objs = Photo.query.filter_by(object_type="request", object_id=req.id).order_by(Photo.created_at.asc()).all()
         for p in objs: photos.append({"filename": p.filename, "type": p.photo_type, "created": p.created_at})
     except Exception: pass
-    if wo and wo.completion_photo:
-        photos.append({"filename": wo.completion_photo, "type": "Completion", "created": wo.completed_date})
-    pack = {
+    if wo and wo.completion_photo: photos.append({"filename": wo.completion_photo, "type": "Completion", "created": wo.completed_date})
+    return {
         "req": req, "wo": wo, "history": hist,
-        "accepted_dt": accepted_dt, "assigned_dt": assigned_dt,
-        "started_dt": started_dt, "completed_dt": completed_dt,
-        "verified_dt": verified_dt, "closed_dt": closed_dt,
+        "accepted_dt": accepted_dt, "assigned_dt": assigned_dt, "started_dt": started_dt,
+        "completed_dt": completed_dt, "verified_dt": verified_dt, "closed_dt": closed_dt,
         "assigned_by": assigned_by, "verifier": verifier, "closer": closer,
         "parts_used": parts_used, "total_cost": total_cost,
         "technician": wo.assigned_to if wo and wo.assigned_to else req.assigned_to,
@@ -1913,7 +1851,6 @@ def _build_detailed_report_pack(req):
         "completion_notes": (wo.completion_notes if wo else req.completion_note),
         "photos": photos,
     }
-    return pack
 
 def _render_detailed_report_block(p, seq=None):
     req = p["req"]; wo = p["wo"]
@@ -1928,13 +1865,9 @@ def _render_detailed_report_block(p, seq=None):
         floor_line = "Floor " + str(req.floor) if req.floor else "—"
         room_line = str(req.room.room_number)
     elif loc_type == "Area" and req.area:
-        loc_line = req.area.name
-        floor_line = req.floor if req.floor else "—"
-        room_line = "N/A (Area based)"
+        loc_line = req.area.name; floor_line = req.floor if req.floor else "—"; room_line = "N/A (Area based)"
     else:
-        loc_line = req.location_name
-        floor_line = req.floor if req.floor else "—"
-        room_line = "—"
+        loc_line = req.location_name; floor_line = req.floor if req.floor else "—"; room_line = "—"
     sig_html = ""
     if req.signature_status == "SIGNED" and req.signature_data:
         sig_html = ('<div class="report-sig"><img src="' + str(req.signature_data) + '" alt="Signature"></div>'
@@ -1950,8 +1883,7 @@ def _render_detailed_report_block(p, seq=None):
                 '<td>' + str(it["quantity"]) + '</td><td>' + str(it["unit"]) + '</td>'
                 '<td>' + str(round(it["unit_cost"], 2)) + '</td><td>' + str(round(it["line_total"], 2)) + '</td>'
                 '<td>' + (str(it["notes"]) if it["notes"] else "—") + '</td></tr>')
-        parts_rows += ('<tr style="background:#fafafa;font-weight:800;"><td colspan="6" style="text-align:right;">Total Materials Cost</td>'
-                       '<td colspan="2">' + str(round(p["total_cost"], 2)) + '</td></tr>')
+        parts_rows += '<tr style="background:#fafafa;font-weight:800;"><td colspan="6" style="text-align:right;">Total Materials Cost</td><td colspan="2">' + str(round(p["total_cost"], 2)) + '</td></tr>'
     else:
         parts_rows = '<tr><td colspan="8" style="text-align:center;color:#666;">No materials / spare parts recorded.</td></tr>'
     photos_html = ""
@@ -1959,11 +1891,9 @@ def _render_detailed_report_block(p, seq=None):
         for ph in p["photos"]:
             photos_html += ('<div class="report-photo" style="margin:.35rem .5rem .35rem 0;">'
                 '<img src="/static/uploads/maintenance/' + str(ph["filename"]) + '" alt="Photo" onerror="this.style.display=\'none\'">'
-                '<div style="font-size:.72rem;color:#444;margin-top:.3rem;">'
-                '<b>' + str(ph["type"] or "Photo") + '</b>'
+                '<div style="font-size:.72rem;color:#444;margin-top:.3rem;"><b>' + str(ph["type"] or "Photo") + '</b>'
                 + (' · ' + ph["created"].strftime("%Y-%m-%d %H:%M") if ph["created"] else '')
-                + '<br><a href="/static/uploads/maintenance/' + str(ph["filename"]) + '" target="_blank" style="color:#8B6F26;">Open file</a>'
-                '</div></div>')
+                + '<br><a href="/static/uploads/maintenance/' + str(ph["filename"]) + '" target="_blank" style="color:#8B6F26;">Open file</a></div></div>')
     else:
         photos_html = '<div style="font-size:.85rem;color:#666;">No photos / attachments on record.</div>'
     seq_badge = ('<div style="font-size:.72rem;color:#666;letter-spacing:1px;font-weight:700;">ENTRY #' + str(seq) + '</div>') if seq else ''
@@ -2083,12 +2013,10 @@ def _compute_report_kpis(reqs):
 @app.route("/reports/detailed")
 @login_required
 def detailed_report():
-    """Full multi-record detailed report — printable HTML → PDF. Reads from live DB only."""
     if current_user.role not in ["ADMIN","MANAGER","SUPERVISOR"]: abort(403)
     args = request.args
     reqs = build_filtered_query(args, include_deleted=True).order_by(MaintenanceRequest.created_at.desc()).all()
-    if current_user.role == "SUPERVISOR":
-        reqs = [r for r in reqs if not r.is_deleted]
+    if current_user.role == "SUPERVISOR": reqs = [r for r in reqs if not r.is_deleted]
     kpis = _compute_report_kpis(reqs)
     dept_filter_name = None
     if args.get("department"):
@@ -2100,12 +2028,9 @@ def detailed_report():
     all_depts = Department.query.order_by(Department.name).all()
     dept_opts = '<option value="">All Departments</option>' + "".join('<option value="' + str(d.id) + '"' + (' selected' if args.get("department")==str(d.id) else '') + '>' + d.name + '</option>' for d in all_depts)
     st_opts = '<option value="">All Statuses</option>' + "".join('<option value="' + s + '"' + (' selected' if args.get("status")==s else '') + '>' + s + '</option>' for s in REQUEST_STATUSES)
-    lt_opts = ('<option value="">All Locations</option>'
-               '<option value="Room"' + (' selected' if args.get("location_type")=="Room" else '') + '>Room only</option>'
-               '<option value="Area"' + (' selected' if args.get("location_type")=="Area" else '') + '>Area only</option>')
+    lt_opts = ('<option value="">All Locations</option><option value="Room"' + (' selected' if args.get("location_type")=="Room" else '') + '>Room only</option><option value="Area"' + (' selected' if args.get("location_type")=="Area" else '') + '>Area only</option>')
     body = _detailed_report_header("DETAILED MAINTENANCE WORK ORDER REPORT", filters, kpis)
-    if not reqs:
-        body += '<div class="report-section"><div class="report-longtext">No records match the selected filters.</div></div>'
+    if not reqs: body += '<div class="report-section"><div class="report-longtext">No records match the selected filters.</div></div>'
     for idx, req in enumerate(reqs, 1):
         try:
             pack = _build_detailed_report_pack(req)
@@ -2123,10 +2048,8 @@ def detailed_report():
         '<div class="col-md-6 d-flex gap-2 justify-content-end">'
         '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button>'
         '<a href="' + url_for("detailed_report_export", **{k: v for k, v in args.items() if k != "department_name"}) + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download CSV</a>'
-        '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-undo"></i> Reset</a>'
-        '</div></form></div>')
-    content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Maintenance Report</h1>'
-        '<p>Full request → assignment → work → materials → verification → closure workflow (all historical records from live database)</p></div>'
+        '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-undo"></i> Reset</a></div></form></div>')
+    content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Maintenance Report</h1><p>Full workflow — all historical records from live database</p></div>'
         '<div style="display:flex;gap:.6rem;"><a href="' + url_for("management_reports") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-chart-line"></i> Management Reports</a></div></div>'
         + filter_form + '<div class="report-doc">' + body + '</div>')
     return page("Detailed Report", content)
@@ -2134,96 +2057,27 @@ def detailed_report():
 @app.route("/reports/detailed/export")
 @login_required
 def detailed_report_export():
-    """CSV export with ALL available fields — Excel-friendly and printable."""
     if current_user.role not in ["ADMIN","MANAGER","SUPERVISOR"]: abort(403)
     args = request.args
     reqs = build_filtered_query(args, include_deleted=True).order_by(MaintenanceRequest.created_at.desc()).all()
-    if current_user.role == "SUPERVISOR":
-        reqs = [r for r in reqs if not r.is_deleted]
+    if current_user.role == "SUPERVISOR": reqs = [r for r in reqs if not r.is_deleted]
     si = io.StringIO(); cw = csv.writer(si)
-    cw.writerow(["RORI HOTEL"])
-    cw.writerow(["ENGINEERING & MAINTENANCE DEPARTMENT"])
-    cw.writerow(["DETAILED MAINTENANCE WORK ORDER REPORT"])
-    cw.writerow([])
+    cw.writerow(["RORI HOTEL"]); cw.writerow(["ENGINEERING & MAINTENANCE DEPARTMENT"]); cw.writerow(["DETAILED MAINTENANCE WORK ORDER REPORT"]); cw.writerow([])
     cw.writerow(["Report Generated", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")])
     cw.writerow(["Generated By", (current_user.full_name or current_user.username) if current_user.is_authenticated else "—"])
-    cw.writerow(["Period From", args.get("date_from") or "All time"])
-    cw.writerow(["Period To", args.get("date_to") or "All time"])
-    cw.writerow([])
+    cw.writerow(["Period From", args.get("date_from") or "All time"]); cw.writerow(["Period To", args.get("date_to") or "All time"]); cw.writerow([])
     kpis = _compute_report_kpis(reqs)
-    cw.writerow(["REPORT SUMMARY"])
-    cw.writerow(["Total", kpis["total"], "Completed", kpis["completed"], "In Progress", kpis["in_progress"], "Pending", kpis["pending"], "Verified", kpis["verified"], "Closed", kpis["closed"]])
-    cw.writerow([])
-    headers = [
-        "Request No","Work Order No","Internal Request ID","Internal WO ID",
-        "Request Date","Request Time","Department","Requester","Requester Role",
-        "Priority","Current Status",
-        "Location Type","Floor","Room Number","Area / Location","Full Location",
-        "Maintenance Item","Category","Problem Description (Full)","Work Instructions / Notes",
-        "Assigned Technician","Technician Role","Assigned By",
-        "Assignment Date","Assignment Time","Due Date","Due Time",
-        "Accepted Date/Time","Started Date/Time","Completed Date/Time",
-        "Labor Hours","Work Performed / Action Taken","Completion Note",
-        "Root Cause","Recommendation",
-        "Materials Used (detail)","Total Materials Cost",
-        "Verified By","Verification Date/Time","Verification Status","Verification Note",
-        "Closed By","Closed Date/Time","Closure / Completion Note",
-        "Digital Signature (Signed By)","Signature Department","Signature Signed At","Signature Verified",
-        "Photos / Attachments"
-    ]
+    cw.writerow(["REPORT SUMMARY"]); cw.writerow(["Total", kpis["total"], "Completed", kpis["completed"], "In Progress", kpis["in_progress"], "Pending", kpis["pending"], "Verified", kpis["verified"], "Closed", kpis["closed"]]); cw.writerow([])
+    headers = ["Request No","Work Order No","Internal Request ID","Internal WO ID","Request Date","Request Time","Department","Requester","Requester Role","Priority","Current Status","Location Type","Floor","Room Number","Area / Location","Full Location","Maintenance Item","Category","Problem Description (Full)","Work Instructions / Notes","Assigned Technician","Technician Role","Assigned By","Assignment Date","Assignment Time","Due Date","Due Time","Accepted Date/Time","Started Date/Time","Completed Date/Time","Labor Hours","Work Performed / Action Taken","Completion Note","Root Cause","Recommendation","Materials Used (detail)","Total Materials Cost","Verified By","Verification Date/Time","Verification Status","Verification Note","Closed By","Closed Date/Time","Closure / Completion Note","Digital Signature (Signed By)","Signature Department","Signature Signed At","Signature Verified","Photos / Attachments"]
     cw.writerow(headers)
     for req in reqs:
-        pack = _build_detailed_report_pack(req)
-        wo = pack["wo"]; tech = pack["technician"]
+        pack = _build_detailed_report_pack(req); wo = pack["wo"]; tech = pack["technician"]
         def fmt(dt): return dt.strftime("%Y-%m-%d %H:%M") if dt else ""
         def dt_date(dt): return dt.strftime("%Y-%m-%d") if dt else ""
         def dt_time(dt): return dt.strftime("%H:%M") if dt else ""
         mats = "; ".join((m["name"] + " [" + str(m["category"]) + "] - " + str(m["quantity"]) + " " + str(m["unit"]) + (" (" + m["notes"] + ")" if m["notes"] else "")) for m in pack["parts_used"])
         photos_str = "; ".join((ph["type"] or "Photo") + ": " + ph["filename"] for ph in pack["photos"])
-        cw.writerow([
-            req.request_no,
-            wo.work_order_no if wo else "",
-            req.id, wo.id if wo else "",
-            dt_date(req.created_at), dt_time(req.created_at),
-            req.department.name if req.department else "",
-            (req.requested_by.full_name or req.requested_by.username) if req.requested_by else "",
-            req.requested_by.role if req.requested_by else "",
-            req.priority or "MEDIUM", req.status,
-            req.location_type or "", req.floor if req.floor else "",
-            req.room.room_number if req.room else "",
-            req.area.name if req.area else "",
-            req.location_name,
-            req.working_item.name if req.working_item else "",
-            req.category.name if req.category else "",
-            str(req.description or ""),
-            (pack["work_performed"] or ""),
-            (tech.full_name or tech.username) if tech else "",
-            tech.role if tech else "",
-            (pack["assigned_by"].full_name or pack["assigned_by"].username) if pack["assigned_by"] else ((req.manager.full_name or req.manager.username) if req.manager else ""),
-            dt_date(pack["assigned_dt"]), dt_time(pack["assigned_dt"]),
-            dt_date(req.due_date), dt_time(req.due_date),
-            fmt(pack["accepted_dt"]), fmt(pack["started_dt"]),
-            fmt(pack["completed_dt"] or req.completed_date),
-            pack["labor_hours"],
-            (pack["work_performed"] or ""),
-            (pack["completion_notes"] or ""),
-            (pack["root_cause"] or ""),
-            (pack["recommendation"] or ""),
-            mats,
-            round(pack["total_cost"], 2),
-            (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else "",
-            fmt(pack["verified_dt"] or (wo.verified_date if wo else None)),
-            "Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending",
-            (pack["completion_notes"] or ""),
-            (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status == "Closed") else "",
-            fmt(pack["closed_dt"]),
-            (req.completion_note or ""),
-            req.signature_name or "",
-            req.signature_department or "",
-            fmt(req.signature_signed_at),
-            "Yes" if req.signature_verified else "No",
-            photos_str,
-        ])
+        cw.writerow([req.request_no, wo.work_order_no if wo else "", req.id, wo.id if wo else "", dt_date(req.created_at), dt_time(req.created_at), req.department.name if req.department else "", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else "", req.requested_by.role if req.requested_by else "", req.priority or "MEDIUM", req.status, req.location_type or "", req.floor if req.floor else "", req.room.room_number if req.room else "", req.area.name if req.area else "", req.location_name, req.working_item.name if req.working_item else "", req.category.name if req.category else "", str(req.description or ""), (pack["work_performed"] or ""), (tech.full_name or tech.username) if tech else "", tech.role if tech else "", (pack["assigned_by"].full_name or pack["assigned_by"].username) if pack["assigned_by"] else ((req.manager.full_name or req.manager.username) if req.manager else ""), dt_date(pack["assigned_dt"]), dt_time(pack["assigned_dt"]), dt_date(req.due_date), dt_time(req.due_date), fmt(pack["accepted_dt"]), fmt(pack["started_dt"]), fmt(pack["completed_dt"] or req.completed_date), pack["labor_hours"], (pack["work_performed"] or ""), (pack["completion_notes"] or ""), (pack["root_cause"] or ""), (pack["recommendation"] or ""), mats, round(pack["total_cost"], 2), (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else "", fmt(pack["verified_dt"] or (wo.verified_date if wo else None)), "Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending", (pack["completion_notes"] or ""), (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status == "Closed") else "", fmt(pack["closed_dt"]), (req.completion_note or ""), req.signature_name or "", req.signature_department or "", fmt(req.signature_signed_at), "Yes" if req.signature_verified else "No", photos_str])
     output = make_response(si.getvalue())
     fn = "detailed_report_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S") + ".csv"
     output.headers["Content-Disposition"] = "attachment; filename=" + fn
@@ -2233,24 +2087,19 @@ def detailed_report_export():
 @app.route("/reports/workorder/<int:wo_id>")
 @login_required
 def detailed_report_single_wo(wo_id):
-    """Detailed printable report for ONE Work Order."""
-    wo = get_or_404(WorkOrder, wo_id)
-    req = wo.request
+    wo = get_or_404(WorkOrder, wo_id); req = wo.request
     if not req: abort(404)
     if current_user.role == "DEPARTMENT":
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
-    pack = _build_detailed_report_pack(req)
-    kpis = _compute_report_kpis([req])
+    pack = _build_detailed_report_pack(req); kpis = _compute_report_kpis([req])
     filters = {"date_from": req.created_at.strftime("%Y-%m-%d") if req.created_at else "", "date_to": "", "department_name": req.department.name if req.department else ""}
     body = _detailed_report_header("DETAILED WORK ORDER REPORT — " + str(wo.work_order_no), filters, kpis)
     body += _render_detailed_report_block(pack)
     body += '<div class="report-footer">Rori Hotel — Engineering &amp; Maintenance Department · Work Order Report · Generated on ' + datetime.utcnow().strftime("%Y-%m-%d %H:%M") + '<br>Developer: Edom Adinew</div>'
-    content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Work Order Report</h1>'
-        '<p>' + str(wo.work_order_no) + ' · ' + str(req.request_no) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;">'
-        '<a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
+    content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Work Order Report</h1><p>' + str(wo.work_order_no) + ' · ' + str(req.request_no) + '</p></div>'
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
         '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button>'
         '<a href="' + url_for("detailed_report_single_wo_export", wo_id=wo.id) + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download CSV</a></div></div>'
         + '<div class="report-doc">' + body + '</div>')
@@ -2259,78 +2108,42 @@ def detailed_report_single_wo(wo_id):
 @app.route("/reports/workorder/<int:wo_id>/export")
 @login_required
 def detailed_report_single_wo_export(wo_id):
-    """CSV export with ALL available fields for ONE Work Order."""
-    wo = get_or_404(WorkOrder, wo_id)
-    req = wo.request
+    wo = get_or_404(WorkOrder, wo_id); req = wo.request
     if not req: abort(404)
     if current_user.role == "DEPARTMENT":
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
-    pack = _build_detailed_report_pack(req)
-    tech = pack["technician"]
+    pack = _build_detailed_report_pack(req); tech = pack["technician"]
     si = io.StringIO(); cw = csv.writer(si)
-    cw.writerow(["RORI HOTEL"]); cw.writerow(["ENGINEERING & MAINTENANCE DEPARTMENT"])
-    cw.writerow(["DETAILED WORK ORDER REPORT — " + str(wo.work_order_no)]); cw.writerow([])
+    cw.writerow(["RORI HOTEL"]); cw.writerow(["ENGINEERING & MAINTENANCE DEPARTMENT"]); cw.writerow(["DETAILED WORK ORDER REPORT — " + str(wo.work_order_no)]); cw.writerow([])
     def row(k, v): cw.writerow([k, v])
     row("Request No", req.request_no); row("Work Order No", wo.work_order_no)
     row("Internal Request ID", req.id); row("Internal WO ID", wo.id)
-    row("Department", req.department.name if req.department else "")
-    row("Requester", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else "")
-    row("Requester Role", req.requested_by.role if req.requested_by else "")
-    row("Priority", req.priority or ""); row("Current Status", req.status)
-    row("Location Type", req.location_type or "")
-    row("Floor", req.floor if req.floor else "")
-    row("Room", req.room.room_number if req.room else "")
-    row("Area", req.area.name if req.area else "")
-    row("Full Location", req.location_name)
-    row("Maintenance Item", req.working_item.name if req.working_item else "")
-    row("Category", req.category.name if req.category else "")
-    row("Problem Description", req.description or "")
-    row("Work Instructions", pack["work_performed"] or "")
-    row("Assigned Technician", (tech.full_name or tech.username) if tech else "")
-    row("Technician Role", tech.role if tech else "")
+    row("Department", req.department.name if req.department else ""); row("Requester", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else ""); row("Requester Role", req.requested_by.role if req.requested_by else "")
+    row("Priority", req.priority or ""); row("Current Status", req.status); row("Location Type", req.location_type or "")
+    row("Floor", req.floor if req.floor else ""); row("Room", req.room.room_number if req.room else ""); row("Area", req.area.name if req.area else ""); row("Full Location", req.location_name)
+    row("Maintenance Item", req.working_item.name if req.working_item else ""); row("Category", req.category.name if req.category else "")
+    row("Problem Description", req.description or ""); row("Work Instructions", pack["work_performed"] or "")
+    row("Assigned Technician", (tech.full_name or tech.username) if tech else ""); row("Technician Role", tech.role if tech else "")
     row("Assigned By", (pack["assigned_by"].full_name or pack["assigned_by"].username) if pack["assigned_by"] else "")
     row("Assignment Date/Time", pack["assigned_dt"].strftime("%Y-%m-%d %H:%M") if pack["assigned_dt"] else "")
     row("Due Date/Time", req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else "")
     row("Accepted Date/Time", pack["accepted_dt"].strftime("%Y-%m-%d %H:%M") if pack["accepted_dt"] else "")
     row("Started Date/Time", pack["started_dt"].strftime("%Y-%m-%d %H:%M") if pack["started_dt"] else "")
     row("Completed Date/Time", (pack["completed_dt"] or req.completed_date).strftime("%Y-%m-%d %H:%M") if (pack["completed_dt"] or req.completed_date) else "")
-    row("Labor Hours", pack["labor_hours"])
-    row("Completion Note", pack["completion_notes"] or "")
-    row("Root Cause", pack["root_cause"] or "")
-    row("Recommendation", pack["recommendation"] or "")
-    cw.writerow([])
-    cw.writerow(["MATERIALS / SPARE PARTS USED"])
-    cw.writerow(["Item","Category","Qty","Unit","Unit Cost","Total","Notes"])
-    for m in pack["parts_used"]:
-        cw.writerow([m["name"], m["category"], m["quantity"], m["unit"], round(m["unit_cost"],2), round(m["line_total"],2), m["notes"]])
-    cw.writerow(["TOTAL","","","","","" + str(round(pack["total_cost"],2)),""])
-    cw.writerow([])
-    cw.writerow(["VERIFICATION"])
-    row("Verified By", (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else "")
-    row("Verified Date/Time", (pack["verified_dt"] or (wo.verified_date if wo else None)).strftime("%Y-%m-%d %H:%M") if (pack["verified_dt"] or (wo and wo.verified_date)) else "")
-    row("Verification Status", "Verified" if (req.status in ("Verified","Closed") or wo.verified_by_id) else "Pending")
-    row("Verification Note", pack["completion_notes"] or "")
-    cw.writerow([])
-    cw.writerow(["CLOSURE"])
-    row("Closed By", (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status=="Closed") else "")
-    row("Closed Date/Time", pack["closed_dt"].strftime("%Y-%m-%d %H:%M") if pack["closed_dt"] else "")
-    row("Final Status", req.status)
-    row("Closure / Completion Note", req.completion_note or "")
-    cw.writerow([])
-    cw.writerow(["DIGITAL SIGNATURE"])
-    row("Signed By", req.signature_name or ""); row("Signature Dept", req.signature_department or "")
-    row("Signed At", req.signature_signed_at.strftime("%Y-%m-%d %H:%M") if req.signature_signed_at else "")
-    row("Signature Verified", "Yes" if req.signature_verified else "No")
-    cw.writerow([])
-    cw.writerow(["PHOTOS / ATTACHMENTS"])
-    cw.writerow(["Type","Filename"])
+    row("Labor Hours", pack["labor_hours"]); row("Completion Note", pack["completion_notes"] or "")
+    row("Root Cause", pack["root_cause"] or ""); row("Recommendation", pack["recommendation"] or "")
+    cw.writerow([]); cw.writerow(["MATERIALS / SPARE PARTS USED"]); cw.writerow(["Item","Category","Qty","Unit","Unit Cost","Total","Notes"])
+    for m in pack["parts_used"]: cw.writerow([m["name"], m["category"], m["quantity"], m["unit"], round(m["unit_cost"],2), round(m["line_total"],2), m["notes"]])
+    cw.writerow(["TOTAL","","","","","" + str(round(pack["total_cost"],2)),""]); cw.writerow([])
+    cw.writerow(["VERIFICATION"]); row("Verified By", (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else ""); row("Verified Date/Time", (pack["verified_dt"] or (wo.verified_date if wo else None)).strftime("%Y-%m-%d %H:%M") if (pack["verified_dt"] or (wo and wo.verified_date)) else ""); row("Verification Status", "Verified" if (req.status in ("Verified","Closed") or wo.verified_by_id) else "Pending"); row("Verification Note", pack["completion_notes"] or "")
+    cw.writerow([]); cw.writerow(["CLOSURE"]); row("Closed By", (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status=="Closed") else ""); row("Closed Date/Time", pack["closed_dt"].strftime("%Y-%m-%d %H:%M") if pack["closed_dt"] else ""); row("Final Status", req.status); row("Closure / Completion Note", req.completion_note or "")
+    cw.writerow([]); cw.writerow(["DIGITAL SIGNATURE"]); row("Signed By", req.signature_name or ""); row("Signature Dept", req.signature_department or ""); row("Signed At", req.signature_signed_at.strftime("%Y-%m-%d %H:%M") if req.signature_signed_at else ""); row("Signature Verified", "Yes" if req.signature_verified else "No")
+    cw.writerow([]); cw.writerow(["PHOTOS / ATTACHMENTS"]); cw.writerow(["Type","Filename"])
     if pack["photos"]:
-        for ph in pack["photos"]:
-            cw.writerow([ph["type"] or "Photo", ph["filename"]])
-    else:
-        cw.writerow(["","(none)"])
+        for ph in pack["photos"]: cw.writerow([ph["type"] or "Photo", ph["filename"]])
+    else: cw.writerow(["","(none)"])
     output = make_response(si.getvalue())
     output.headers["Content-Disposition"] = "attachment; filename=WO_" + str(wo.work_order_no) + ".csv"
     output.headers["Content-type"] = "text/csv; charset=utf-8"
@@ -2339,27 +2152,22 @@ def detailed_report_single_wo_export(wo_id):
 @app.route("/reports/request/<int:req_id>")
 @login_required
 def detailed_report_request(req_id):
-    """Detailed report for one Request. If a Work Order exists, show / alias to that WO's detail."""
     req = get_or_404(MaintenanceRequest, req_id)
     wo = WorkOrder.query.filter_by(request_id=req.id).order_by(WorkOrder.created_at.asc()).first()
-    if wo:
-        return redirect(url_for("detailed_report_single_wo", wo_id=wo.id))
-    # No WO yet — build a request-level detailed report from live data
+    if wo: return redirect(url_for("detailed_report_single_wo", wo_id=wo.id))
     if current_user.role == "DEPARTMENT":
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
-    pack = _build_detailed_report_pack(req)
-    kpis = _compute_report_kpis([req])
+    pack = _build_detailed_report_pack(req); kpis = _compute_report_kpis([req])
     filters = {"date_from": req.created_at.strftime("%Y-%m-%d") if req.created_at else "", "date_to": "", "department_name": req.department.name if req.department else ""}
     body = _detailed_report_header("DETAILED MAINTENANCE REQUEST REPORT — " + str(req.request_no), filters, kpis)
     body += _render_detailed_report_block(pack)
     body += '<div class="report-footer">Rori Hotel — Engineering &amp; Maintenance Department · Request Report<br>Developer: Edom Adinew</div>'
     content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Request Report</h1><p>' + str(req.request_no) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;">'
-        '<a href="' + url_for("request_detail", req_id=req.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
-        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button>'
-        '</div></div><div class="report-doc">' + body + '</div>')
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("request_detail", req_id=req.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
+        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button></div></div>'
+        '<div class="report-doc">' + body + '</div>')
     return page("Request Report", content)
 
 # ══════════════════════════════════════════ DASHBOARD
@@ -2584,8 +2392,7 @@ new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', da
 @app.route("/management/reports")
 @role_required("ADMIN", "MANAGER")
 def management_reports():
-    period = request.args.get("period", "daily")
-    dept_filter = request.args.get("department", "")
+    period = request.args.get("period", "daily"); dept_filter = request.args.get("department", "")
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     if dept_filter:
         dept = Department.query.filter_by(name=dept_filter).first()
@@ -2604,11 +2411,9 @@ def management_reports():
     else:
         start_date = now - timedelta(days=30); end_date = now
         q = q.filter(MaintenanceRequest.created_at >= start_date, MaintenanceRequest.created_at <= end_date)
-    reqs = q.all()
-    total = len(reqs)
+    reqs = q.all(); total = len(reqs)
     completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
-    pending = sum(1 for r in reqs if r.status in ["Pending","Approved"])
-    in_progress = sum(1 for r in reqs if r.status in ["Assigned","In Progress"])
+    pending = sum(1 for r in reqs if r.status in ["Pending","Approved"]); in_progress = sum(1 for r in reqs if r.status in ["Assigned","In Progress"])
     work_orders = WorkOrder.query.filter(WorkOrder.request_id.in_([r.id for r in reqs])).all()
     total_hours = sum(wo.labor_hours or 0 for wo in work_orders)
     dept_counts = defaultdict(int)
@@ -2658,23 +2463,14 @@ def management_reports():
          '<div class="col-md-6"><div class="card"><h5>Staff Performance</h5><div class="table-responsive"><table class="table"><thead><tr><th>Staff</th><th>Assigned</th><th>Completed</th><th>Hours</th></tr></thead><tbody>' + "".join('<tr><td>' + k + '</td><td><span class="badge badge-info">' + str(v["assigned"]) + '</span></td><td><span class="badge badge-success">' + str(v["completed"]) + '</span></td><td>' + str(round(v["hours"],1)) + ' hrs</td></tr>' for k, v in sorted(staff_work.items(), key=lambda x: -x[1]["hours"])) + '</tbody></table></div></div></div></div>')
     if period == "weekly" and daily_breakdown:
         c += '<div class="card mt-4"><h5>Daily Breakdown (This Week)</h5><div class="table-responsive"><table class="table"><thead><tr><th>Day</th><th>Date</th><th>Total Requests</th><th>Completed</th></tr></thead><tbody>' + "".join('<tr><td>' + d["day"] + '</td><td>' + d["date"] + '</td><td>' + str(d["total"]) + '</td><td>' + str(d["completed"]) + '</td></tr>' for d in daily_breakdown) + '</tbody></table></div></div>'
-    c += ('<div class="card mt-4"><div class="d-flex justify-content-between align-items-center mb-3">'
-          '<h5 style="margin:0;color:var(--rori-gold);"><i class="fas fa-list"></i> Detailed Recent Records</h5>'
-          '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="padding:.55rem 1.2rem;font-size:.85rem;"><i class="fas fa-external-link-alt"></i> Open Full Detailed Report</a>'
-          '</div><div style="overflow-x:auto;"><table class="table"><thead><tr>'
-          '<th>Request / WO</th><th>Created</th><th>Department</th><th>Location</th><th>Item</th><th>Technician</th><th>Status</th><th>Report</th>'
-          '</tr></thead><tbody>'
-          + ("".join(detail_rows) if detail_rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No records found.</td></tr>')
-          + '</tbody></table></div></div>')
-    if total == 0:
-        c += '<div class="alert alert-warning mt-4"><i class="fas fa-info-circle"></i> No maintenance records found for the selected period.</div>'
+    c += ('<div class="card mt-4"><div class="d-flex justify-content-between align-items-center mb-3"><h5 style="margin:0;color:var(--rori-gold);"><i class="fas fa-list"></i> Detailed Recent Records</h5><a href="' + url_for("detailed_report") + '" class="btn-primary" style="padding:.55rem 1.2rem;font-size:.85rem;"><i class="fas fa-external-link-alt"></i> Open Full Detailed Report</a></div><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request / WO</th><th>Created</th><th>Department</th><th>Location</th><th>Item</th><th>Technician</th><th>Status</th><th>Report</th></tr></thead><tbody>' + ("".join(detail_rows) if detail_rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No records found.</td></tr>') + '</tbody></table></div></div>')
+    if total == 0: c += '<div class="alert alert-warning mt-4"><i class="fas fa-info-circle"></i> No maintenance records found for the selected period.</div>'
     return page("Management Reports", c)
 
 @app.route("/management/reports/export")
 @role_required("ADMIN", "MANAGER")
 def management_reports_export():
-    period = request.args.get("period", "daily")
-    dept_filter = request.args.get("department", "")
+    period = request.args.get("period", "daily"); dept_filter = request.args.get("department", "")
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
     if dept_filter:
         dept = Department.query.filter_by(name=dept_filter).first()
@@ -2688,9 +2484,7 @@ def management_reports_export():
         start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0); q = q.filter(MaintenanceRequest.created_at >= start_date)
     reqs = q.all()
     si = io.StringIO(); cw = csv.writer(si)
-    cw.writerow(["Rori Hotel Maintenance Management Summary Report"])
-    cw.writerow(["Period", period, "Generated By", current_user.full_name or current_user.username, "Date", now.strftime("%Y-%m-%d %H:%M")])
-    cw.writerow([])
+    cw.writerow(["Rori Hotel Maintenance Management Summary Report"]); cw.writerow(["Period", period, "Generated By", current_user.full_name or current_user.username, "Date", now.strftime("%Y-%m-%d %H:%M")]); cw.writerow([])
     cw.writerow(["Request No","Work Order No","Department","Location","Item","Priority","Status","Technician","Completed Date","Labor Hours","Materials Used","Total Materials Cost"])
     for r in reqs:
         wo = WorkOrder.query.filter_by(request_id=r.id).first()
@@ -2735,39 +2529,16 @@ def central_maintenance():
     tech_rows_html = "".join('<tr><td><strong>' + ((t["user"].full_name or t["user"].username)) + '</strong><br><small style="color:var(--text-secondary)">' + str(t["user"].role) + '</small></td><td><span class="rpro-chip gold">' + str(t["assigned"]) + '</span></td><td><span class="rpro-chip orange">' + str(t["pending"]) + '</span></td><td><span class="rpro-chip blue">' + str(t["in_progress"]) + '</span></td><td><span class="rpro-chip green">' + str(t["completed"]) + '</span></td></tr>' for t in tech_rows)
     def status_tile(label, value, color):
         return ('<div class="kpi-card" style="padding:1rem .75rem;text-align:center;"><div class="kpi-value" style="font-size:1.6rem;color:' + color + ';">' + str(value) + '</div><div class="kpi-label" style="font-size:.68rem;">' + label + '</div></div>')
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1><p>Unified view of Rooms · Areas · Requests · Work Orders · Technicians</p></div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1><p>Unified view</p></div></div>'
         '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
-        + status_tile("Total", total, "var(--text-primary)")
-        + status_tile("Pending", counts.get("Pending",0), "var(--warning)")
-        + status_tile("Approved", counts.get("Approved",0), "var(--info)")
-        + status_tile("Assigned", counts.get("Assigned",0), "var(--info)")
-        + status_tile("In Progress", counts.get("In Progress",0), "var(--info)")
-        + status_tile("Completed", counts.get("Completed",0), "var(--success)")
-        + status_tile("Verified", counts.get("Verified",0), "var(--success)")
-        + status_tile("Closed", counts.get("Closed",0), "var(--text-secondary)")
+        + status_tile("Total", total, "var(--text-primary)") + status_tile("Pending", counts.get("Pending",0), "var(--warning)") + status_tile("Approved", counts.get("Approved",0), "var(--info)") + status_tile("Assigned", counts.get("Assigned",0), "var(--info)") + status_tile("In Progress", counts.get("In Progress",0), "var(--info)") + status_tile("Completed", counts.get("Completed",0), "var(--success)") + status_tile("Verified", counts.get("Verified",0), "var(--success)") + status_tile("Closed", counts.get("Closed",0), "var(--text-secondary)")
         + '</div>'
         '<div class="row g-3 mb-3">'
-        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-door-open"></i> Rooms</div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Total Rooms</span><strong>' + str(rooms_total) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Requests</span><strong style="color:var(--rori-gold)">' + str(room_reqs) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Open</span><strong style="color:var(--warning)">' + str(room_open) + '</strong></div>'
-        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> Manage Rooms</a></div></div>'
-        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-map-marked-alt"></i> Areas</div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Active Areas</span><strong>' + str(areas_total) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Requests</span><strong style="color:var(--rori-gold)">' + str(area_reqs) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Open</span><strong style="color:var(--warning)">' + str(area_open) + '</strong></div>'
-        '<a href="' + url_for("areas_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> Manage Areas</a></div></div>'
-        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clipboard-list"></i> Work Orders</div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Total</span><strong>' + str(WorkOrder.query.count()) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;margin-bottom:.5rem;"><span style="color:var(--text-secondary);">Active</span><strong style="color:var(--warning)">' + str(WorkOrder.query.filter(WorkOrder.status.in_(["Pending","Assigned","In Progress"])).count()) + '</strong></div>'
-        '<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-secondary);">Completed</span><strong style="color:var(--success)">' + str(WorkOrder.query.filter(WorkOrder.status.in_(["Completed","Verified"])).count()) + '</strong></div>'
-        '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;padding:.55rem;"><i class="fas fa-arrow-right"></i> View Work Orders</a></div></div></div>'
-        '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-users-cog"></i> Technician Workload</div>'
-        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Technician</th><th>Assigned</th><th>Pending</th><th>In Progress</th><th>Completed</th></tr></thead><tbody>'
-        + (tech_rows_html if tech_rows_html else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No active technicians.</td></tr>') + '</tbody></table></div></div>'
-        '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clock-rotate-left"></i> Recent Requests</div>'
-        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Department</th><th>Status</th><th>Priority</th><th>Assigned</th><th>Report</th></tr></thead><tbody>'
-        + ("".join(recent_rows) if recent_rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No requests.</td></tr>') + '</tbody></table></div></div>')
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-door-open"></i> Rooms</div><div style="display:flex;justify-content:space-between;"><span>Total</span><strong>' + str(rooms_total) + '</strong></div><div style="display:flex;justify-content:space-between;"><span>Open</span><strong>' + str(room_open) + '</strong></div></div></div>'
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-map-marked-alt"></i> Areas</div><div style="display:flex;justify-content:space-between;"><span>Total</span><strong>' + str(areas_total) + '</strong></div><div style="display:flex;justify-content:space-between;"><span>Open</span><strong>' + str(area_open) + '</strong></div></div></div>'
+        '<div class="col-lg-4"><div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clipboard-list"></i> Work Orders</div><div style="display:flex;justify-content:space-between;"><span>Total</span><strong>' + str(WorkOrder.query.count()) + '</strong></div></div></div>'
+        '</div>'
+        '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clock-rotate-left"></i> Recent Requests</div><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Dept</th><th>Status</th><th>Priority</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(recent_rows) if recent_rows else '<tr><td colspan="7" style="text-align:center;">No requests.</td></tr>') + '</tbody></table></div></div>')
     return page("Central Maintenance", content)
 
 # ══════════════════════════════════════════ DEPARTMENT / EMPLOYEE DASHBOARDS
@@ -2780,19 +2551,15 @@ def department_dashboard():
     if dept_id: q = q.filter(db.or_(MaintenanceRequest.department_id == dept_id, MaintenanceRequest.requested_by_id == current_user.id))
     else: q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
     reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
-    total = len(reqs); pending = sum(1 for r in reqs if r.status == "Pending")
-    in_progress = sum(1 for r in reqs if r.status == "In Progress"); completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
+    total = len(reqs); pending = sum(1 for r in reqs if r.status == "Pending"); in_progress = sum(1 for r in reqs if r.status == "In Progress"); completed = sum(1 for r in reqs if r.status in ["Completed","Verified","Closed"])
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i></a></td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
-         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div>'
-         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
-         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div>'
-         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
-         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No requests yet.</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div>'
+         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;">No requests yet.</td></tr>') + '</tbody></table></div></div>')
     return page("Department Dashboard", c)
 
 @app.route("/employee/dashboard")
@@ -2804,8 +2571,8 @@ def employee_dashboard():
     rows = []
     for r in reqs[:30]:
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-home"></i> <span>My</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
-         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">No requests yet</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-home"></i> <span>My</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div>'
+         '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;">No requests yet</td></tr>') + '</tbody></table></div></div>')
     return page("Employee Dashboard", c)
 
 # ══════════════════════════════════════════ WORK ORDERS
@@ -2822,40 +2589,34 @@ def workorders_list():
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
         rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No work orders</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;">No work orders</td></tr>') + '</tbody></table></div></div>')
     return page("Work Orders", c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
 @role_required("MANAGER","ADMIN")
 def workorder_create():
-    req_id = request.args.get("request_id", type=int)
-    req = get_one(MaintenanceRequest, req_id) if req_id else None
+    req_id = request.args.get("request_id", type=int); req = get_one(MaintenanceRequest, req_id) if req_id else None
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     uo = "".join('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) + ' — ' + str(u.role) + '</option>' for u in staff)
     if request.method == "POST":
         try:
-            request_id = request.form.get("request_id", type=int)
-            assigned_to_id = request.form.get("assigned_to_id", type=int)
-            wp = request.form.get("work_performed","")
+            request_id = request.form.get("request_id", type=int); assigned_to_id = request.form.get("assigned_to_id", type=int); wp = request.form.get("work_performed","")
             if not assigned_to_id: flash("Please select a technician","danger"); return redirect(url_for("workorder_create", request_id=request_id))
-            req = get_or_404(MaintenanceRequest, request_id)
-            assigned_user = get_one(User, assigned_to_id)
+            req = get_or_404(MaintenanceRequest, request_id); assigned_user = get_one(User, assigned_to_id)
             existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
             if existing: wo = existing; wo.assigned_to_id = assigned_to_id; wo.status = "Assigned"; wo.work_performed = wp if wp else wo.work_performed
             else: wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=assigned_to_id, status="Assigned", work_performed=wp); db.session.add(wo); db.session.flush()
-            log_audit("Create","WorkOrder",wo.id,new_value=wo.work_order_no)
-            req.status = "Assigned"; req.assigned_to_id = assigned_to_id
+            log_audit("Create","WorkOrder",wo.id,new_value=wo.work_order_no); req.status = "Assigned"; req.assigned_to_id = assigned_to_id
             log_status_change(req.id,"Assigned",notes="Assigned to " + str(assigned_user.full_name if assigned_user else "?"))
             if assigned_user: notify_assigned_staff(req, wo, assigned_user)
             if req.requested_by_id: notify_users([req.requested_by_id], req.id, "Work Assigned", "Staff assigned to " + str(req.request_no), "Assigned", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Assigned!","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_create", request_id=request_id))
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-plus"></i> <span>Assign</span> Staff</h1></div></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-plus"></i> Assign Staff</h1></div></div>'
          '<div class="card"><form method="post"><input type="hidden" name="request_id" value="' + str(req.id if req else "") + '">'
          '<div class="mb-3"><label class="form-label">Request</label><input class="form-control" value="' + str(req.request_no if req else "") + '" disabled></div>'
-         '<div class="mb-3"><label class="form-label">Department</label><input class="form-control" value="' + str(req.department.name if req and req.department else "—") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
-         '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select Technician --</option>' + uo + '</select></div>'
+         '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select --</option>' + uo + '</select></div>'
          '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
          '<button class="btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
     return page("Assign Work Order", c)
@@ -2868,26 +2629,24 @@ def workorder_detail(wo_id):
     can_parts_flag = (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
     pr, pt = [], 0
     for p in parts:
-        pname = p.part.part_name if p.part else "Part #" + str(p.part_id)
-        psupp = p.part.supplier.company_name if p.part and p.part.supplier else "—"
-        pun = p.part.unit if p.part else "pcs"
+        pname = p.part.part_name if p.part else "Part #" + str(p.part_id); psupp = p.part.supplier.company_name if p.part and p.part.supplier else "—"; pun = p.part.unit if p.part else "pcs"
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
         rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
         pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + str(p.notes or "") + '</td><td>' + rem + '</td></tr>')
     apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
     parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts &amp; Materials Used</div>' + apb + '</div>'
-                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th>Notes</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
+                  '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th>Notes</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="8" style="text-align:center;">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
     ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
     actions = '<a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-file-alt"></i> Detailed Report</a>'
     if current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id:
         if wo.status == "Assigned": actions += '<form method="post" action="' + url_for("workorder_start", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--warning);margin-bottom:0.75rem;"><i class="fas fa-play"></i> Start Work</button></form>'
-        if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--success);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-check"></i> Complete Work</a>'
+        if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--success);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-check"></i> Complete</a>'
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
         actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;"><i class="fas fa-check-double"></i> Verify</button></form>'
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> Work Order <span>' + str(wo.work_order_no) + '</span></h1></div>'
-        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary"><i class="fas fa-file-alt"></i> Detailed Report</a>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Work Order <span>' + str(wo.work_order_no) + '</span></h1></div>'
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary"><i class="fas fa-file-alt"></i> Report</a>'
         '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a></div></div>'
-        '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th style="width:150px;color:var(--text-secondary);">Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Department</th><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Priority</th><td>' + str(wo.request.priority if wo.request else "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Status</th><td><span class="badge badge-info">' + str(wo.status) + '</span></td></tr><tr><th style="color:var(--text-secondary);">Assigned To</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th style="color:var(--text-secondary);">Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Completion Notes</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Root Cause</th><td>' + str(wo.root_cause or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Recommendation</th><td>' + str(wo.recommendation or "—") + '</td></tr><tr><th style="color:var(--text-secondary);">Labor Hours</th><td>' + str(wo.labor_hours) + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;">Actions</h5>' + actions + '</div></div></div>')
+        '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th>Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th>Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th>Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th>Status</th><td>' + str(wo.status) + '</td></tr><tr><th>Assigned</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th>Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th>Completion</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th>Root Cause</th><td>' + str(wo.root_cause or "—") + '</td></tr><tr><th>Recommendation</th><td>' + str(wo.recommendation or "—") + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);">Actions</h5>' + actions + '</div></div></div>')
     return page("Work Order Detail", c)
 
 @app.route("/workorders/<int:wo_id>/start", methods=["POST"])
@@ -2899,8 +2658,7 @@ def workorder_start(wo_id):
         if wo.status != "Assigned": flash("Cannot start","warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
         wo.status = "In Progress"
         if wo.request: wo.request.status = "In Progress"
-        log_status_change(wo.request_id,"In Progress",notes="Started by " + str(current_user.full_name))
-        log_audit("Start","WorkOrder",wo.id,"Assigned","In Progress")
+        log_status_change(wo.request_id,"In Progress",notes="Started by " + str(current_user.full_name)); log_audit("Start","WorkOrder",wo.id,"Assigned","In Progress")
         db.session.commit(); flash("Work started","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
@@ -2913,32 +2671,24 @@ def workorder_complete(wo_id):
     if wo.status != "In Progress": flash("Not in progress","warning"); return redirect(url_for("workorder_detail", wo_id=wo_id))
     if request.method == "POST":
         try:
-            note = request.form.get("completion_note","").strip()
-            root_cause = request.form.get("root_cause","").strip()
-            recommendation = request.form.get("recommendation","").strip()
+            note = request.form.get("completion_note","").strip(); root_cause = request.form.get("root_cause","").strip(); recommendation = request.form.get("recommendation","").strip()
             try: hours = float(request.form.get("labor_hours","0") or "0")
             except: hours = 0.0
             if not note: flash("Completion note required","danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
-            fname = None
-            f = request.files.get("photo")
+            fname = None; f = request.files.get("photo")
             if f and f.filename and allowed_file(f.filename):
-                ext = f.filename.rsplit(".",1)[-1].lower()
-                fname = secure_filename("wo_" + str(wo.id) + "_done_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext)
-                f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
-            wo.completion_notes = note; wo.labor_hours = hours; wo.status = "Completed"
-            wo.root_cause = root_cause or wo.root_cause
-            wo.recommendation = recommendation or wo.recommendation
+                ext = f.filename.rsplit(".",1)[-1].lower(); fname = secure_filename("wo_" + str(wo.id) + "_done_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext); f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
+            wo.completion_notes = note; wo.labor_hours = hours; wo.status = "Completed"; wo.root_cause = root_cause or wo.root_cause; wo.recommendation = recommendation or wo.recommendation
             wo.completed_by_id = current_user.id; wo.completed_date = datetime.utcnow()
             if fname: wo.completion_photo = fname
             if wo.request: wo.request.status = "Completed"; wo.request.completed_date = datetime.utcnow(); wo.request.completion_note = note
-            log_status_change(wo.request_id,"Completed",notes="Completed by " + str(current_user.full_name))
-            log_audit("Complete","WorkOrder",wo.id,"In Progress","Completed")
+            log_status_change(wo.request_id,"Completed",notes="Completed by " + str(current_user.full_name)); log_audit("Complete","WorkOrder",wo.id,"In Progress","Completed")
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"])).all()
             notify_users([u.id for u in managers], wo.request_id, "🔔 Work Completed", "WO " + str(wo.work_order_no) + " ready for verification", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
             if wo.request and wo.request.requested_by_id: notify_users([wo.request.requested_by_id], wo.request_id, "Work Completed", "Request " + str(wo.request.request_no) + " completed", "Completed", link=url_for("workorder_detail", wo_id=wo.id))
             db.session.commit(); flash("✅ Completed! Waiting for verification.","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("workorder_complete", wo_id=wo_id))
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-check-circle"></i> <span>Complete</span> Work Order ' + str(wo.work_order_no) + '</h1></div></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Complete Work Order ' + str(wo.work_order_no) + '</h1></div></div>'
          '<div class="card"><form method="post" enctype="multipart/form-data">'
          '<div class="mb-3"><label class="form-label">Completion Note *</label><textarea name="completion_note" class="form-control" rows="4" required></textarea></div>'
          '<div class="mb-3"><label class="form-label">Root Cause (optional)</label><textarea name="root_cause" class="form-control" rows="2"></textarea></div>'
@@ -2957,8 +2707,7 @@ def workorder_verify(wo_id):
         wo.status = "Verified"; wo.verified_by_id = current_user.id; wo.verified_date = datetime.utcnow()
         if wo.request: wo.request.status = "Verified"; wo.request.manager_id = current_user.id
         if not wo.request.completed_date: wo.request.completed_date = datetime.utcnow()
-        log_status_change(wo.request_id,"Verified",notes="Verified by " + str(current_user.full_name))
-        log_audit("Verify","WorkOrder",wo.id,"Completed","Verified")
+        log_status_change(wo.request_id,"Verified",notes="Verified by " + str(current_user.full_name)); log_audit("Verify","WorkOrder",wo.id,"Completed","Verified")
         if wo.request: notify_users([wo.request.requested_by_id], wo.request_id, "✅ Verified", "Request " + str(wo.request.request_no) + " verified", "Verified", link=url_for("request_detail", req_id=wo.request_id))
         db.session.commit(); flash("✅ Verified!","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -2972,9 +2721,8 @@ def supplier_active(s):
 
 def supplier_form(s, action, edit):
     def v(f): return str(getattr(s, f) or "") if s else ""
-    act = supplier_active(s)
-    a1 = " selected" if act else ""; a2 = "" if act else " selected"
-    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-truck"></i> <span>' + ("Edit" if edit else "Add") + '</span> Supplier</h1></div></div>'
+    act = supplier_active(s); a1 = " selected" if act else ""; a2 = "" if act else " selected"
+    return ('<div class="page-header"><div class="page-title"><h1>' + ("Edit" if edit else "Add") + ' Supplier</h1></div></div>'
             '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier Name *</label><input type="text" class="form-control" name="company_name" value="' + v("company_name") + '" required></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Contact</label><input type="text" class="form-control" name="contact_person" value="' + v("contact_person") + '"></div>'
@@ -2984,21 +2732,19 @@ def supplier_form(s, action, edit):
             '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + a1 + '>Active</option><option value="Inactive"' + a2 + '>Inactive</option></select></div>'
             '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/suppliers")
 @role_required("ADMIN","MANAGER")
 def suppliers_list():
-    ss = Supplier.query.order_by(Supplier.company_name).all()
-    rows = []
+    ss = Supplier.query.order_by(Supplier.company_name).all(); rows = []
     for s in ss:
-        act = supplier_active(s)
-        bg = '<span class="badge badge-success">Active</span>' if act else '<span class="badge badge-secondary">Inactive</span>'
-        ac = '<a class="btn-primary" href="' + url_for("supplier_edit", supplier_id=s.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-edit"></i> Edit</a> '
-        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-ban"></i></button></form>'
+        act = supplier_active(s); bg = '<span class="badge badge-success">Active</span>' if act else '<span class="badge badge-secondary">Inactive</span>'
+        ac = '<a class="btn-primary" href="' + url_for("supplier_edit", supplier_id=s.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Edit</a> '
+        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:0.4rem 0.8rem;font-size:0.8rem;">Ban</button></form>'
         rows.append('<tr><td>' + str(s.id) + '</td><td>' + str(s.company_name) + '</td><td>' + str(s.contact_person or "—") + '</td><td>' + str(s.phone or "—") + '</td><td>' + str(s.email or "—") + '</td><td>' + bg + '</td><td>' + ac + '</td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-truck"></i> <span>Suppliers</span></h1></div><a class="btn-primary" href="' + url_for("supplier_add") + '"><i class="fas fa-plus"></i> Add</a></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1>Suppliers</h1></div><a class="btn-primary" href="' + url_for("supplier_add") + '">Add</a></div>'
+         '<div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
     return page("Suppliers", c)
 
 @app.route("/suppliers/add", methods=["GET","POST"])
@@ -3012,9 +2758,8 @@ def supplier_add():
         try:
             st = request.form.get("status","Active")
             s = Supplier(company_name=name, contact_person=request.form.get("contact_person","").strip(), phone=request.form.get("phone","").strip(), email=email, address=request.form.get("address","").strip(), tax_number=request.form.get("tax_number","").strip(), notes=request.form.get("notes","").strip(), status=st, is_active=(st=="Active"))
-            db.session.add(s); db.session.flush()
-            log_audit("Supplier Created","Supplier",s.id,new_value=name)
-            db.session.commit(); flash("✅ Saved","success"); return redirect(url_for("suppliers_list"))
+            db.session.add(s); db.session.flush(); log_audit("Supplier Created","Supplier",s.id,new_value=name); db.session.commit()
+            flash("✅ Saved","success"); return redirect(url_for("suppliers_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return page("Add Supplier", supplier_form(None, url_for("supplier_add"), False))
 
@@ -3031,8 +2776,7 @@ def supplier_edit(supplier_id):
         try:
             st = request.form.get("status","Active")
             s.company_name = name; s.contact_person = request.form.get("contact_person","").strip(); s.phone = request.form.get("phone","").strip(); s.email = email; s.address = request.form.get("address","").strip(); s.tax_number = request.form.get("tax_number","").strip(); s.notes = request.form.get("notes","").strip(); s.status = st; s.is_active = (st=="Active")
-            log_audit("Supplier Updated","Supplier",s.id,new_value=name)
-            db.session.commit(); flash("✅ Updated","success"); return redirect(url_for("suppliers_list"))
+            log_audit("Supplier Updated","Supplier",s.id,new_value=name); db.session.commit(); flash("✅ Updated","success"); return redirect(url_for("suppliers_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return page("Edit Supplier", supplier_form(s, url_for("supplier_edit", supplier_id=s.id), True))
 
@@ -3054,7 +2798,7 @@ def part_form(p, action):
     for s in sups: so += '<option value="' + str(s.id) + '"' + (' selected' if p and p.supplier_id == s.id else '') + '>' + str(s.company_name) + '</option>'
     cat_opts = '<option value="">-- Select Category --</option>'
     for c in INVENTORY_CATEGORIES: cat_opts += '<option value="' + c + '"' + (' selected' if p and (p.category or "") == c else '') + '>' + c + '</option>'
-    return ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-box"></i> <span>' + ("Edit" if p else "Add") + '</span> Inventory Item</h1></div></div>'
+    return ('<div class="page-header"><div class="page-title"><h1>' + ("Edit" if p else "Add") + ' Inventory Item</h1></div></div>'
             '<div class="card"><form method="post" action="' + str(action) + '"><div class="row">'
             '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="part_name" value="' + v("part_name") + '" required></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category" required>' + cat_opts + '</select></div>'
@@ -3066,16 +2810,12 @@ def part_form(p, action):
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
             '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="2">' + v("description") + '</textarea></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (p and (p.status or "Active")=="Active") or not p else '') + '>Active</option><option value="Inactive"' + (' selected' if p and (p.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/inventory")
 @role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
 def inventory_list():
-    q = request.args.get("q", "").strip()
-    cat_f = request.args.get("category", "").strip()
-    status_f = request.args.get("status", "").strip()
-    low_f = request.args.get("low", "") == "1"
-    show_inactive = request.args.get("show_inactive", "") == "1"
+    q = request.args.get("q", "").strip(); cat_f = request.args.get("category", "").strip(); status_f = request.args.get("status", "").strip(); low_f = request.args.get("low", "") == "1"; show_inactive = request.args.get("show_inactive", "") == "1"
     base = InventoryPart.query
     if q: base = base.filter(InventoryPart.part_name.like("%" + q + "%"))
     if cat_f: base = base.filter(InventoryPart.category == cat_f)
@@ -3088,40 +2828,32 @@ def inventory_list():
         if (p.quantity or 0) <= 0: bg, label = 'badge-danger', 'Out'
         elif p.is_low: bg, label = 'badge-warning', 'Low'
         else: bg, label = 'badge-success', 'OK'
-        sn = p.supplier.company_name if p.supplier else "—"
-        inactive = (p.is_active is False)
+        sn = p.supplier.company_name if p.supplier else "—"; inactive = (p.is_active is False)
         st_badge = '<span class="badge badge-secondary">Inactive</span>' if inactive else '<span class="badge badge-success">Active</span>'
-        actions = ('<a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-edit"></i> Edit</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_history", part_id=p.id) + '" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-history"></i></a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_stock_in", part_id=p.id) + '" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-plus"></i> In</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_stock_out", part_id=p.id) + '" style="background:var(--warning);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-minus"></i> Out</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_adjust", part_id=p.id) + '" style="background:var(--info);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-sliders-h"></i></a> ')
-        if inactive: actions += '<form method="post" action="' + url_for("inventory_activate", part_id=p.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-undo"></i></button></form>'
-        else: actions += '<form method="post" action="' + url_for("inventory_deactivate", part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate this item?\')"><button type="submit" class="btn-primary" style="background:var(--danger);padding:.35rem .6rem;font-size:.75rem;"><i class="fas fa-ban"></i></button></form>'
+        actions = ('<a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:.35rem .6rem;font-size:.75rem;">Edit</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_history", part_id=p.id) + '" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.35rem .6rem;font-size:.75rem;">Hist</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_in", part_id=p.id) + '" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;">In</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_out", part_id=p.id) + '" style="background:var(--warning);padding:.35rem .6rem;font-size:.75rem;">Out</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_adjust", part_id=p.id) + '" style="background:var(--info);padding:.35rem .6rem;font-size:.75rem;">Adj</a> ')
+        if inactive: actions += '<form method="post" action="' + url_for("inventory_activate", part_id=p.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;">On</button></form>'
+        else: actions += '<form method="post" action="' + url_for("inventory_deactivate", part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--danger);padding:.35rem .6rem;font-size:.75rem;">Off</button></form>'
         rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td><strong>' + str(p.quantity) + '</strong></td><td>' + str(p.minimum_stock) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.storage_location or "—") + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td>' + st_badge + '</td><td style="white-space:nowrap;">' + actions + '</td></tr>')
-    total_items = InventoryPart.query.count()
-    active_items = InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None)).count()
-    low_items = len([p for p in InventoryPart.query.all() if 0 < (p.quantity or 0) <= (p.minimum_stock or 0)])
-    out_items = len([p for p in InventoryPart.query.all() if (p.quantity or 0) <= 0])
+    total_items = InventoryPart.query.count(); active_items = InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None)).count()
+    low_items = len([p for p in InventoryPart.query.all() if 0 < (p.quantity or 0) <= (p.minimum_stock or 0)]); out_items = len([p for p in InventoryPart.query.all() if (p.quantity or 0) <= 0])
     cat_opts = '<option value="">All Categories</option>' + "".join('<option value="' + c + '"' + (' selected' if cat_f == c else '') + '>' + c + '</option>' for c in INVENTORY_CATEGORIES)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-boxes"></i> <span>Engineering / Maintenance</span> Inventory</h1>'
-        '<p>Tools · Spare parts · Materials · Consumables — shared across all departments\' facilities</p></div>'
-        '<a class="btn-primary" href="' + url_for("inventory_add") + '"><i class="fas fa-plus"></i> Add Item</a></div>'
-        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
-        '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-boxes"></i></div><div class="kpi-value">' + str(total_items) + '</div><div class="kpi-label">Total Items</div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Engineering / Maintenance Inventory</h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '">Add Item</a></div>'
+        '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-boxes"></i></div><div class="kpi-value">' + str(total_items) + '</div><div class="kpi-label">Total</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(active_items) + '</div><div class="kpi-label">Active</div></div>'
-        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(low_items) + '</div><div class="kpi-label">Low Stock</div></div>'
-        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-times-circle"></i></div><div class="kpi-value">' + str(out_items) + '</div><div class="kpi-label">Out of Stock</div></div></div>'
-        '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Search item name..." value="' + str(q) + '">'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(low_items) + '</div><div class="kpi-label">Low</div></div>'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-times-circle"></i></div><div class="kpi-value">' + str(out_items) + '</div><div class="kpi-label">Out</div></div></div>'
+        '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Search..." value="' + str(q) + '">'
         '<select class="form-select" name="category">' + cat_opts + '</select>'
-        '<select class="form-select" name="status"><option value="">All Statuses</option><option value="Active"' + (' selected' if status_f=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if status_f=="Inactive" else '') + '>Inactive</option></select>'
-        '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;"><input type="checkbox" name="low" value="1"' + (' checked' if low_f else '') + '> Low stock only</label>'
-        '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
+        '<select class="form-select" name="status"><option value="">All Status</option><option value="Active"' + (' selected' if status_f=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if status_f=="Inactive" else '') + '>Inactive</option></select>'
+        '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="low" value="1"' + (' checked' if low_f else '') + '> Low only</label>'
+        '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
         '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Filter</button>'
-        '<a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
-        '<div class="card"><div style="overflow-x:auto;"><table class="table">'
-        '<thead><tr><th>Item</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Min</th><th>Unit</th><th>Location</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary);padding:2rem;">No inventory items found.</td></tr>') + '</tbody></table></div></div>')
+        '<a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;">Reset</a></form>'
+        '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Item</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Min</th><th>Unit</th><th>Location</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="10" style="text-align:center;padding:2rem;">No items.</td></tr>') + '</tbody></table></div></div>')
     return page("Engineering Inventory", content)
 
 @app.route("/inventory/add", methods=["GET","POST"])
@@ -3130,14 +2862,14 @@ def inventory_add():
     if request.method == "POST":
         name = request.form.get("part_name","").strip()
         if not name: flash("Name required","danger"); return redirect(url_for("inventory_add"))
-        if InventoryPart.query.filter(func.lower(InventoryPart.part_name) == name.lower()).first(): flash("An inventory item with this name already exists.","warning"); return redirect(url_for("inventory_add"))
+        if InventoryPart.query.filter(func.lower(InventoryPart.part_name) == name.lower()).first(): flash("Exists","warning"); return redirect(url_for("inventory_add"))
         try:
             st = request.form.get("status","Active")
             p = InventoryPart(part_name=name, category=request.form.get("category","").strip(), description=request.form.get("description","").strip(), quantity=request.form.get("quantity", type=float) or 0, minimum_stock=request.form.get("minimum_stock", type=float) or 5, unit=request.form.get("unit","pcs").strip() or "pcs", unit_cost=request.form.get("unit_cost", type=float) or 0, storage_location=request.form.get("storage_location","").strip(), status=st, is_active=(st=="Active"), supplier_id=request.form.get("supplier_id", type=int))
             db.session.add(p); db.session.flush()
-            if (p.quantity or 0) > 0: log_stock_history(p, "IN", p.quantity, 0, p.quantity, notes="Initial stock on creation")
-            log_audit("Inventory Item Created","InventoryPart",p.id,new_value=name)
-            db.session.commit(); flash("✅ Inventory item saved","success"); return redirect(url_for("inventory_list"))
+            if (p.quantity or 0) > 0: log_stock_history(p, "IN", p.quantity, 0, p.quantity, notes="Initial stock")
+            log_audit("Inventory Item Created","InventoryPart",p.id,new_value=name); db.session.commit()
+            flash("✅ Saved","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger"); return redirect(url_for("inventory_add"))
     return page("Add Inventory Item", part_form(None, url_for("inventory_add")))
 
@@ -3149,14 +2881,13 @@ def inventory_edit(part_id):
         name = request.form.get("part_name","").strip()
         if not name: flash("Name required","danger"); return redirect(url_for("inventory_edit", part_id=p.id))
         dup = InventoryPart.query.filter(func.lower(InventoryPart.part_name) == name.lower(), InventoryPart.id != p.id).first()
-        if dup: flash("Another item with this name already exists.","warning"); return redirect(url_for("inventory_edit", part_id=p.id))
+        if dup: flash("Exists","warning"); return redirect(url_for("inventory_edit", part_id=p.id))
         try:
-            old_qty = p.quantity or 0; new_qty = request.form.get("quantity", type=float) or 0
-            st = request.form.get("status","Active")
+            old_qty = p.quantity or 0; new_qty = request.form.get("quantity", type=float) or 0; st = request.form.get("status","Active")
             p.part_name = name; p.category = request.form.get("category","").strip(); p.description = request.form.get("description","").strip(); p.quantity = new_qty; p.minimum_stock = request.form.get("minimum_stock", type=float) or 5; p.unit = request.form.get("unit","pcs").strip() or "pcs"; p.unit_cost = request.form.get("unit_cost", type=float) or 0; p.storage_location = request.form.get("storage_location","").strip(); p.status = st; p.is_active = (st=="Active"); p.supplier_id = request.form.get("supplier_id", type=int)
-            if new_qty != old_qty: log_stock_history(p, "ADJUST", new_qty - old_qty, old_qty, new_qty, notes="Edited from inventory form")
-            log_audit("Inventory Item Updated","InventoryPart",p.id,new_value=name)
-            db.session.commit(); flash("✅ Inventory item updated","success"); return redirect(url_for("inventory_list"))
+            if new_qty != old_qty: log_stock_history(p, "ADJUST", new_qty - old_qty, old_qty, new_qty, notes="Edited")
+            log_audit("Inventory Item Updated","InventoryPart",p.id,new_value=name); db.session.commit()
+            flash("✅ Updated","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return page("Edit Inventory Item", part_form(p, url_for("inventory_edit", part_id=p.id)))
 
@@ -3164,7 +2895,7 @@ def inventory_edit(part_id):
 @role_required("ADMIN","MANAGER","SUPERVISOR")
 def inventory_deactivate(part_id):
     p = get_or_404(InventoryPart, part_id)
-    try: p.is_active = False; p.status = "Inactive"; log_audit("Inventory Item Deactivated","InventoryPart",p.id,old_value="active",new_value="inactive"); db.session.commit(); flash("Item deactivated","success")
+    try: p.is_active = False; p.status = "Inactive"; log_audit("Deactivated","InventoryPart",p.id); db.session.commit(); flash("Deactivated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("inventory_list"))
 
@@ -3172,7 +2903,7 @@ def inventory_deactivate(part_id):
 @role_required("ADMIN","MANAGER","SUPERVISOR")
 def inventory_activate(part_id):
     p = get_or_404(InventoryPart, part_id)
-    try: p.is_active = True; p.status = "Active"; log_audit("Inventory Item Activated","InventoryPart",p.id,old_value="inactive",new_value="active"); db.session.commit(); flash("Item activated","success")
+    try: p.is_active = True; p.status = "Active"; log_audit("Activated","InventoryPart",p.id); db.session.commit(); flash("Activated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("inventory_list"))
 
@@ -3182,23 +2913,20 @@ def inventory_stock_in(part_id):
     p = get_or_404(InventoryPart, part_id)
     if request.method == "POST":
         try:
-            qty = request.form.get("quantity", type=float) or 0
-            notes = (request.form.get("notes") or "").strip(); uc = request.form.get("unit_cost", type=float)
-            if qty <= 0: flash("Quantity must be > 0","danger"); return redirect(url_for("inventory_stock_in", part_id=p.id))
+            qty = request.form.get("quantity", type=float) or 0; notes = (request.form.get("notes") or "").strip(); uc = request.form.get("unit_cost", type=float)
+            if qty <= 0: flash("Qty > 0","danger"); return redirect(url_for("inventory_stock_in", part_id=p.id))
             prev = p.quantity or 0; new_qty = prev + qty; p.quantity = new_qty
             if uc is not None and uc > 0: p.unit_cost = uc
-            log_stock_history(p, "IN", qty, prev, new_qty, notes=notes or "Stock In", unit_cost=uc)
-            log_audit("Stock In","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            log_stock_history(p, "IN", qty, prev, new_qty, notes=notes or "Stock In", unit_cost=uc); log_audit("Stock In","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
             db.session.commit(); flash("✅ Stock added","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Stock In</span> — ' + str(p.part_name) + '</h1><p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Stock In — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-4 mb-3"><label class="form-label">Quantity to Add *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
+        '<div class="col-md-4 mb-3"><label class="form-label">Qty to Add *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
         '<div class="col-md-4 mb-3"><label class="form-label">Unit Cost (optional)</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost" value="' + str(p.unit_cost or "") + '"></div>'
-        '<div class="col-md-4 mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes" placeholder="e.g. Purchase from supplier"></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary" style="background:var(--success);"><i class="fas fa-plus"></i> Add Stock</button></div></div></form></div>')
+        '<div class="col-md-4 mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes"></div>'
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--success);">Add Stock</button></div></div></form></div>')
     return page("Stock In", c)
 
 @app.route("/inventory/<int:part_id>/stock-out", methods=["GET","POST"])
@@ -3208,21 +2936,19 @@ def inventory_stock_out(part_id):
     if request.method == "POST":
         try:
             qty = request.form.get("quantity", type=float) or 0; notes = (request.form.get("notes") or "").strip()
-            if qty <= 0: flash("Quantity must be > 0","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
+            if qty <= 0: flash("Qty > 0","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
             prev = p.quantity or 0
-            if qty > prev: flash("Not enough stock available (only " + str(prev) + " " + str(p.unit or "pcs") + ").","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
+            if qty > prev: flash("Only " + str(prev) + " available","danger"); return redirect(url_for("inventory_stock_out", part_id=p.id))
             new_qty = prev - qty; p.quantity = new_qty
-            log_stock_history(p, "OUT", qty, prev, new_qty, notes=notes or "Stock Out")
-            log_audit("Stock Out","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            log_stock_history(p, "OUT", qty, prev, new_qty, notes=notes or "Stock Out"); log_audit("Stock Out","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
             db.session.commit(); flash("✅ Stock removed","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-minus-circle"></i> <span>Stock Out</span> — ' + str(p.part_name) + '</h1><p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Stock Out — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-4 mb-3"><label class="form-label">Quantity to Remove *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
-        '<div class="col-md-8 mb-3"><label class="form-label">Notes / Reason</label><input type="text" class="form-control" name="notes" placeholder="e.g. Used on WO-..."></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary" style="background:var(--warning);"><i class="fas fa-minus"></i> Remove Stock</button></div></div></form></div>')
+        '<div class="col-md-4 mb-3"><label class="form-label">Qty to Remove *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
+        '<div class="col-md-8 mb-3"><label class="form-label">Notes / Reason</label><input type="text" class="form-control" name="notes"></div>'
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--warning);">Remove Stock</button></div></div></form></div>')
     return page("Stock Out", c)
 
 @app.route("/inventory/<int:part_id>/adjust", methods=["GET","POST"])
@@ -3232,21 +2958,19 @@ def inventory_adjust(part_id):
     if request.method == "POST":
         try:
             new_qty = request.form.get("new_quantity", type=float); notes = (request.form.get("notes") or "").strip()
-            if new_qty is None or new_qty < 0: flash("New quantity must be >= 0","danger"); return redirect(url_for("inventory_adjust", part_id=p.id))
+            if new_qty is None or new_qty < 0: flash("New qty must be >= 0","danger"); return redirect(url_for("inventory_adjust", part_id=p.id))
             prev = p.quantity or 0
-            if new_qty == prev: flash("No change made","info"); return redirect(url_for("inventory_list"))
+            if new_qty == prev: flash("No change","info"); return redirect(url_for("inventory_list"))
             p.quantity = new_qty
-            log_stock_history(p, "ADJUST", new_qty - prev, prev, new_qty, notes=notes or "Manual adjustment")
-            log_audit("Stock Adjust","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
-            db.session.commit(); flash("✅ Stock adjusted","success"); return redirect(url_for("inventory_list"))
+            log_stock_history(p, "ADJUST", new_qty - prev, prev, new_qty, notes=notes or "Adjustment"); log_audit("Adjust","InventoryPart",p.id,old_value=str(prev),new_value=str(new_qty))
+            db.session.commit(); flash("✅ Adjusted","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-sliders-h"></i> <span>Adjust Stock</span> — ' + str(p.part_name) + '</h1><p>Current stock: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Adjust Stock — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-4 mb-3"><label class="form-label">New Quantity (exact) *</label><input type="number" step="0.01" min="0" class="form-control" name="new_quantity" value="' + str(p.quantity or 0) + '" required autofocus></div>'
-        '<div class="col-md-8 mb-3"><label class="form-label">Reason</label><input type="text" class="form-control" name="notes" placeholder="e.g. Physical count reconciliation"></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary" style="background:var(--info);"><i class="fas fa-save"></i> Save Adjustment</button></div></div></form></div>')
+        '<div class="col-md-4 mb-3"><label class="form-label">New Quantity *</label><input type="number" step="0.01" min="0" class="form-control" name="new_quantity" value="' + str(p.quantity or 0) + '" required autofocus></div>'
+        '<div class="col-md-8 mb-3"><label class="form-label">Reason</label><input type="text" class="form-control" name="notes"></div>'
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--info);">Save</button></div></div></form></div>')
     return page("Adjust Stock", c)
 
 @app.route("/inventory/<int:part_id>/history")
@@ -3262,12 +2986,9 @@ def inventory_history(part_id):
             '<td><span class="badge badge-' + act_color + '">' + str(h.action) + '</span>' + wo_link + '</td>'
             '<td>' + str(h.quantity) + '</td><td>' + str(h.previous_qty) + '</td><td>' + str(h.new_qty) + '</td><td>' + str(h.unit or "") + '</td>'
             '<td>' + str((h.user.full_name or h.user.username) if h.user else "System") + '</td><td>' + str(h.notes or "") + '</td></tr>')
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-history"></i> <span>Stock History</span> — ' + str(p.part_name) + '</h1>'
-        '<p>Category: ' + str(p.category or "—") + ' · Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
-        '<div class="card"><div style="overflow-x:auto;"><table class="table">'
-        '<thead><tr><th>Date</th><th>Action</th><th>Qty</th><th>Prev</th><th>New</th><th>Unit</th><th>By</th><th>Notes</th></tr></thead>'
-        '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:2rem;">No stock history yet.</td></tr>') + '</tbody></table></div></div>')
+    content = ('<div class="page-header"><div class="page-title"><h1>Stock History — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
+        '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Date</th><th>Action</th><th>Qty</th><th>Prev</th><th>New</th><th>Unit</th><th>By</th><th>Notes</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;padding:2rem;">No history.</td></tr>') + '</tbody></table></div></div>')
     return page("Stock History", content)
 
 def can_parts(wo): return (current_user.role in ["MANAGER","ADMIN"] or (current_user.role in STAFF_ROLES and current_user.id == wo.assigned_to_id))
@@ -3280,8 +3001,7 @@ def workorder_part_add(wo_id):
     if wo.status not in ["Assigned","In Progress"]: flash("Cannot add parts at this stage","warning"); return redirect(url_for("workorder_detail", wo_id=wo.id))
     if request.method == "POST":
         try:
-            pid = request.form.get("part_id", type=int); qty = request.form.get("quantity", type=float); uc = request.form.get("unit_cost", type=float)
-            notes = (request.form.get("notes") or "").strip()
+            pid = request.form.get("part_id", type=int); qty = request.form.get("quantity", type=float); uc = request.form.get("unit_cost", type=float); notes = (request.form.get("notes") or "").strip()
             part = get_one(InventoryPart, pid)
             if not part: flash("Select valid part","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
             if not qty or qty <= 0: flash("Qty > 0","danger"); return redirect(url_for("workorder_part_add", wo_id=wo.id))
@@ -3289,8 +3009,7 @@ def workorder_part_add(wo_id):
             if uc is None or uc < 0: uc = part.unit_cost or 0
             prev = part.quantity or 0; new_qty = prev - qty
             wop = WorkOrderPart(work_order_id=wo.id, part_id=part.id, quantity=qty, unit_cost=uc, notes=notes)
-            part.quantity = new_qty
-            db.session.add(wop)
+            part.quantity = new_qty; db.session.add(wop)
             log_stock_history(part, "USE", qty, prev, new_qty, notes=notes or ("Used on WO " + str(wo.work_order_no)), work_order_id=wo.id)
             log_audit("Part Used","WorkOrder",wo.id,new_value=str(part.part_name) + " x " + str(qty))
             db.session.commit(); flash("✅ Part recorded","success"); return redirect(url_for("workorder_detail", wo_id=wo.id))
@@ -3303,14 +3022,14 @@ def workorder_part_add(wo_id):
         po += '<optgroup label="' + cat + '">'
         for p in by_cat[cat]: po += '<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ' ' + str(p.unit or "pcs") + ')</option>'
         po += '</optgroup>'
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus"></i> <span>Add Part / Material</span> — WO ' + str(wo.work_order_no) + '</h1></div>'
-         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("workorder_detail", wo_id=wo.id) + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Add Part — WO ' + str(wo.work_order_no) + '</h1></div>'
+         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("workorder_detail", wo_id=wo.id) + '">Back</a></div>'
          '<div class="card"><form method="post"><div class="row">'
-         '<div class="col-md-6 mb-3"><label class="form-label">Item / Part / Material *</label><select class="form-select" name="part_id" required>' + po + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Item *</label><select class="form-select" name="part_id" required>' + po + '</select></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Quantity *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
-         '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2" placeholder="Where/how it was used"></textarea></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Add &amp; Deduct Stock</button></div></div></form></div>')
+         '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2"></textarea></div>'
+         '<div class="col-12"><button type="submit" class="btn-primary">Add &amp; Deduct</button></div></div></form></div>')
     return page("Add Part", c)
 
 @app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
@@ -3326,9 +3045,8 @@ def workorder_part_remove(wo_id, part_id):
         if part:
             prev = part.quantity or 0; new_qty = prev + (wop.quantity or 0); part.quantity = new_qty
             log_stock_history(part, "RETURN", wop.quantity or 0, prev, new_qty, notes="Returned from WO " + str(wo.work_order_no), work_order_id=wo.id)
-        db.session.delete(wop)
-        log_audit("Part Removed","WorkOrder",wo.id,old_value=str(part.part_name if part else "?"))
-        db.session.commit(); flash("Part returned to stock","success")
+        db.session.delete(wop); log_audit("Part Removed","WorkOrder",wo.id)
+        db.session.commit(); flash("Returned to stock","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo.id))
 
@@ -3343,15 +3061,13 @@ def api_unread():
 @app.route("/notifications")
 @login_required
 def notifications():
-    ns = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(100).all()
-    rows = []
+    ns = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(100).all(); rows = []
     for n in ns:
-        cls = "" if n.is_read else "table-warning"
-        link = n.link or "#"
+        cls = "" if n.is_read else "table-warning"; link = n.link or "#"
         ra = '<span style="color:var(--success);">✓</span>' if n.is_read else '<a class="btn-primary" href="/notifications/mark-read/' + str(n.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Read</a>'
         rows.append('<tr class="' + cls + '"><td><a href="' + link + '" style="color:var(--rori-gold);font-weight:600;">' + str(n.title) + '</a></td><td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td><td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-bell"></i> <span>Notifications</span></h1></div></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1>Notifications</h1></div></div>'
+         '<div class="card"><table class="table"><thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
     return page("Notifications", c)
 
 @app.route("/notifications/mark-read/<int:n_id>", methods=["GET","POST"])
@@ -3366,7 +3082,7 @@ def notification_mark_read(n_id):
     except Exception as e: flash("Error: " + str(e),"danger")
     return redirect(url_for("notifications"))
 
-# ══════════════════════════════════════════ AREAS
+# ══════════════════════════════════════════ AREAS / ROOMS / OTHER
 def _area_dept_label(a):
     d = (a.department or "").strip() if a.department else ""
     if not d or d.lower() in ("unknown", "n/a", "none", "-"): return "Not Assigned"
@@ -3407,23 +3123,17 @@ def _area_search(a, q):
 @app.route("/areas")
 @role_required("ADMIN","MANAGER")
 def areas_list():
-    q = (request.args.get("q") or "").strip()
-    mode = (request.args.get("filter") or "all").strip()
-    dept_filter = (request.args.get("dept") or "").strip()
-    show_inactive = (request.args.get("show_inactive") or "").strip() == "1"
+    q = (request.args.get("q") or "").strip(); mode = (request.args.get("filter") or "all").strip(); dept_filter = (request.args.get("dept") or "").strip(); show_inactive = (request.args.get("show_inactive") or "").strip() == "1"
     base_q = Area.query
     if not show_inactive: base_q = base_q.filter((Area.is_active == True) | (Area.is_active == None))
-    all_areas = base_q.order_by(Area.name).all()
-    stats = _area_req_stats()
+    all_areas = base_q.order_by(Area.name).all(); stats = _area_req_stats()
     dept_set = sorted({_area_dept_label(a) for a in Area.query.all()})
-    total_areas = len(all_areas)
-    areas_with_active = 0; total_requests = 0; total_completed = 0
+    total_areas = len(all_areas); areas_with_active = 0; total_requests = 0; total_completed = 0
     for a in all_areas:
         s = stats.get(a.id)
         if s and s["open"] > 0: areas_with_active += 1
         if s: total_requests += s["total"]; total_completed += s["completed"]
     areas_without_active = total_areas - areas_with_active
-    open_work_orders = (WorkOrder.query.join(MaintenanceRequest, WorkOrder.request_id == MaintenanceRequest.id).filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False, WorkOrder.status.in_(["Pending","Assigned","In Progress"])).count())
     visible = []
     for a in all_areas:
         s = stats.get(a.id)
@@ -3437,47 +3147,36 @@ def areas_list():
     cards = []
     for a, s in visible:
         s = s or {"total":0,"open":0,"in_progress":0,"completed":0,"new_24h":0,"last_date":None}
-        dept = _area_dept_label(a)
-        st_label, st_class = _area_status(a, s)
+        dept = _area_dept_label(a); st_label, st_class = _area_status(a, s)
         st_color = {"success":"var(--success)","warning":"var(--warning)","info":"var(--info)","secondary":"var(--text-secondary)"}.get(st_class, "var(--text-secondary)")
         is_active = (a.is_active is not False)
         new_badge = '<div class="area-inactive-badge">INACTIVE</div>' if not is_active else ('<div class="area-new-badge"><i class="fas fa-bell"></i> NEW (' + str(s.get("new_24h",0)) + ')</div>' if s.get("new_24h", 0) > 0 else "")
         last_dt = s.get("last_date"); last_str = last_dt.strftime("%Y-%m-%d %H:%M") if last_dt else "—"
-        cards.append('<div class="area-card' + ("" if is_active else " inactive") + '">' + new_badge
-            + '<div class="area-card-header"><div class="area-card-name">' + str(a.name) + '</div><div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div></div>'
-            + '<div class="area-stat-grid">'
-            + '<div class="area-stat"><div class="area-stat-val">' + str(s["total"]) + '</div><div class="area-stat-lbl">Total</div></div>'
-            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--warning)">' + str(s["open"]) + '</div><div class="area-stat-lbl">Open</div></div>'
-            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--info)">' + str(s["in_progress"]) + '</div><div class="area-stat-lbl">In Progress</div></div>'
-            + '<div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Completed</div></div></div>'
+        cards.append('<div class="area-card' + ("" if is_active else " inactive") + '">' + new_badge + '<div class="area-card-header"><div class="area-card-name">' + str(a.name) + '</div><div class="area-card-dept"><i class="fas fa-building"></i> ' + str(dept) + '</div></div>'
+            + '<div class="area-stat-grid"><div class="area-stat"><div class="area-stat-val">' + str(s["total"]) + '</div><div class="area-stat-lbl">Total</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--warning)">' + str(s["open"]) + '</div><div class="area-stat-lbl">Open</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--info)">' + str(s["in_progress"]) + '</div><div class="area-stat-lbl">In Prog</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Done</div></div></div>'
             + '<div class="area-status-row" style="color:' + st_color + '"><i class="fas fa-circle" style="font-size:.55rem"></i> <span>' + st_label + '</span></div>'
             + '<div class="area-last-row"><i class="fas fa-clock"></i> Last: ' + last_str + '</div>'
-            + '<div class="area-card-actions">'
-            + '<a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-eye"></i> View</a>'
-            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i></a>'
-            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;"><i class="fas fa-ban"></i></button></form>' if is_active else '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;"><i class="fas fa-undo"></i></button></form>')
+            + '<div class="area-card-actions"><a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '">View</a>'
+            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '">Edit</a>'
+            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;">Off</button></form>' if is_active else '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;">On</button></form>')
             + '</div></div>')
-    cards_html = "".join(cards) if cards else '<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match the current filter.</p></div>'
+    cards_html = "".join(cards) if cards else '<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match.</p></div>'
     dept_options = '<option value="">All Departments</option>' + "".join('<option value="' + d + '"' + (' selected' if dept_filter == d else '') + '>' + d + '</option>' for d in dept_set)
     def _sel(m): return ' selected' if mode == m else ''
-    filter_options = ('<option value="all"' + _sel("all") + '>All Areas</option><option value="active"' + _sel("active") + '>Has Active Request</option><option value="no_active"' + _sel("no_active") + '>No Active Request</option><option value="in_progress"' + _sel("in_progress") + '>In Progress</option><option value="completed"' + _sel("completed") + '>All Completed</option>')
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>Areas</span> &amp; Maintenance</h1><p>Rori Hotel | Engineering &amp; Maintenance Area Management</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("area_add") + '" class="btn-primary"><i class="fas fa-plus"></i> Add Area</a></div></div>'
-        '<div class="kpi-mini">'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas with Active Requests</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Areas without Active</div><div class="kpi-mini-value" style="color:var(--success)">' + str(areas_without_active) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Maintenance Requests</div><div class="kpi-mini-value">' + str(total_requests) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Open Work Orders</div><div class="kpi-mini-value" style="color:var(--info)">' + str(open_work_orders) + '</div></div>'
-        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Completed Requests</div><div class="kpi-mini-value" style="color:var(--success)">' + str(total_completed) + '</div></div></div>'
-        + '<form method="get" class="area-toolbar"><input type="text" class="form-control" name="q" placeholder="Search area, department..." value="' + str(q) + '">'
-        + '<select class="form-select" name="filter">' + filter_options + '</select>'
-        + '<select class="form-select" name="dept">' + dept_options + '</select>'
-        + '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;white-space:nowrap;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
-        + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Apply</button>'
-        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
+    filter_options = ('<option value="all"' + _sel("all") + '>All Areas</option><option value="active"' + _sel("active") + '>Has Active</option><option value="no_active"' + _sel("no_active") + '>No Active</option><option value="in_progress"' + _sel("in_progress") + '>In Progress</option><option value="completed"' + _sel("completed") + '>All Completed</option>')
+    content = ('<div class="page-header"><div class="page-title"><h1>Areas &amp; Maintenance</h1></div><div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("area_add") + '" class="btn-primary">Add Area</a></div></div>'
+        '<div class="kpi-mini"><div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">With Active</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Without Active</div><div class="kpi-mini-value" style="color:var(--success)">' + str(areas_without_active) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Total Requests</div><div class="kpi-mini-value">' + str(total_requests) + '</div></div>'
+        + '<div class="kpi-mini-card"><div class="kpi-mini-label">Completed</div><div class="kpi-mini-value" style="color:var(--success)">' + str(total_completed) + '</div></div></div>'
+        + '<form method="get" class="area-toolbar"><input type="text" class="form-control" name="q" placeholder="Search..." value="' + str(q) + '">'
+        + '<select class="form-select" name="filter">' + filter_options + '</select><select class="form-select" name="dept">' + dept_options + '</select>'
+        + '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
+        + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;">Apply</button>'
+        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;">Reset</a></form>'
         + '<div class="area-grid">' + cards_html + '</div>')
-    return page("Areas & Maintenance", content)
+    return page("Areas", content)
 
 @app.route("/areas/add", methods=["GET","POST"])
 @role_required("ADMIN","MANAGER")
@@ -3485,23 +3184,20 @@ def area_add():
     depts = Department.query.order_by(Department.name).all()
     if request.method == "POST":
         name = (request.form.get("name") or "").strip(); dept = (request.form.get("department") or "").strip(); desc = (request.form.get("description") or "").strip()
-        if not name: flash("Area name is required","danger"); return redirect(url_for("area_add"))
-        if Area.query.filter(func.lower(Area.name) == name.lower()).first(): flash("An area with this name already exists.","warning"); return redirect(url_for("area_add"))
+        if not name: flash("Area name required","danger"); return redirect(url_for("area_add"))
+        if Area.query.filter(func.lower(Area.name) == name.lower()).first(): flash("Exists","warning"); return redirect(url_for("area_add"))
         try:
             a = Area(name=name, department=(None if dept in ("", "Not Assigned") else dept), description=desc, status="Active", is_active=True)
-            db.session.add(a); db.session.flush()
-            log_audit("Area Created","Area",a.id,new_value=name)
-            db.session.commit(); flash("✅ Area added successfully.","success"); return redirect(url_for("areas_list"))
+            db.session.add(a); db.session.flush(); log_audit("Area Created","Area",a.id,new_value=name); db.session.commit()
+            flash("✅ Area added","success"); return redirect(url_for("areas_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d.name + '">' + d.name + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Area</h1><p>Create a new Area / Location for the hotel</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Add Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" required autofocus></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + dept_opts + '</select></div>'
-        '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="3"></textarea></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Area</button></div></div></form></div>')
+        '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3"></textarea></div>'
+        '<div class="col-12"><button type="submit" class="btn-primary">Save Area</button></div></div></form></div>')
     return page("Add Area", content)
 
 @app.route("/areas/<int:area_id>")
@@ -3519,25 +3215,13 @@ def area_detail(area_id):
         if r.assigned_to: staff_set.add(r.assigned_to.full_name or r.assigned_to.username)
     st_label, st_class = _area_status(a, {"total": counts["total"], "open": counts["open"], "in_progress": counts["in_progress"], "completed": counts["completed"]})
     st_color = {"success":"var(--success)","warning":"var(--warning)","info":"var(--info)","secondary":"var(--text-secondary)"}.get(st_class, "var(--text-secondary)")
-    dept_label = _area_dept_label(a)
-    rows = []
+    dept_label = _area_dept_label(a); rows = []
     for r in reqs:
         bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.category.name if r.category else "—") + '</td><td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td><td>' + str(r.assigned_to.full_name if r.assigned_to else "Unassigned") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td></tr>')
-    table_html = '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Item</th><th>Category</th><th>Requested By</th><th>Assigned To</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:2rem;">No requests for this area.</td></tr>') + '</tbody></table></div>'
-    def chip(val, label, color):
-        return '<div style="background:var(--bg-secondary);padding:.75rem;border-radius:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-size:1.3rem;font-weight:800;color:' + color + ';">' + str(val) + '</div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div></div>'
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-map-marked-alt"></i> <span>' + str(a.name) + '</span></h1><p><i class="fas fa-building"></i> ' + str(dept_label) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;"><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '"><i class="fas fa-arrow-left"></i> Back</a>'
-        '<a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '"><i class="fas fa-edit"></i> Edit Area</a></div></div>'
-        + '<div class="card" style="border-left:3px solid ' + st_color + ';"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Current Status</div><div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div>'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Department</div><div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div>'
-        + '<div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Active Staff</div><div style="font-size:1.15rem;font-weight:800;color:var(--text-primary);">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div></div></div>'
-        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-chart-simple"></i> Status Breakdown</h5><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;">'
-        + chip(counts["pending"], "Pending", "var(--warning)") + chip(counts["approved"], "Approved", "var(--info)") + chip(counts["assigned"], "Assigned", "var(--info)") + chip(counts["in_progress"], "In Progress", "var(--info)")
-        + chip(counts["completed"], "Completed", "var(--success)") + chip(counts["verified"], "Verified", "var(--success)") + chip(counts["closed"], "Closed", "var(--text-secondary)") + '</div></div>'
-        + '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-list"></i> Recent Requests</h5>' + table_html + '</div>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td><td>' + str(r.assigned_to.full_name if r.assigned_to else "Unassigned") + '</td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td></tr>')
+    content = ('<div class="page-header"><div class="page-title"><h1>' + str(a.name) + '</h1><p>' + str(dept_label) + '</p></div><div style="display:flex;gap:.6rem;"><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '">Back</a><a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '">Edit</a></div></div>'
+        + '<div class="card" style="border-left:3px solid ' + st_color + ';"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:1rem;"><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Status</div><div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Dept</div><div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Staff</div><div style="font-size:1.15rem;font-weight:800;">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div></div></div>'
+        + '<div class="card"><h5 style="color:var(--rori-gold);">Recent Requests</h5><table class="table"><thead><tr><th>Request #</th><th>Item</th><th>Requested</th><th>Assigned</th><th>Status</th><th>Created</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="6" style="text-align:center;">No requests.</td></tr>') + '</tbody></table></div>')
     return page("Area: " + str(a.name), content)
 
 @app.route("/areas/<int:area_id>/edit", methods=["GET","POST"])
@@ -3547,39 +3231,30 @@ def area_edit(area_id):
     if request.method == "POST":
         old_name = a.name; old_dept = a.department
         new_name = (request.form.get("name") or "").strip(); new_dept = (request.form.get("department") or "").strip()
-        if not new_name: flash("Area name is required","danger"); return redirect(url_for("area_edit", area_id=a.id))
+        if not new_name: flash("Area name required","danger"); return redirect(url_for("area_edit", area_id=a.id))
         dup = Area.query.filter(func.lower(Area.name) == new_name.lower(), Area.id != a.id).first()
-        if dup: flash("Another area with this name already exists.","warning"); return redirect(url_for("area_edit", area_id=a.id))
-        a.name = new_name
-        a.department = None if new_dept in ("", "Not Assigned", "Unknown") else new_dept
-        a.status = (request.form.get("status") or a.status or "Active").strip()
-        a.is_active = (a.status == "Active")
-        a.description = (request.form.get("description") or "").strip()
-        log_audit("Area Updated","Area",a.id,old_value=str(old_name)+" / "+str(old_dept),new_value=str(a.name)+" / "+str(a.department))
-        db.session.commit(); flash("✅ Area updated","success"); return redirect(url_for("area_detail", area_id=a.id))
-    depts = [d.name for d in Department.query.order_by(Department.name).all()]
-    current = (a.department or "").strip()
+        if dup: flash("Exists","warning"); return redirect(url_for("area_edit", area_id=a.id))
+        a.name = new_name; a.department = None if new_dept in ("", "Not Assigned", "Unknown") else new_dept
+        a.status = (request.form.get("status") or a.status or "Active").strip(); a.is_active = (a.status == "Active"); a.description = (request.form.get("description") or "").strip()
+        log_audit("Area Updated","Area",a.id,old_value=str(old_name)+" / "+str(old_dept),new_value=str(a.name)+" / "+str(a.department)); db.session.commit()
+        flash("✅ Updated","success"); return redirect(url_for("area_detail", area_id=a.id))
+    depts = [d.name for d in Department.query.order_by(Department.name).all()]; current = (a.department or "").strip()
     if current and current not in depts and current.lower() != "unknown": depts = [current] + depts
     opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d + '"' + (' selected' if d == current else '') + '>' + d + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Area</h1><p>' + str(a.name) + '</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Edit Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
-        '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
+        '<div class="col-md-6 mb-3"><label class="form-label">Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if (a.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3">' + str(a.description or "") + '</textarea></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("area_detail", area_id=a.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary">Save</button></div></div></form></div>')
     return page("Edit Area", content)
 
 @app.route("/areas/<int:area_id>/deactivate", methods=["POST"])
 @role_required("ADMIN","MANAGER")
 def area_deactivate(area_id):
     a = get_or_404(Area, area_id)
-    try:
-        a.is_active = False; a.status = "Inactive"
-        log_audit("Area Deactivated","Area",a.id,old_value="active",new_value="inactive")
-        db.session.commit(); flash("Area deactivated","success")
+    try: a.is_active = False; a.status = "Inactive"; log_audit("Area Deactivated","Area",a.id); db.session.commit(); flash("Deactivated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("areas_list"))
 
@@ -3587,20 +3262,14 @@ def area_deactivate(area_id):
 @role_required("ADMIN","MANAGER")
 def area_activate(area_id):
     a = get_or_404(Area, area_id)
-    try:
-        a.is_active = True; a.status = "Active"
-        log_audit("Area Activated","Area",a.id,old_value="inactive",new_value="active")
-        db.session.commit(); flash("Area activated","success")
+    try: a.is_active = True; a.status = "Active"; log_audit("Area Activated","Area",a.id); db.session.commit(); flash("Activated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("areas_list"))
 
-# ══════════════════════════════════════════ ROOMS
 @app.route("/rooms")
 @role_required("ADMIN","MANAGER")
 def rooms_list():
-    q = (request.args.get("q") or "").strip()
-    floor_f = request.args.get("floor", type=int)
-    status_f = (request.args.get("status") or "").strip()
+    q = (request.args.get("q") or "").strip(); floor_f = request.args.get("floor", type=int); status_f = (request.args.get("status") or "").strip()
     base_q = Room.query
     if floor_f: base_q = base_q.filter(Room.floor == floor_f)
     if status_f: base_q = base_q.filter(Room.status == status_f)
@@ -3616,63 +3285,46 @@ def rooms_list():
             if r.status == "In Progress": s["in_progress"] += 1
             if r.status in ("Completed","Verified","Closed"): s["completed"] += 1
             if r.created_at and (s["last_date"] is None or r.created_at > s["last_date"]): s["last_date"] = r.created_at
-    all_rooms = Room.query.all()
-    total_rooms = len(all_rooms)
-    occupied = sum(1 for r in all_rooms if r.status == "Occupied")
-    available = sum(1 for r in all_rooms if r.status == "Available")
-    maintenance = sum(1 for r in all_rooms if r.status == "Maintenance")
-    all_room_ids = [r.id for r in all_rooms]
-    open_reqs = 0
-    if all_room_ids:
-        open_reqs = MaintenanceRequest.query.filter(MaintenanceRequest.room_id.in_(all_room_ids)).filter_by(is_deleted=False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count()
+    all_rooms = Room.query.all(); total_rooms = len(all_rooms)
+    occupied = sum(1 for r in all_rooms if r.status == "Occupied"); available = sum(1 for r in all_rooms if r.status == "Available"); maintenance = sum(1 for r in all_rooms if r.status == "Maintenance")
+    all_room_ids = [r.id for r in all_rooms]; open_reqs = 0
+    if all_room_ids: open_reqs = MaintenanceRequest.query.filter(MaintenanceRequest.room_id.in_(all_room_ids)).filter_by(is_deleted=False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count()
     cards = []
     for r in rooms:
         s = stats.get(r.id) or {"total":0,"open":0,"in_progress":0,"completed":0,"last_date":None}
         status_class = {"Available":"green","Occupied":"blue","Reserved":"gold","Maintenance":"orange","Out of Service":"red"}.get(r.status, "gold")
         last = s["last_date"].strftime("%Y-%m-%d") if s["last_date"] else "—"
-        open_badge = ('<span class="rpro-chip orange"><i class="fas fa-tools"></i> ' + str(s["open"]) + ' open</span>' if s["open"] else '<span class="rpro-chip green"><i class="fas fa-check"></i> Clear</span>')
-        cards.append('<div class="rpro-room-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-            '<div><div class="rpro-room-num">' + str(r.room_number) + '</div><div class="rpro-room-floor"><i class="fas fa-layer-group"></i> Floor ' + str(r.floor) + '</div></div>'
-            '<span class="rpro-chip ' + status_class + '">' + str(r.status) + '</span></div>'
-            '<div class="rpro-room-stats">' + open_badge
-            + '<span class="rpro-chip"><i class="fas fa-list"></i> ' + str(s["total"]) + ' total</span>'
-            + ('<span class="rpro-chip blue"><i class="fas fa-spinner"></i> ' + str(s["in_progress"]) + '</span>' if s["in_progress"] else "") + '</div>'
-            '<div style="font-size:.7rem;color:var(--text-secondary);margin-top:.6rem;"><i class="fas fa-clock"></i> Last: ' + last + '</div>'
-            '<a href="' + url_for("requests_list") + '?room_id=' + str(r.id) + '" class="btn-primary" style="margin-top:.75rem;width:100%;justify-content:center;padding:.45rem;font-size:.8rem;"><i class="fas fa-eye"></i> View Requests</a></div>')
+        open_badge = ('<span class="rpro-chip orange">' + str(s["open"]) + ' open</span>' if s["open"] else '<span class="rpro-chip green">Clear</span>')
+        cards.append('<div class="rpro-room-card"><div style="display:flex;justify-content:space-between;"><div><div class="rpro-room-num">' + str(r.room_number) + '</div><div class="rpro-room-floor">Floor ' + str(r.floor) + '</div></div><span class="rpro-chip ' + status_class + '">' + str(r.status) + '</span></div>'
+            '<div class="rpro-room-stats">' + open_badge + '<span class="rpro-chip">' + str(s["total"]) + ' total</span></div>'
+            '<a href="' + url_for("requests_list") + '?room_id=' + str(r.id) + '" class="btn-primary" style="margin-top:.75rem;width:100%;justify-content:center;padding:.45rem;font-size:.8rem;">View</a></div>')
     all_floors = sorted({r.floor for r in all_rooms})
     floor_opts = '<option value="">All Floors</option>' + "".join('<option value="' + str(f) + '"' + (' selected' if floor_f == f else '') + '>Floor ' + str(f) + '</option>' for f in all_floors)
     status_opts = '<option value="">All Statuses</option>' + "".join('<option value="' + s + '"' + (' selected' if status_f == s else '') + '>' + s + '</option>' for s in ROOM_STATUSES)
-    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-door-open"></i> <span>Rooms</span> Management</h1><p>Rori Hotel · ' + str(total_rooms) + ' rooms across ' + str(len(all_floors)) + ' floors (2F-5F)</p></div></div>'
-        '<div class="kpi-grid" style="margin-bottom:1.5rem;">'
-        '<div class="kpi-card"><div class="kpi-icon"><i class="fas fa-door-open"></i></div><div class="kpi-value">' + str(total_rooms) + '</div><div class="kpi-label">Total Rooms</div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Rooms</h1><p>' + str(total_rooms) + ' rooms · ' + str(len(all_floors)) + ' floors</p></div></div>'
+        '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-door-open"></i></div><div class="kpi-value">' + str(total_rooms) + '</div><div class="kpi-label">Total</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(available) + '</div><div class="kpi-label">Available</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--info)"><i class="fas fa-user-check"></i></div><div class="kpi-value">' + str(occupied) + '</div><div class="kpi-label">Occupied</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-tools"></i></div><div class="kpi-value">' + str(maintenance) + '</div><div class="kpi-label">Maintenance</div></div>'
-        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open Requests</div></div></div>'
-        '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Search room number..." value="' + q + '">'
+        '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open</div></div></div>'
+        '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Room #..." value="' + q + '">'
         '<select class="form-select" name="floor">' + floor_opts + '</select><select class="form-select" name="status">' + status_opts + '</select>'
-        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-filter"></i> Filter</button>'
-        '<a href="' + url_for("rooms_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
-        + ('<div class="rpro-room-grid">' + "".join(cards) + '</div>' if cards else '<div class="rpro-card" style="text-align:center;padding:3rem;"><i class="fas fa-search" style="font-size:2rem;color:var(--rori-gold);opacity:.5;"></i><p style="color:var(--text-secondary);margin-top:.75rem;">No rooms match your filters.</p></div>'))
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;">Filter</button></form>'
+        + ('<div class="rpro-room-grid">' + "".join(cards) + '</div>' if cards else '<div class="rpro-card" style="text-align:center;padding:3rem;">No rooms match.</div>'))
     return page("Rooms", content)
 
-# ══════════════════════════════════════════ OTHER PAGES
 @app.route("/employees")
 @role_required("ADMIN","MANAGER")
 def employees_list():
-    es = Employee.query.all()
-    rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td><td>' + str(e.department or "—") + '</td></tr>' for e in es)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-users"></i> <span>Employees</span></h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    es = Employee.query.all(); rows = "".join('<tr><td>' + str(e.id) + '</td><td>' + str(e.name) + '</td><td>' + str(e.job_title) + '</td><td>' + str(e.department or "—") + '</td></tr>' for e in es)
+    c = ('<div class="page-header"><div class="page-title"><h1>Employees</h1></div></div><div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Employees", c)
 
 @app.route("/admin/users")
 @role_required("ADMIN")
 def admin_users():
-    us = User.query.all()
-    rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name or u.username) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-cog"></i> <span>Users</span></h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
+    us = User.query.all(); rows = "".join('<tr><td>' + str(u.username) + '</td><td>' + str(u.full_name or u.username) + '</td><td>' + str(u.role) + '</td><td>' + str(u.department.name if u.department else "—") + '</td></tr>' for u in us)
+    c = ('<div class="page-header"><div class="page-title"><h1>Users</h1></div></div><div class="card"><table class="table"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Dept</th></tr></thead><tbody>' + rows + '</tbody></table></div>')
     return page("Users", c)
 
 @app.route("/admin/audit")
@@ -3680,8 +3332,7 @@ def admin_users():
 def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
     rows = "".join('<tr><td>' + str(l.user.full_name if l.user else "System") + '</td><td>' + str(l.action) + '</td><td>' + str(l.object_type or "") + '</td><td>' + (l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "") + '</td></tr>' for l in logs)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-history"></i> <span>Audit</span> Log</h1></div></div>'
-         '<div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>' + (rows if rows else '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);">No logs</td></tr>') + '</tbody></table></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1>Audit</h1></div></div><div class="card"><table class="table"><thead><tr><th>User</th><th>Action</th><th>Object</th><th>Date</th></tr></thead><tbody>' + (rows if rows else '<tr><td colspan="4" style="text-align:center;">No logs</td></tr>') + '</tbody></table></div>')
     return page("Audit", c)
 
 @app.route("/admin/backup")
@@ -3689,9 +3340,9 @@ def audit_logs():
 def backup_page():
     bs = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
     rows = "".join('<tr><td>' + str(b) + '</td></tr>' for b in bs)
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-database"></i> <span>Backups</span></h1></div></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Backups</h1></div></div>'
          '<form method="post" action="/admin/backup/now" style="margin-bottom:1.5rem;"><button class="btn-primary">Backup Now</button></form>'
-         '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>' + (rows if rows else '<tr><td style="text-align:center;color:var(--text-secondary);">None</td></tr>') + '</tbody></table></div>')
+         '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>' + (rows if rows else '<tr><td style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
     return page("Backups", c)
 
 @app.route("/admin/backup/now", methods=["GET","POST"])
@@ -3711,21 +3362,22 @@ def backup_now():
 @login_required
 def reports():
     base = MaintenanceRequest.query.filter_by(is_deleted=False)
-    total = base.count(); pending = base.filter_by(status="Pending").count()
-    completed = base.filter_by(status="Completed").count(); verified = base.filter_by(status="Verified").count()
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-chart-bar"></i> <span>Reports</span></h1></div></div>'
+    total = base.count(); pending = base.filter_by(status="Pending").count(); completed = base.filter_by(status="Completed").count(); verified = base.filter_by(status="Verified").count()
+    c = ('<div class="page-header"><div class="page-title"><h1>Reports</h1></div></div>'
          '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Completed</div></div>'
          '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-double"></i></div><div class="kpi-value">' + str(verified) + '</div><div class="kpi-label">Verified</div></div></div>'
-         '<div class="card"><h5 style="color:var(--rori-gold);"><i class="fas fa-file-alt"></i> Need full detail?</h5>'
-         '<p style="color:var(--text-secondary);font-size:.9rem;margin-top:.5rem;">Open the <a href="' + url_for("detailed_report") + '" style="color:var(--rori-gold);font-weight:700;">Detailed Report</a> for the complete workflow: Request → Assignment → Work → Materials → Verification → Closure.</p></div>')
+         '<div class="card"><h5 style="color:var(--rori-gold);">Full detail?</h5><p style="margin-top:.5rem;">Open <a href="' + url_for("detailed_report") + '" style="color:var(--rori-gold);font-weight:700;">Detailed Report</a>.</p></div>')
     return page("Reports", c)
 
 @app.route("/debug")
 def debug():
     la = Area.query.filter_by(name=LAUNDRY_AREA_NAME).first()
     return jsonify({
+        "database_backend": db.engine.dialect.name,
+        "database_url_set": bool(os.environ.get("DATABASE_URL")),
+        "WARNING_if_sqlite": "SQLite on Render will LOSE DATA on every deploy. Set DATABASE_URL to PostgreSQL!" if db.engine.dialect.name == "sqlite" else "OK - Using persistent DB",
         "users": User.query.count(), "departments": Department.query.count(),
         "requests_total_incl_archived": MaintenanceRequest.query.count(),
         "requests_active": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
@@ -3733,19 +3385,14 @@ def debug():
         "work_orders": WorkOrder.query.count(),
         "work_orders_completed": WorkOrder.query.filter_by(status="Completed").count(),
         "work_orders_verified": WorkOrder.query.filter_by(status="Verified").count(),
-        "work_orders_with_root_cause": WorkOrder.query.filter(WorkOrder.root_cause.isnot(None)).count(),
-        "work_orders_with_recommendation": WorkOrder.query.filter(WorkOrder.recommendation.isnot(None)).count(),
+        "work_order_parts_total": WorkOrderPart.query.count(),
         "notifications": Notification.query.count(),
         "rooms_total": Room.query.count(),
-        "areas_total": Area.query.count(), "areas_active": Area.query.filter_by(is_active=True).count(),
-        "working_items_total": WorkingItem.query.count(), "working_items_active": WorkingItem.query.filter_by(is_active=True).count(),
+        "areas_total": Area.query.count(),
+        "working_items_total": WorkingItem.query.count(),
         "inventory_total": InventoryPart.query.count(),
-        "inventory_by_category": {c: InventoryPart.query.filter_by(category=c).count() for c in INVENTORY_CATEGORIES},
         "inventory_stock_history": InventoryStockHistory.query.count(),
-        "work_order_parts_total": WorkOrderPart.query.count(),
-        "laundry_items_under_housekeeping": WorkingItem.query.filter_by(area_id=la.id).count() if la else 0,
         "marketing_manager_exists": bool(User.query.filter_by(username="yordanose").first()),
-        "it_items_count": WorkingItem.query.filter_by(department_id=(Department.query.filter_by(name="IT").first().id if Department.query.filter_by(name="IT").first() else -1)).count(),
         "note": "Read-only diagnostics. No data was modified.",
     })
 
@@ -3775,11 +3422,24 @@ def e500(e):
     return "<h1>500 Error</h1><pre>" + tb + "</pre>", 500
 
 with app.app_context():
+    print("="*60)
+    print("RORI HOTEL MAINTENANCE — STARTUP DIAGNOSTICS")
+    print("="*60)
+    print(f"Database backend: {db.engine.dialect.name}")
+    print(f"DATABASE_URL set: {bool(os.environ.get('DATABASE_URL'))}")
+    if db.engine.dialect.name == "sqlite":
+        print("⚠️  WARNING: SQLite detected!")
+        print("⚠️  On Render.com, SQLite is EPHEMERAL — data WILL be wiped on every deploy/restart.")
+        print("⚠️  Fix: Set DATABASE_URL env var to a PostgreSQL URL from Render dashboard.")
+    else:
+        print("✅ PostgreSQL detected — data will persist across deploys.")
+    print("="*60)
     ensure_database_schema()
     seed_data()
     fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
+    print("="*60)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
