@@ -25,11 +25,8 @@ os.makedirs(BACKUP_FOLDER, exist_ok=True)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
-# ══════════════════════════════════════════ DATABASE CONFIG — CRITICAL
-# On Render, SQLite files are EPHEMERAL. You MUST use PostgreSQL.
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL:
-    # Render gives "postgres://..." but SQLAlchemy needs "postgresql://..."
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
@@ -40,10 +37,7 @@ else:
     print("⚠️ Set DATABASE_URL environment variable to a PostgreSQL database to preserve data.")
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,
-    "pool_recycle": 280,
-}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 280}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -59,91 +53,133 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-RORI_ROOM_STRUCTURE = {
-    2: list(range(201, 226)),
-    3: list(range(301, 326)),
-    4: list(range(401, 426)),
-    5: list(range(501, 526)),
-}
+RORI_ROOM_STRUCTURE = {2: list(range(201, 226)), 3: list(range(301, 326)),
+                        4: list(range(401, 426)), 5: list(range(501, 526))}
 
 NEW_ITEMS_BY_DEPT = {
-    "Food & Beverage": [
-        "🪑 Table, Chair, Sofa", "🚪 Door / Lock / Handle", "💡 Lights / Switch / Socket",
+    "Food & Beverage": ["🪑 Table, Chair, Sofa", "🚪 Door / Lock / Handle", "💡 Lights / Switch / Socket",
         "❄️ AC / Fan", "🚰 Sink / Tap / Drainage", "🧊 Beverage Refrigerator / Display Cooler",
         "🍹 Bar Equipment", "☕ Coffee Machine", "🪟 Window / Curtain / Blind",
         "🧱 Floor / Wall / Ceiling", "🔌 Electrical Problems", "🚿 Water Leakage",
-        "🧯 Fire Extinguisher / Safety Equipment", "🏨 Restaurant / Bar / Dining Area Maintenance",
-    ],
-    "Kitchen": [
-        "🔥 Gas Stove / Electric Stove", "🍕 Oven", "🍗 Grill", "🍟 Deep Fryer",
+        "🧯 Fire Extinguisher / Safety Equipment", "🏨 Restaurant / Bar / Dining Area Maintenance"],
+    "Kitchen": ["🔥 Gas Stove / Electric Stove", "🍕 Oven", "🍗 Grill", "🍟 Deep Fryer",
         "♨️ Bain-Marie / Food Warmer", "🧊 Refrigerator", "❄️ Freezer",
         "🥩 Meat Slicer / Grinder", "🧼 Dishwasher", "💨 Exhaust Hood / Ventilation",
         "🚰 Kitchen Sink / Tap / Drainage", "🔌 Electrical Equipment", "💡 Kitchen Lights",
         "🪑 Kitchen Tables / Shelves", "🚪 Kitchen Doors", "🧯 Fire & Gas Safety Equipment",
-        "💧 Water Leakage", "🧱 Floor / Wall / Ceiling",
-    ],
-    "Security": [
-        "📹 CCTV Cameras", "🖥️ DVR/NVR", "🔐 Access Control", "🚪 Security Doors & Locks",
+        "💧 Water Leakage", "🧱 Floor / Wall / Ceiling"],
+    "Security": ["📹 CCTV Cameras", "🖥️ DVR/NVR", "🔐 Access Control", "🚪 Security Doors & Locks",
         "🚨 Alarm System", "🔥 Fire Alarm", "💡 Security Lighting", "⚡ Electrical",
         "📻 Walkie-Talkie / Communication", "🚧 Gate / Barrier", "🪟 Windows & Security Grills",
         "🔋 UPS / Backup Power", "🧯 Fire/Safety Equipment", "🪑 Security Desk/Chair/Furniture",
         "🏢 Security Office Maintenance", "🅿️ Parking-Area Security Equipment",
-        "🔌 Network Cables/Switches for CCTV/Access Control",
-    ],
-    "SPA": [
-        "🚿 Shower — Tap, Shower Head, Water Leakage", "🛁 Jacuzzi / Hot Tub — Pump, Heater, Water Circulation",
+        "🔌 Network Cables/Switches for CCTV/Access Control"],
+    "SPA": ["🚿 Shower — Tap, Shower Head, Water Leakage", "🛁 Jacuzzi / Hot Tub — Pump, Heater, Water Circulation",
         "♨️ Sauna — Heater, Temperature Control, Door", "💨 Steam Room — Steam Generator, Control, Ventilation",
         "❄️ AC / Air Conditioning", "💡 Lights / Switch / Socket", "🚰 Sink / Tap / Drainage",
         "🚪 Doors / Locks / Handles", "🪞 Mirror", "🪑 Massage Bed / Treatment Bed",
         "🛏️ Furniture / Sofa / Chair", "🧺 Towel Warmer / Laundry Equipment", "🔌 Electrical Equipment",
         "💧 Water Leakage / Plumbing", "🧱 Floor / Wall / Ceiling", "🎵 Sound System",
-        "🧯 Fire & Safety Equipment", "🏊 Pool-Related Equipment",
-    ],
-    "Marketing": [
-        "💡 Lights / Switch / Socket", "🖥️ Computer / Monitor", "🖨️ Printer / Scanner",
+        "🧯 Fire & Safety Equipment", "🏊 Pool-Related Equipment"],
+    "Marketing": ["💡 Lights / Switch / Socket", "🖥️ Computer / Monitor", "🖨️ Printer / Scanner",
         "📺 TV / Display Screen", "📸 Camera / Photography Equipment",
         "🎤 Microphone / Speaker / Sound System", "🌐 Internet / Wi-Fi / Network",
         "🔌 Electrical Equipment", "❄️ AC / Fan", "🚪 Door / Lock / Handle",
         "🪑 Desk / Chair / Office Furniture", "🪧 Signboard / Advertising Board",
-        "🖼️ Display / Poster Frames", "🏢 Marketing Office Maintenance",
-    ],
-    "IT": [
-        "💡 Lights / Switch / Socket", "🚪 Door / Lock / Handle", "🪟 Window / Curtain / Blind",
+        "🖼️ Display / Poster Frames", "🏢 Marketing Office Maintenance"],
+    "IT": ["💡 Lights / Switch / Socket", "🚪 Door / Lock / Handle", "🪟 Window / Curtain / Blind",
         "❄️ AC / Air Conditioning", "🌬️ Ventilation / Exhaust Fan", "🔌 Electrical Power / Wiring",
         "⚡ Electrical Panel / Breaker", "🔋 UPS Power Supply Area", "🧱 Floor / Wall / Ceiling",
         "💧 Water Leakage", "🚰 Sink / Tap / Drainage", "🔥 Fire Extinguisher / Safety Equipment",
         "🪑 Desk / Chair / Office Furniture", "🗄️ Cabinet / Shelf",
         "🏢 IT Office / Server Room Maintenance", "🧹 Cleaning / Preventive Maintenance",
-        "🌡️ Server Room Cooling / Temperature", "🛠️ General Civil / Plumbing Maintenance",
-    ],
+        "🌡️ Server Room Cooling / Temperature", "🛠️ General Civil / Plumbing Maintenance"],
 }
 
-LAUNDRY_ITEMS = [
-    "Washing Machine", "Dryer", "Ironing Machine / Press", "Sewing Machine",
+LAUNDRY_ITEMS = ["Washing Machine", "Dryer", "Ironing Machine / Press", "Sewing Machine",
     "Laundry Extractor / Spinner", "Steam Boiler / Steam System", "Steam Iron",
     "Water Supply / Tap / Pipe", "Drainage / Drain Pipe",
     "Electrical Panel / Socket / Switch", "Laundry Lights",
     "AC / Ventilation / Exhaust Fan", "Doors / Locks / Handles",
     "Laundry Tables / Shelves", "Fire & Safety Equipment",
-    "Power Supply / UPS", "Floor / Wall / Ceiling", "Water Leakage",
-]
+    "Power Supply / UPS", "Floor / Wall / Ceiling", "Water Leakage"]
 LAUNDRY_AREA_NAME = "Laundry Area"
 
+# ══════════════════════════════════════════ COMPLETE HOTEL LOCATIONS
 HOTEL_AREAS = [
+    # Existing Hotel-wide locations (preserved)
     "Main Hotel Entrance Gate", "VIP Parking Area", "Expansion Building Area",
     "Staff Gate Area", "Customer Restroom", "Fountain Area", "Garden Area",
     "Steward Area", "Water Tank Area", "Wastewater Drainage Area — የፍሳሽ ውሃ መስገጃ",
     "Generator Area", "Motor Parking Area", "New Compound Area",
     "Dukale Compound Area", "X-Ray Gate Area", "Main Site / General Hotel Area",
     "Kalicheral Kitchen Area",
+    # Farm & additional guest / operational areas
+    "Farm Area / የእርሻ አካባቢ", "Cella Coffee", "Lobby Bar", "Guest Room Area",
+    # Housekeeping-specific operational areas
+    "Housekeeping Office", "Housekeeping Store", "Linen Store",
+    "Staff Changing Room", "Staff Restroom", "Staff Canteen",
+    # Engineering / Maintenance support areas
+    "Engineering Workshop", "Maintenance Store", "Generator Room",
+    "Boiler / Plant Room", "Water Pump Area", "Sewage / Septic Area",
+    # F&B / Guest-service areas
+    "Kitchen Area", "Restaurant Area", "Bar Area", "Conference / Meeting Area",
+    # Recreation / Wellness
+    "Swimming Pool Area", "Pool Changing Room", "Pool Equipment Area", "Gym Area",
+    # General hotel circulation & safety
+    "Reception / Front Desk", "Lobby Area", "Corridor Area", "Staircase Area",
+    "Elevator Area", "Basement Area", "Roof / Rooftop Area", "Parking Area",
+    "Security Office", "Waste Collection Area",
 ]
 
-INVENTORY_CATEGORIES = [
-    "Tools", "Hardware / Fasteners", "Electrical Parts", "Plumbing Parts",
+# ══════════════════════════════════════════ HOUSEKEEPING ITEM MASTER LIST
+HOUSEKEEPING_DEPT_NAME = "Housekeeping"
+HOUSEKEEPING_MANAGER_USERNAMES = {"kasahun", "housekeeping"}
+HOUSEKEEPING_CATEGORY_MARKER = "[HK] "
+HOUSEKEEPING_CATEGORIES = {
+    "Beds & Linens": [
+        "Mattress / ፍራሽ", "Bedsheet / አልጋ አንሶላ", "Duvet / Comforter / ኮምፎርተር",
+        "Pillow & Pillowcase / ትራስ እና የትራስ ጨርቅ", "Mattress Protector / የፍራሽ ልብስ",
+        "Curtains / Drapes / መጋረጃ", "Blanket / ብርድ ልብስ",
+        "Bed Frame / የአልጋ ፍሬም", "Headboard / የአልጋ ራስ",
+    ],
+    "Bathroom Items": [
+        "Bath Towel / የገላ ፎጣ", "Hand Towel / የእጅ ፎጣ", "Bath Mat / የእግር ፎጣ",
+        "Shower Curtain / የሻወር መጋረጃ", "Hairdryer / የፀጉር ማድረቂያ",
+        "Trash Can / የቆሻሻ መጣያ", "Soap Dispenser / የሳሙና ማቀፊያ",
+        "Toilet Brush / የሽንት ቤት ብሩሽ", "Toilet Paper Holder / የሽንት ቤት ወረቀት መያዣ",
+        "Shower Head / የሻወር ራስ", "Bathroom Mirror / የመታጠቢያ ቤት መስታወት",
+    ],
+    "Furniture & Fixtures": [
+        "Wardrobe / Closet / የልብስ ቁምሳጥን", "Clothes Hangers / የልብስ መስቀያ",
+        "Writing Desk & Chair / ጠረጴዛ እና ወንበር", "Nightstand / Side Table / የአልጋ ጎን ጠረጴዛ",
+        "Luggage Rack / የሻንጣ ማስቀመጫ", "Wall Mirror / የግድግዳ መስታወት",
+        "Safe Box / ሴፍ ቦክስ", "Sofa / ሶፋ", "Armchair / የእጅ ወንበር",
+    ],
+    "Electronics & Appliances": [
+        "Television & Remote / ቲቪ እና ሪሞት", "Mini Fridge / ሚኒ ፍሪጅ",
+        "Refrigerator / ፍሪጅ", "Electric Kettle / የውሃ ማፍያ",
+        "Iron & Ironing Board / ካውያ እና ማደሪያ", "Air Conditioner & Remote / AC እና ሪሞት",
+        "Desk Lamp / የጠረጴዛ መብራት", "Room Telephone / የክፍል ስልክ",
+    ],
+    "Housekeeping Cleaning Tools": [
+        "Cleaning Trolley / Cart / የጽዳት ትሮሊ", "Vacuum Cleaner / ቫኪዩም ክሊነር",
+        "Mop & Bucket / ሞፕ እና ባልዲ", "Dustbin / Waste Basket / የቆሻሻ ቅርጫት",
+        "Broom / መጥረጊያ", "Dustpan / መጣረጊያ", "Cleaning Brush / የጽዳት ብሩሽ",
+        "Window Cleaning Tools / የመስኮት ማጽጃ መሣሪያ",
+    ],
+    "Room & General Fixtures": [
+        "Door Lock / የበር መቆለፊያ", "Door Handle / የበር መያዣ", "Window / መስኮት",
+        "Light / መብራት", "Light Switch / የመብራት ማብሪያ", "Electrical Socket / ኤሌክትሪክ ሶኬት",
+        "Water Tap / የውሃ ቧንቧ", "Sink / ሲንክ", "Toilet / ሽንት ቤት", "Shower / ሻወር",
+    ],
+}
+HOUSEKEEPING_ITEMS_FLAT = [(c, i) for c, items in HOUSEKEEPING_CATEGORIES.items() for i in items]
+HOUSEKEEPING_CATEGORY_NAMES = set(HOUSEKEEPING_CATEGORIES.keys())
+
+INVENTORY_CATEGORIES = ["Tools", "Hardware / Fasteners", "Electrical Parts", "Plumbing Parts",
     "AC / HVAC Parts", "Door & Window Parts", "Civil / Building Materials",
-    "Welding / Metal Work", "Safety / PPE", "Maintenance Consumables",
-    "General Maintenance Equipment",
-]
+    "Welding / Metal Work", "Safety / PPE", "Maintenance Consumables", "General Maintenance Equipment"]
 
 INVENTORY_ITEMS_BY_CATEGORY = {
     "Tools": [("Hammer / መዶሻ", "pcs"), ("Scissors / መቀስ", "pcs"), ("Screwdriver", "pcs"), ("Pliers", "pcs"), ("Spanner", "pcs"), ("Wrench", "pcs"), ("Allen Key", "set"), ("Socket Set", "set"), ("Pipe Wrench", "pcs"), ("Wire Cutter", "pcs"), ("Wire Stripper", "pcs"), ("Measuring Tape", "pcs"), ("Spirit Level", "pcs"), ("Saw", "pcs"), ("Hacksaw", "pcs"), ("Chisel", "pcs"), ("File", "pcs"), ("Drill", "pcs"), ("Drill Bits", "set"), ("Utility Knife", "pcs"), ("Bolt Cutter", "pcs"), ("Crowbar", "pcs")],
@@ -490,6 +526,26 @@ def is_manager(user):
     if not user or not user.is_authenticated: return False
     return user.role in ["MANAGER", "ADMIN"]
 
+def is_hk_manager(user):
+    """Kasahun Girma — Housekeeping Manager."""
+    if not user or not user.is_authenticated: return False
+    if user.username in HOUSEKEEPING_MANAGER_USERNAMES: return True
+    return bool(user.department and user.department.name == HOUSEKEEPING_DEPT_NAME
+                and user.role in ("MANAGER", "ADMIN"))
+
+def is_housekeeping_request(req):
+    return bool(req and req.department and req.department.name == HOUSEKEEPING_DEPT_NAME)
+
+def hk_pending(req):
+    return is_housekeeping_request(req) and (req.hk_approval_status or "").lower() == "pending"
+
+def hk_approved(req):
+    if not is_housekeeping_request(req): return True
+    return (req.hk_approval_status or "").lower() == "approved"
+
+def hk_rejected(req):
+    return is_housekeeping_request(req) and (req.hk_approval_status or "").lower() == "rejected"
+
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
     try:
         db.session.add(AuditLog(
@@ -568,13 +624,11 @@ def validate_signature_for_user(user, signature_data):
     if not user.department_id: return False, "Your account is not linked to a department. Contact admin."
     profile = get_user_signature_profile(user)
     if not profile: return False, "No authorized signature configured for your department. Contact admin."
-    if not signature_data or not signature_data.strip():
-        return False, "Digital signature is required."
+    if not signature_data or not signature_data.strip(): return False, "Digital signature is required."
     if not signature_data.startswith("data:image/png;base64,"): return False, "Invalid signature format."
     return True, None
 
 def add_column_if_missing(table, column, sql):
-    """SAFE migration helper — only ADDS columns. Never drops, truncates, or modifies existing data."""
     try:
         insp = inspect(db.engine)
         if table not in insp.get_table_names(): return False
@@ -587,35 +641,36 @@ def add_column_if_missing(table, column, sql):
         print("⚠️ Migration warn (" + table + "." + column + "): " + str(e)); return False
 
 def ensure_database_schema():
-    """SAFE schema updater. NEVER drops, truncates, or deletes rows."""
     with app.app_context():
         try:
-            db.create_all()  # creates only MISSING tables — existing tables/rows untouched
+            db.create_all()
             pg = db.engine.dialect.name == "postgresql"
             dt = "TIMESTAMP" if pg else "DATETIME"
             bd = "DEFAULT FALSE" if pg else "DEFAULT 0"
             bd_t = "DEFAULT TRUE" if pg else "DEFAULT 1"
-            add_column_if_missing("maintenance_requests","department_id","ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER")
-            add_column_if_missing("maintenance_requests","manager_id","ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER")
-            add_column_if_missing("maintenance_requests","completion_note","ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT")
-            add_column_if_missing("maintenance_requests","completed_date","ALTER TABLE maintenance_requests ADD COLUMN completed_date " + dt)
-            add_column_if_missing("maintenance_requests","is_deleted","ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN " + bd)
-            add_column_if_missing("maintenance_requests","deleted_at","ALTER TABLE maintenance_requests ADD COLUMN deleted_at " + dt)
-            add_column_if_missing("maintenance_requests","deleted_by_id","ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER")
-            add_column_if_missing("maintenance_requests","deletion_reason","ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT")
-            add_column_if_missing("maintenance_requests","awaiting_hk_approval","ALTER TABLE maintenance_requests ADD COLUMN awaiting_hk_approval BOOLEAN " + bd)
-            add_column_if_missing("maintenance_requests","hk_approved_by_id","ALTER TABLE maintenance_requests ADD COLUMN hk_approved_by_id INTEGER")
-            add_column_if_missing("maintenance_requests","hk_approved_at","ALTER TABLE maintenance_requests ADD COLUMN hk_approved_at " + dt)
-            add_column_if_missing("maintenance_requests","hk_approval_status","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_status VARCHAR(20)")
-            add_column_if_missing("maintenance_requests","hk_signature_data","ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT")
-            add_column_if_missing("maintenance_requests","hk_approval_notes","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT")
-            add_column_if_missing("maintenance_requests","signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)")
-            add_column_if_missing("maintenance_requests","signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'")
-            add_column_if_missing("maintenance_requests","signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt)
-            add_column_if_missing("maintenance_requests","signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT")
-            add_column_if_missing("maintenance_requests","signature_department","ALTER TABLE maintenance_requests ADD COLUMN signature_department VARCHAR(80)")
-            add_column_if_missing("maintenance_requests","signature_verified","ALTER TABLE maintenance_requests ADD COLUMN signature_verified BOOLEAN " + bd)
-            add_column_if_missing("maintenance_requests","signature_user_id","ALTER TABLE maintenance_requests ADD COLUMN signature_user_id INTEGER")
+            for col, sql in [
+                ("department_id","ALTER TABLE maintenance_requests ADD COLUMN department_id INTEGER"),
+                ("manager_id","ALTER TABLE maintenance_requests ADD COLUMN manager_id INTEGER"),
+                ("completion_note","ALTER TABLE maintenance_requests ADD COLUMN completion_note TEXT"),
+                ("completed_date","ALTER TABLE maintenance_requests ADD COLUMN completed_date " + dt),
+                ("is_deleted","ALTER TABLE maintenance_requests ADD COLUMN is_deleted BOOLEAN " + bd),
+                ("deleted_at","ALTER TABLE maintenance_requests ADD COLUMN deleted_at " + dt),
+                ("deleted_by_id","ALTER TABLE maintenance_requests ADD COLUMN deleted_by_id INTEGER"),
+                ("deletion_reason","ALTER TABLE maintenance_requests ADD COLUMN deletion_reason TEXT"),
+                ("awaiting_hk_approval","ALTER TABLE maintenance_requests ADD COLUMN awaiting_hk_approval BOOLEAN " + bd),
+                ("hk_approved_by_id","ALTER TABLE maintenance_requests ADD COLUMN hk_approved_by_id INTEGER"),
+                ("hk_approved_at","ALTER TABLE maintenance_requests ADD COLUMN hk_approved_at " + dt),
+                ("hk_approval_status","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_status VARCHAR(20)"),
+                ("hk_signature_data","ALTER TABLE maintenance_requests ADD COLUMN hk_signature_data TEXT"),
+                ("hk_approval_notes","ALTER TABLE maintenance_requests ADD COLUMN hk_approval_notes TEXT"),
+                ("signature_name","ALTER TABLE maintenance_requests ADD COLUMN signature_name VARCHAR(150)"),
+                ("signature_status","ALTER TABLE maintenance_requests ADD COLUMN signature_status VARCHAR(30) DEFAULT 'SIGNED'"),
+                ("signature_signed_at","ALTER TABLE maintenance_requests ADD COLUMN signature_signed_at " + dt),
+                ("signature_data","ALTER TABLE maintenance_requests ADD COLUMN signature_data TEXT"),
+                ("signature_department","ALTER TABLE maintenance_requests ADD COLUMN signature_department VARCHAR(80)"),
+                ("signature_verified","ALTER TABLE maintenance_requests ADD COLUMN signature_verified BOOLEAN " + bd),
+                ("signature_user_id","ALTER TABLE maintenance_requests ADD COLUMN signature_user_id INTEGER"),
+            ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
@@ -624,20 +679,15 @@ def ensure_database_schema():
             add_column_if_missing("work_orders","recommendation","ALTER TABLE work_orders ADD COLUMN recommendation TEXT")
             add_column_if_missing("work_orders","completion_photo","ALTER TABLE work_orders ADD COLUMN completion_photo VARCHAR(255)")
             add_column_if_missing("audit_logs","ip_address","ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)")
-            add_column_if_missing("suppliers","email","ALTER TABLE suppliers ADD COLUMN email VARCHAR(120)")
-            add_column_if_missing("suppliers","address","ALTER TABLE suppliers ADD COLUMN address TEXT")
-            add_column_if_missing("suppliers","tax_number","ALTER TABLE suppliers ADD COLUMN tax_number VARCHAR(60)")
-            add_column_if_missing("suppliers","notes","ALTER TABLE suppliers ADD COLUMN notes TEXT")
+            for c, s in [("email","VARCHAR(120)"),("address","TEXT"),("tax_number","VARCHAR(60)"),("notes","TEXT"),
+                         ("created_at",dt),("updated_at",dt)]:
+                add_column_if_missing("suppliers", c, "ALTER TABLE suppliers ADD COLUMN " + c + " " + s)
             if add_column_if_missing("suppliers","is_active","ALTER TABLE suppliers ADD COLUMN is_active BOOLEAN " + bd):
                 with db.engine.begin() as conn:
-                    conn.execute(text("UPDATE suppliers SET is_active = CASE WHEN status = 'Active' THEN TRUE ELSE FALSE END"))
-            add_column_if_missing("suppliers","created_at","ALTER TABLE suppliers ADD COLUMN created_at " + dt)
-            add_column_if_missing("suppliers","updated_at","ALTER TABLE suppliers ADD COLUMN updated_at " + dt)
-            add_column_if_missing("inventory_parts","supplier_id","ALTER TABLE inventory_parts ADD COLUMN supplier_id INTEGER")
-            add_column_if_missing("inventory_parts","description","ALTER TABLE inventory_parts ADD COLUMN description TEXT")
-            add_column_if_missing("inventory_parts","is_active","ALTER TABLE inventory_parts ADD COLUMN is_active BOOLEAN " + bd_t)
-            add_column_if_missing("inventory_parts","created_at","ALTER TABLE inventory_parts ADD COLUMN created_at " + dt)
-            add_column_if_missing("inventory_parts","updated_at","ALTER TABLE inventory_parts ADD COLUMN updated_at " + dt)
+                    conn.execute(text("UPDATE suppliers SET is_active = CASE WHEN status = 'Active' THEN " + ("TRUE" if pg else "1") + " ELSE " + ("FALSE" if pg else "0") + " END"))
+            for c, s in [("supplier_id","INTEGER"),("description","TEXT"),("is_active","BOOLEAN " + bd_t),
+                         ("created_at",dt),("updated_at",dt)]:
+                add_column_if_missing("inventory_parts", c, "ALTER TABLE inventory_parts ADD COLUMN " + c + " " + s)
             add_column_if_missing("work_order_parts","notes","ALTER TABLE work_order_parts ADD COLUMN notes TEXT")
             add_column_if_missing("working_items","department_id","ALTER TABLE working_items ADD COLUMN department_id INTEGER")
             add_column_if_missing("working_items","area_id","ALTER TABLE working_items ADD COLUMN area_id INTEGER")
@@ -645,14 +695,14 @@ def ensure_database_schema():
             add_column_if_missing("areas","is_active","ALTER TABLE areas ADD COLUMN is_active BOOLEAN " + bd_t)
             try:
                 with db.engine.begin() as conn:
-                    conn.execute(text("UPDATE areas SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
-                    conn.execute(text("UPDATE working_items SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
-                    conn.execute(text("UPDATE inventory_parts SET is_active = " + ("TRUE" if pg else "1") + " WHERE is_active IS NULL"))
+                    t = "TRUE" if pg else "1"
+                    conn.execute(text("UPDATE areas SET is_active = " + t + " WHERE is_active IS NULL"))
+                    conn.execute(text("UPDATE working_items SET is_active = " + t + " WHERE is_active IS NULL"))
+                    conn.execute(text("UPDATE inventory_parts SET is_active = " + t + " WHERE is_active IS NULL"))
             except Exception: pass
             print("✅ Schema OK — no existing rows were modified or deleted")
         except Exception as e: print("⚠️ Schema error: " + str(e))
 
-# ══════════════════════════════════════════ PAGE TEMPLATE
 def page(title, content):
     nav = []
     if current_user.is_authenticated:
@@ -663,6 +713,9 @@ def page(title, content):
                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+            if is_hk_manager(current_user):
+                nav.insert(1, ('<i class="fas fa-check-double"></i> HK Approvals',
+                               url_for('housekeeping_approvals')))
         elif r == "EMPLOYEE":
             nav = [('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
                    ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
@@ -696,10 +749,16 @@ def page(title, content):
                     ('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
         elif r == "MANAGER":
             nav += [('<i class="fas fa-chart-line"></i> Management Reports', url_for('management_reports'))]
-        nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
-                ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
-                ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
-                ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+        if r not in ("DEPARTMENT", "EMPLOYEE", "ADMIN"):
+            nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
+        elif r == "ADMIN":
+            nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
+                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
+                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
         nav = [('<i class="fas fa-sign-in-alt"></i> Login', url_for('login'))]
 
@@ -883,7 +942,6 @@ select.form-select option{background:var(--bg-card);color:var(--text-primary)}
 #roriAlertBanner .ra-btn{margin-top:.6rem;background:#0B0B12;color:#C5A059;border:none;padding:.45rem 1rem;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer}
 @keyframes roriSlideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:640px){.area-grid{grid-template-columns:1fr}.area-stat-grid{grid-template-columns:repeat(2,1fr)}.area-card-header{padding-right:0}}
-/* ══════════════════ DETAILED REPORT STYLES ══════════════════ */
 .report-doc{background:#ffffff;color:#111111;border-radius:16px;padding:2rem;margin-bottom:1.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
 .report-head{border-bottom:3px double #C5A059;padding-bottom:1rem;margin-bottom:1.5rem;text-align:center}
 .report-head .brand{font-size:1.9rem;font-weight:900;letter-spacing:2px;color:#8B6F26}
@@ -957,14 +1015,12 @@ window.roriToggleSound=function(enable){roriSoundEnabled=!!enable;localStorage.s
 window.roriTestSound=function(){roriSoundEnabled=true;localStorage.setItem('rori_sound_enabled','true');roriInitAudio();roriPlayAlert('URGENT');roriShowBanner('🔔 Test Alert','This is what a new request sounds like.');};
 function roriNotify(title,body,priority){roriShowBanner(title,body);if(roriBrowserNotif){try{const n=new Notification(title,{body:body,icon:'/logo.png',tag:'rori-'+Date.now()});setTimeout(()=>n.close(),7000);}catch(e){}}}
 function pollNotifications(){fetch('/api/notifications/unread',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(!d||!d.latest_id)return;if(roriAlertedRequests.includes(d.latest_id))return;const t=(d.latest_title||'').toUpperCase();if(!t.includes('REQUEST'))return;let prio='MEDIUM';if(t.includes('URGENT'))prio='URGENT';else if(t.includes('HIGH'))prio='HIGH';roriPlayAlert(prio);roriNotify(d.latest_title||'New Maintenance Request',d.latest_message||'A new request has been submitted.',prio);roriAlertedRequests.push(d.latest_id);sessionStorage.setItem('rori_alerted_requests',JSON.stringify(roriAlertedRequests));const badge=document.querySelector('.notif-badge');if(badge){badge.classList.add('pulse');setTimeout(()=>badge.classList.remove('pulse'),2500);}}).catch(()=>{});}
-(function(){if(!roriSoundEnabled&&document.querySelector('.header-icon')){setTimeout(()=>{if(!roriSoundEnabled){roriShowBanner('🔔 Enable Alert Sound','Click below to hear alerts when new requests arrive.');const b=document.getElementById('roriAlertBanner');if(b){const btn=document.createElement('button');btn.className='ra-btn';btn.textContent='Enable Alerts';btn.onclick=()=>{roriEnableAlerts();b.classList.remove('show');};b.appendChild(btn);}}},1800);}})();
 if(document.querySelector('.header-icon')){pollNotifications();setInterval(pollNotifications,10000);}
 </script>
 </body></html>"""
 
 # ══════════════════════════════════════════ SEED DATA
 def seed_data():
-    """Idempotent seed — never overwrites or deletes user data."""
     core_depts = ["Housekeeping","Front Office","Engineering","Food & Beverage","Kitchen","Finance","HR","Security","IT","Sales & Marketing","Administration","Maintenance","Other","SPA","GM","Marketing"]
     for name in core_depts:
         if not Department.query.filter_by(name=name).first(): db.session.add(Department(name=name))
@@ -1014,6 +1070,19 @@ def seed_data():
             if not existing: db.session.add(WorkingItem(name=item_name, department_id=hk_dept.id, area_id=laundry_area.id, is_active=True))
             else:
                 existing.department_id = hk_dept.id; existing.area_id = laundry_area.id
+        db.session.commit()
+    # ═══ HOUSEKEEPING bilingual categories & items (idempotent, isolated) ═══
+    if hk_dept:
+        for cat_name in HOUSEKEEPING_CATEGORIES.keys():
+            if not Category.query.filter_by(name=cat_name).first():
+                db.session.add(Category(name=cat_name, description="[HK] Housekeeping-only category"))
+        db.session.commit()
+        for _cat, item_name in HOUSEKEEPING_ITEMS_FLAT:
+            existing = WorkingItem.query.filter_by(name=item_name).first()
+            if not existing:
+                db.session.add(WorkingItem(name=item_name, department_id=hk_dept.id, is_active=True))
+            elif existing.department_id is None:
+                existing.department_id = hk_dept.id
         db.session.commit()
     inv_added = 0
     for cat_name, items in INVENTORY_ITEMS_BY_CATEGORY.items():
@@ -1120,7 +1189,7 @@ def fix_room_structure():
     print(f"✅ Room structure enforced: {Room.query.count()} rooms (expected 100) — historical requests preserved")
     return Room.query.count()
 
-# ══════════════════════════════════════════ AUTH & MAIN ROUTES
+# ══════════════════════════════════════════ AUTH
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -1153,6 +1222,7 @@ def login():
 <hr style="border-color:var(--border-color);margin:1.5rem 0">
 <div class="text-center small" style="color:var(--text-secondary)">
 <p class="mb-1">Manager: <b style="color:var(--rori-gold)">amir / 123456</b></p>
+<p class="mb-1">HK Manager: <b style="color:var(--rori-gold)">kasahun / 123456</b></p>
 <p class="mb-1">Marketing Mgr: <b style="color:var(--rori-gold)">yordanose / 123456</b></p>
 <p class="mb-0">Admin: <b style="color:var(--rori-gold)">admin / admin123</b></p>
 </div>
@@ -1317,9 +1387,20 @@ def items_activate(item_id):
 @login_required
 def requests_list():
     q = MaintenanceRequest.query.filter_by(is_deleted=False)
-    if current_user.role in ["MANAGER","ADMIN"]: pass
+    if current_user.role in ["MANAGER","ADMIN"]:
+        # Managers see all EXCEPT unapproved HK requests (Kasahun sees his pending separately)
+        if not is_hk_manager(current_user):
+            q = q.filter(db.or_(
+                MaintenanceRequest.department_id != _hk_dept_id_safe(),
+                MaintenanceRequest.hk_approval_status == "approved",
+                MaintenanceRequest.hk_approval_status.is_(None),
+            ))
     elif current_user.role == "DEPARTMENT":
-        if current_user.department_id: q = q.filter(db.or_(MaintenanceRequest.department_id == current_user.department_id, MaintenanceRequest.requested_by_id == current_user.id))
+        if current_user.department_id:
+            if current_user.department.name == HOUSEKEEPING_DEPT_NAME and is_hk_manager(current_user):
+                q = q.filter(MaintenanceRequest.department_id == current_user.department_id)
+            else:
+                q = q.filter(db.or_(MaintenanceRequest.department_id == current_user.department_id, MaintenanceRequest.requested_by_id == current_user.id))
         else: q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
     elif current_user.role == "EMPLOYEE": q = q.filter(MaintenanceRequest.requested_by_id == current_user.id)
     elif current_user.role in STAFF_ROLES: q = q.filter(MaintenanceRequest.assigned_to_id == current_user.id)
@@ -1331,19 +1412,31 @@ def requests_list():
     is_mgr = current_user.role in ["MANAGER","ADMIN"]
     rows = []
     for r in reqs:
+        hk_badge = ""
+        if is_housekeeping_request(r):
+            hs = (r.hk_approval_status or "pending").lower()
+            hk_badge = {
+                "pending": '<span class="badge badge-warning">⏳ HK Pending</span>',
+                "approved": '<span class="badge badge-success">✓ HK Approved</span>',
+                "rejected": '<span class="badge badge-danger">✗ HK Rejected</span>',
+            }.get(hs, "")
         del_html = ""
         if is_mgr:
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span> ' + hk_badge + '</td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>' + ('<th></th>' if is_mgr else '') + '</tr></thead>'
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
          '<div class="card"><div style="overflow-x:auto;"><table class="table">' + header + '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" style="text-align:center;color:var(--text-secondary);">No requests found</td></tr>') + '</tbody></table></div></div>')
     return page("Requests", c)
 
+def _hk_dept_id_safe():
+    row = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
+    return row.id if row else -1
+
 @app.route("/requests/new", methods=["GET","POST"])
 @login_required
 def request_create():
-    cats = Category.query.order_by(Category.name).all()
+    cats_all = Category.query.order_by(Category.name).all()
     rooms = Room.query.order_by(func.cast(Room.room_number, db.Integer).asc()).all()
     areas = Area.query.filter((Area.is_active == True) | (Area.is_active == None)).order_by(Area.name).all()
     floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()] or sorted({r.floor for r in Room.query.all()})
@@ -1351,6 +1444,12 @@ def request_create():
     sig_profile = get_user_signature_profile(current_user)
     user_dept_name = current_user.department.name if current_user.department else None
     user_dept_id = current_user.department_id
+
+    hk_dept = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
+    hk_dept_id = hk_dept.id if hk_dept else None
+    hk_cats = [c for c in cats_all if c.name in HOUSEKEEPING_CATEGORY_NAMES]
+    other_cats = [c for c in cats_all if c.name not in HOUSEKEEPING_CATEGORY_NAMES]
+
     if request.method == "POST":
         try:
             lt = request.form.get("location_type","Room").strip() or "Room"
@@ -1378,10 +1477,17 @@ def request_create():
                 if sig_profile and sig_name_from_form and sig_name_from_form != sig_profile.authorized_name:
                     flash("Signature name mismatch.", "danger"); return redirect(url_for("request_create"))
             authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
+
+            # Determine if this is a Housekeeping request
+            is_hk = (did == hk_dept_id) if hk_dept_id else False
+
             req = MaintenanceRequest(
                 request_no=request_no_generator(), location_type=lt, floor=fl, room_id=rid, area_id=aid,
-                working_item_id=wid, category_id=cid, description=desc, priority=prio, status="Pending",
-                requested_by_id=current_user.id, department_id=did, awaiting_hk_approval=False,
+                working_item_id=wid, category_id=cid, description=desc, priority=prio,
+                status="Pending",  # global status stays "Pending" — HK gate is separate
+                requested_by_id=current_user.id, department_id=did,
+                awaiting_hk_approval=is_hk,
+                hk_approval_status=("pending" if is_hk else None),
                 signature_name=authorized_name, signature_status=("SIGNED" if sig_data else "UNSIGNED"),
                 signature_signed_at=(datetime.utcnow() if sig_data else None),
                 signature_data=sig_data, signature_department=user_dept_name,
@@ -1389,39 +1495,80 @@ def request_create():
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
+
+            # Optional photo
+            f = request.files.get("photo")
+            if f and f.filename and allowed_file(f.filename):
+                ext = f.filename.rsplit(".",1)[-1].lower()
+                fname = secure_filename("req_" + str(req.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext)
+                f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
+                db.session.add(Photo(filename=fname, object_type="request", object_id=req.id,
+                                     photo_type="Problem", uploaded_by_id=current_user.id))
+
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
-            log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
-            managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
-            notify_users([u.id for u in managers], req.id, "📝 NEW MAINTENANCE REQUEST", "Request " + str(req.request_no) + " [" + str(prio) + "] from " + str(user_dept_name or "N/A") + " is pending approval", "New Request", link=url_for("request_detail", req_id=req.id))
-            db.session.commit(); flash("✅ Request created successfully!","success"); return redirect(url_for("request_detail", req_id=req.id))
+            if is_hk:
+                log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name) + " — awaiting Housekeeping Manager approval")
+                # Notify Kasahun Girma only
+                hk_mgr = User.query.filter(User.username.in_(list(HOUSEKEEPING_MANAGER_USERNAMES)), User.active == True).all()
+                notify_users([u.id for u in hk_mgr], req.id, "🔔 HK Request — Approval Needed",
+                             "Request " + str(req.request_no) + " [" + str(prio) + "] awaiting your approval",
+                             "HK Pending", link=url_for("housekeeping_approvals"))
+            else:
+                log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
+                managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
+                notify_users([u.id for u in managers], req.id, "📝 NEW MAINTENANCE REQUEST",
+                             "Request " + str(req.request_no) + " [" + str(prio) + "] from " + str(user_dept_name or "N/A") + " is pending approval",
+                             "New Request", link=url_for("request_detail", req_id=req.id))
+
+            db.session.commit()
+            flash("✅ Request created successfully!" + (" Awaiting Housekeeping Manager approval." if is_hk else ""), "success")
+            return redirect(url_for("request_detail", req_id=req.id))
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
+
     dept_opts = "".join('<option value="' + str(d.id) + '"' + (' selected' if d.id == user_dept_id else '') + '>' + str(d.name) + '</option>' for d in all_depts)
+    hk_cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in hk_cats)
+    other_cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in other_cats)
+
     items_by_dept = {}
     for d in all_depts:
         items = WorkingItem.query.filter_by(department_id=d.id).filter((WorkingItem.is_active == True) | (WorkingItem.is_active == None)).order_by(WorkingItem.name).all()
         items_by_dept[d.id] = [{"id": w.id, "name": w.name, "area_id": w.area_id} for w in items]
+
+    hk_items_by_category = {}
+    if hk_dept_id:
+        for cat_name, item_names in HOUSEKEEPING_CATEGORIES.items():
+            cat = Category.query.filter_by(name=cat_name).first()
+            if not cat: continue
+            ids = []
+            for iname in item_names:
+                w = WorkingItem.query.filter_by(name=iname, department_id=hk_dept_id).first()
+                if w: ids.append(w.id)
+            hk_items_by_category[cat.id] = ids
+
     areas_json = [{"id": a.id, "name": a.name, "dept": a.department or ""} for a in areas]
     fo = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
     ro = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
-    co = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in cats)
     po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
     sig_authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
     sig_dept_display = user_dept_name or "Not assigned"
     sig_block_required = current_user.role in ["DEPARTMENT", "EMPLOYEE"]
     sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department.</div>'
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>New</span> Maintenance Request</h1></div></div>' + sig_warning +
-         '<div class="card"><form method="post" id="requestForm"><div class="row">'
+    hk_notice = '<div class="alert alert-info" id="hkNotice" style="display:none;"><i class="fas fa-info-circle"></i> This is a <b>Housekeeping</b> request. It will be routed to <b>Kasahun Girma (Housekeeping Manager)</b> for approval before reaching the Maintenance Manager.</div>'
+
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>New</span> Maintenance Request</h1></div></div>' + sig_warning + hk_notice +
+         '<div class="card"><form method="post" id="requestForm" enctype="multipart/form-data"><div class="row">'
          '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" id="deptSelect" required>' + dept_opts + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category_id" id="catSelect" required><option value="">-- Select Category --</option>' + other_cat_opts + '</select></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Maintenance Item *</label><select class="form-select" name="working_item_id" id="itemSelect" required><option value="">-- Select Item --</option></select></div>'
          '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label><select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
          '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label><select class="form-select" name="room_id" id="roomSelect"><option value="">-- Select Room --</option>' + ro + '</select></div>'
          '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label><select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
          '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area / Location</label><select class="form-select" name="area_id" id="areaSelect"><option value="">-- Select Area --</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Maintenance Item *</label><select class="form-select" name="working_item_id" id="itemSelect" required><option value="">-- Select Item --</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Category</label><select class="form-select" name="category_id"><option value="">-- Select Category --</option>' + co + '</select></div>'
-         '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
          '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority">' + po + '</select></div>'
+         '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
+         '<div class="col-md-6 mb-3"><label class="form-label">Photo (optional)</label><input type="file" class="form-control" name="photo" accept="image/*"></div>'
          '<div class="col-12 mb-3"><div class="card" style="background:rgba(34,197,94,0.05);border:2px solid ' + ("var(--success)" if sig_block_required else "var(--border-color)") + '">'
          '<h5 style="color:var(--success);margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature ' + ("(required)" if sig_block_required else "(optional for manager/admin)") + '</h5>'
          '<div class="row g-3">'
@@ -1440,9 +1587,27 @@ def request_create():
          '<script>window.RORI_ITEMS_BY_DEPT=' + json.dumps({str(k): v for k, v in items_by_dept.items()}) + ';</script>'
          '<script>window.RORI_AREAS=' + json.dumps(areas_json) + ';</script>'
          '<script>window.RORI_SIG_REQUIRED=' + ("true" if sig_block_required else "false") + ';</script>'
+         '<script>window.RORI_HK_DEPT_ID=' + str(hk_dept_id or 0) + ';</script>'
+         '<script>window.RORI_HK_CAT_OPTS=' + json.dumps(hk_cat_opts) + ';</script>'
+         '<script>window.RORI_OTHER_CAT_OPTS=' + json.dumps(other_cat_opts) + ';</script>'
+         '<script>window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_category.items()}) + ';</script>'
          '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
-         '<script>(function(){var canvas=document.getElementById("signature-pad");var signaturePad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});var submitBtn=document.getElementById("submitBtn");var sigStatusText=document.getElementById("sigStatusText");var sigHint=document.getElementById("sigHint");var sigRequired=window.RORI_SIG_REQUIRED===true;function resizeCanvas(){var ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext("2d").scale(ratio,ratio);signaturePad.clear();updateSigStatus();}window.addEventListener("resize",resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click",function(){signaturePad.clear();updateSigStatus();});signaturePad.addEventListener("endStroke",updateSigStatus);function updateSigStatus(){if(signaturePad.isEmpty()){sigStatusText.innerHTML=\'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color="var(--rori-gold)";sigHint.textContent="Draw your signature above";}else{sigStatusText.innerHTML=\'<i class="fas fa-check-circle"></i> Signature Captured\';sigStatusText.style.color="var(--success)";sigHint.textContent="✓ Ready to submit";}}document.querySelector("#requestForm").addEventListener("submit",function(e){if(sigRequired&&signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}if(!signaturePad.isEmpty()){document.getElementById("signature-data").value=signaturePad.toDataURL("image/png");}});updateSigStatus();})();</script>'
-         '<script>(function(){var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");var deptSel=document.getElementById("deptSelect");var itemSel=document.getElementById("itemSelect");var areaSel=document.getElementById("areaSelect");var itemsByDept=window.RORI_ITEMS_BY_DEPT||{};var allAreas=window.RORI_AREAS||[];function updLoc(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}function renderItems(){var d=deptSel.value;var areaId=areaSel.value;var list=itemsByDept[d]||[];var filtered=list.filter(function(it){if(!areaId)return true;if(it.area_id===null||it.area_id===undefined||it.area_id===0)return true;return String(it.area_id)===String(areaId);});itemSel.innerHTML=\'<option value="">-- Select Item --</option>\';filtered.forEach(function(it){var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}function renderAreas(){areaSel.innerHTML=\'<option value="">-- Select Area --</option>\';allAreas.forEach(function(a){var o=document.createElement("option");o.value=a.id;o.textContent=a.name;areaSel.appendChild(o);});}lt.addEventListener("change",updLoc);deptSel.addEventListener("change",function(){renderItems();});areaSel.addEventListener("change",function(){renderItems();});updLoc();renderAreas();renderItems();})();</script>')
+         '<script>(function(){var canvas=document.getElementById("signature-pad");var signaturePad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});var sigStatusText=document.getElementById("sigStatusText");var sigHint=document.getElementById("sigHint");var sigRequired=window.RORI_SIG_REQUIRED===true;function resizeCanvas(){var ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext("2d").scale(ratio,ratio);signaturePad.clear();updateSigStatus();}window.addEventListener("resize",resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click",function(){signaturePad.clear();updateSigStatus();});signaturePad.addEventListener("endStroke",updateSigStatus);function updateSigStatus(){if(signaturePad.isEmpty()){sigStatusText.innerHTML=\'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color="var(--rori-gold)";sigHint.textContent="Draw your signature above";}else{sigStatusText.innerHTML=\'<i class="fas fa-check-circle"></i> Signature Captured\';sigStatusText.style.color="var(--success)";sigHint.textContent="✓ Ready to submit";}}document.querySelector("#requestForm").addEventListener("submit",function(e){if(sigRequired&&signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}if(!signaturePad.isEmpty()){document.getElementById("signature-data").value=signaturePad.toDataURL("image/png");}});updateSigStatus();})();</script>'
+         '<script>(function(){'
+         'var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
+         'var deptSel=document.getElementById("deptSelect");var catSel=document.getElementById("catSelect");var itemSel=document.getElementById("itemSelect");var areaSel=document.getElementById("areaSelect");'
+         'var itemsByDept=window.RORI_ITEMS_BY_DEPT||{};var allAreas=window.RORI_AREAS||[];var HK_DEPT_ID=String(window.RORI_HK_DEPT_ID||0);'
+         'var HK_CAT_OPTS=window.RORI_HK_CAT_OPTS||"";var OTHER_CAT_OPTS=window.RORI_OTHER_CAT_OPTS||"";var HK_ITEMS_BY_CAT=window.RORI_HK_ITEMS_BY_CAT||{};'
+         'var hkNotice=document.getElementById("hkNotice");'
+         'function updLoc(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}'
+         'function renderCats(){var d=String(deptSel.value||"");if(d===HK_DEPT_ID){catSel.innerHTML=\'<option value="">-- Select Category --</option>\'+HK_CAT_OPTS;if(hkNotice)hkNotice.style.display="";}else{catSel.innerHTML=\'<option value="">-- Select Category --</option>\'+OTHER_CAT_OPTS;if(hkNotice)hkNotice.style.display="none";}renderItems();}'
+         'function renderItems(){var d=String(deptSel.value||"");var cid=String(catSel.value||"");var list=(itemsByDept[d]||[]).slice();'
+         'if(d===HK_DEPT_ID&&cid&&HK_ITEMS_BY_CAT[cid]){var allowed=HK_ITEMS_BY_CAT[cid];list=list.filter(function(it){return allowed.indexOf(it.id)>=0;});}'
+         'itemSel.innerHTML=\'<option value="">-- Select Item --</option>\';list.forEach(function(it){var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
+         'function renderAreas(){areaSel.innerHTML=\'<option value="">-- Select Area --</option>\';allAreas.forEach(function(a){var o=document.createElement("option");o.value=a.id;o.textContent=a.name;areaSel.appendChild(o);});}'
+         'lt.addEventListener("change",updLoc);deptSel.addEventListener("change",renderCats);catSel.addEventListener("change",renderItems);areaSel.addEventListener("change",renderItems);'
+         'updLoc();renderAreas();renderCats();'
+         '})();</script>')
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -1451,7 +1616,13 @@ def request_detail(req_id):
     req = get_or_404(MaintenanceRequest, req_id)
     if req.is_deleted and current_user.role != "ADMIN":
         flash("This request has been archived.","warning"); return redirect(url_for("requests_list"))
-    if current_user.role == "DEPARTMENT":
+    # HK Manager visibility: can see his dept's requests
+    is_hk_mgr_view = is_hk_manager(current_user) and is_housekeeping_request(req)
+    is_mm_view = current_user.role in ("MANAGER", "ADMIN") and not is_hk_mgr_view
+    if is_mm_view and is_housekeeping_request(req) and not hk_approved(req):
+        flash("This Housekeeping request is awaiting Housekeeping Manager approval.","warning")
+        return redirect(url_for("requests_list"))
+    if current_user.role == "DEPARTMENT" and not is_hk_mgr_view:
         same = (current_user.department_id and req.department_id == current_user.department_id)
         if not same and req.requested_by_id != current_user.id: abort(403)
     if current_user.role == "EMPLOYEE" and req.requested_by_id != current_user.id: abort(403)
@@ -1468,7 +1639,11 @@ def request_detail(req_id):
         if h.status == "Assigned" and not assigned_dt: assigned_dt = h.timestamp
         if h.status == "In Progress" and not started_dt: started_dt = h.timestamp
     actions = []
-    if current_user.role in ["ADMIN","MANAGER"]:
+    # HK Manager approval actions
+    if is_hk_mgr_view and hk_pending(req):
+        actions.append('<a href="' + url_for("housekeeping_approvals") + '" class="btn-primary" style="background:var(--info);"><i class="fas fa-check-double"></i> Open Approval Panel</a>')
+    # Maintenance Manager actions — only if not HK-pending
+    if current_user.role in ["ADMIN","MANAGER"] and not is_hk_mgr_view and hk_approved(req):
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
             actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary"><i class="fas fa-user-plus"></i> Assign Staff</a>')
         elif req.status in ["Approved","Assigned"]:
@@ -1483,6 +1658,28 @@ def request_detail(req_id):
             actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
     actions.append('<a href="' + url_for("detailed_report_request", req_id=req.id) + '" class="btn-primary" style="background:var(--info);"><i class="fas fa-file-alt"></i> Detailed Report</a>')
     actions_html = " ".join(actions)
+
+    # HK approval block
+    hk_block = ""
+    if is_housekeeping_request(req):
+        hs = (req.hk_approval_status or "pending").lower()
+        hk_color = {"pending":"var(--warning)","approved":"var(--success)","rejected":"var(--danger)"}.get(hs, "var(--text-secondary)")
+        hk_label = {"pending":"⏳ Pending Housekeeping Approval","approved":"✓ Approved by Housekeeping Manager",
+                    "rejected":"✗ Rejected by Housekeeping Manager"}.get(hs, hs.title())
+        approver = req.hk_approved_by.full_name if req.hk_approved_by else "—"
+        hk_block = ('<div class="rpro-card" style="border-color:' + hk_color + ';">'
+            '<div class="rpro-card-title"><i class="fas fa-user-check"></i> Housekeeping Approval — ' + hk_label + '</div>'
+            '<div class="rpro-kv">'
+            + kv("Approval Status", hk_label, color=hk_color)
+            + kv("Approved / Reviewed By", approver)
+            + kv("Decision At", req.hk_approved_at.strftime("%Y-%m-%d %H:%M") if req.hk_approved_at else "—")
+            + kv("Approval Notes", req.hk_approval_notes or "—")
+            + '</div>'
+            + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Housekeeping Manager Signature</div>'
+               '<div class="rpro-sig-box" style="margin-top:.5rem;"><img src="' + str(req.hk_signature_data) + '" alt="HK Signature"></div></div>'
+               if req.hk_signature_data else "")
+            + '</div>')
+
     info_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
         '<div class="rpro-kv">'
         + kv("Request ID", req.request_no, mono=True)
@@ -1505,18 +1702,32 @@ def request_detail(req_id):
         + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.description or "No description provided.") + '</div></div>')
         + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
         + '</div>')
+
+    # Photos
+    photos = Photo.query.filter_by(object_type="request", object_id=req.id).order_by(Photo.created_at.asc()).all()
+    photo_html = ""
+    if photos:
+        for p in photos:
+            photo_html += ('<div style="display:inline-block;margin:.35rem .5rem .35rem 0;border:2px solid var(--rori-gold);border-radius:10px;padding:.5rem;background:var(--bg-secondary);">'
+                '<a href="/static/uploads/maintenance/' + str(p.filename) + '" target="_blank">'
+                '<img src="/static/uploads/maintenance/' + str(p.filename) + '" style="max-width:220px;max-height:180px;border-radius:6px;" onerror="this.parentElement.parentElement.style.display=\'none\'"></a>'
+                '<div style="font-size:.72rem;color:var(--text-secondary);margin-top:.3rem;"><b>' + str(p.photo_type) + '</b> · ' + (p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "") + '</div></div>')
+    photo_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-camera"></i> Attached Photos</div>'
+                  + (photo_html if photo_html else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No photos attached.</p>') + '</div>')
+
     sig_card = ""
     if req.signature_status == "SIGNED" and req.signature_data:
         sig_time = req.signature_signed_at.strftime("%d %b %Y, %I:%M %p") if req.signature_signed_at else "—"
         ver_badge = ('<span class="badge badge-success"><i class="fas fa-check-circle"></i> Verified</span>' if req.signature_verified else '<span class="badge badge-warning"><i class="fas fa-exclamation"></i> Unverified</span>')
         sig_card = ('<div class="rpro-card" style="border-color:rgba(34,197,94,.4);background:linear-gradient(180deg,rgba(34,197,94,.05),var(--bg-card));">'
-            '<div class="rpro-card-title"><i class="fas fa-signature"></i> Digital Signature ' + ver_badge + '</div>'
+            '<div class="rpro-card-title"><i class="fas fa-signature"></i> Requester Digital Signature ' + ver_badge + '</div>'
             '<div class="rpro-kv" style="margin-bottom:1rem;">'
             + kv("Signed By", req.signature_name or "Unknown")
             + kv("Department", req.signature_department or (req.department.name if req.department else "—"))
             + kv("Signed At", sig_time)
             + kv("Verification", "✓ Verified" if req.signature_verified else "⚠ Unverified", color="var(--success)" if req.signature_verified else "var(--warning)")
             + '</div><div class="rpro-sig-box"><img src="' + str(req.signature_data) + '" alt="Signature"></div></div>')
+
     wo_rows = []
     for wo in wos:
         wo_rows.append('<div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border:1px solid var(--border-color);margin-bottom:.5rem;flex-wrap:wrap;">'
@@ -1525,6 +1736,7 @@ def request_detail(req_id):
             '<div><span class="badge badge-' + badge(wo.status) + '">' + str(wo.status) + '</span></div></div>')
     wo_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-tasks"></i> Work Orders</div>'
         + ("".join(wo_rows) if wo_rows else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No work orders created yet.</p>') + '</div>')
+
     tl_items = []
     for h in hist:
         who = (h.user.full_name or h.user.username) if h.user else "System"
@@ -1532,6 +1744,7 @@ def request_detail(req_id):
         note_html = ('<div class="rpro-timeline-note">' + str(h.notes) + '</div>') if h.notes else ""
         tl_items.append('<div class="rpro-timeline-item"><div class="rpro-timeline-dot"></div><div class="rpro-timeline-status">' + str(h.status) + '</div><div class="rpro-timeline-meta">' + str(who) + ' · ' + when + '</div>' + note_html + '</div>')
     timeline_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-history"></i> Status Timeline</div><div class="rpro-timeline">' + ("".join(tl_items) if tl_items else '<p style="color:var(--text-secondary);font-size:.88rem;margin:0;">No status changes recorded.</p>') + '</div></div>')
+
     verify_card = ""
     if req.status in ("Verified","Closed"):
         wo_verifier = wos[0].verified_by if wos and wos[0].verified_by else req.manager
@@ -1539,17 +1752,150 @@ def request_detail(req_id):
             + kv("Verified By", (wo_verifier.full_name or wo_verifier.username) if wo_verifier else "—")
             + kv("Verified Date", wos[0].verified_date.strftime("%Y-%m-%d %H:%M") if wos and wos[0].verified_date else (req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else "—"))
             + '</div></div>')
+
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Request</span> ' + str(req.request_no) + '</h1><p>' + str(req.location_name) + ' · ' + (req.department.name if req.department else "No Department") + '</p></div>'
         '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">' + actions_html + '</div></div>'
-        '<div class="row g-3"><div class="col-lg-8">' + info_card + sig_card + wo_card + '</div>'
+        '<div class="row g-3"><div class="col-lg-8">' + hk_block + info_card + photo_card + sig_card + wo_card + '</div>'
         '<div class="col-lg-4">' + timeline_card + verify_card + '</div></div>')
     return page("Request " + str(req.request_no), content)
+
+# ══════════════════════════════════════════ HOUSEKEEPING APPROVAL WORKFLOW
+@app.route("/housekeeping/approvals")
+@login_required
+def housekeeping_approvals():
+    if not is_hk_manager(current_user):
+        abort(403)
+    hk_id = _hk_dept_id_safe()
+    pending = (MaintenanceRequest.query.filter_by(is_deleted=False, department_id=hk_id)
+               .filter(MaintenanceRequest.hk_approval_status == "pending")
+               .order_by(MaintenanceRequest.created_at.desc()).all())
+    recently = (MaintenanceRequest.query.filter_by(is_deleted=False, department_id=hk_id)
+                .filter(MaintenanceRequest.hk_approval_status.in_(["approved","rejected"]))
+                .order_by(MaintenanceRequest.hk_approved_at.desc()).limit(20).all())
+    def row(r, show_action=True):
+        act = ""
+        if show_action:
+            act = '<a class="btn-primary" href="' + url_for("housekeeping_approval_detail", req_id=r.id) + '" style="padding:.35rem .75rem;font-size:.78rem;"><i class="fas fa-check-double"></i> Review</a>'
+        elif r.hk_approval_status == "approved":
+            act = '<span class="badge badge-success">✓ Approved</span>'
+        else:
+            act = '<span class="badge badge-danger">✗ Rejected</span>'
+        return ('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;">' + str(r.request_no) + '</a></td>'
+            '<td>' + str(r.location_name) + '</td>'
+            '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
+            '<td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td>'
+            '<td><span class="badge badge-secondary">' + str(r.priority) + '</span></td>'
+            '<td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>'
+            '<td>' + act + '</td></tr>')
+    pending_rows = "".join(row(r, True) for r in pending) or '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:1.5rem;">No pending Housekeeping approvals.</td></tr>'
+    recent_rows = "".join(row(r, False) for r in recently) or '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:1.5rem;">No recent decisions.</td></tr>'
+    content = (
+        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-check-double"></i> <span>Housekeeping</span> Approvals</h1>'
+        '<p>Kasahun Girma — Housekeeping Manager review queue</p></div></div>'
+        '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-hourglass-half"></i> Pending Approvals (' + str(len(pending)) + ')</h5>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Requested By</th><th>Priority</th><th>Created</th><th>Action</th></tr></thead>'
+        '<tbody>' + pending_rows + '</tbody></table></div></div>'
+        '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-history"></i> Recent Decisions</h5>'
+        '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Requested By</th><th>Priority</th><th>Created</th><th>Decision</th></tr></thead>'
+        '<tbody>' + recent_rows + '</tbody></table></div></div>')
+    return page("HK Approvals", content)
+
+@app.route("/housekeeping/approvals/<int:req_id>", methods=["GET","POST"])
+@login_required
+def housekeeping_approval_detail(req_id):
+    if not is_hk_manager(current_user): abort(403)
+    req = get_or_404(MaintenanceRequest, req_id)
+    if not is_housekeeping_request(req):
+        flash("Not a Housekeeping request.","warning"); return redirect(url_for("housekeeping_approvals"))
+    if (req.hk_approval_status or "").lower() != "pending":
+        flash("This request is no longer pending.","info"); return redirect(url_for("request_detail", req_id=req.id))
+    if request.method == "POST":
+        try:
+            decision = request.form.get("decision","").strip().lower()
+            note = request.form.get("note","").strip()
+            signature = request.form.get("signature","").strip()
+            if decision not in ("approve", "reject"):
+                flash("Invalid decision.","danger"); return redirect(url_for("housekeeping_approval_detail", req_id=req.id))
+            if not signature or not signature.startswith("data:image/png;base64,"):
+                flash("Digital signature is required for approval/rejection.","danger")
+                return redirect(url_for("housekeeping_approval_detail", req_id=req.id))
+            req.hk_approval_status = ("approved" if decision == "approve" else "rejected")
+            req.hk_approved_by_id = current_user.id
+            req.hk_approved_at = datetime.utcnow()
+            req.hk_approval_notes = note
+            req.hk_signature_data = signature
+            req.awaiting_hk_approval = False
+            if decision == "reject":
+                req.status = "Rejected"
+            log_status_change(req.id, "HK " + decision.title(),
+                              notes=(note or ("Housekeeping Manager " + decision + "d")))
+            log_audit("HK_" + decision.upper(), "MaintenanceRequest", req.id,
+                      old_value="pending", new_value=req.hk_approval_status)
+            if decision == "approve":
+                mm = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
+                notify_users([u.id for u in mm], req.id, "✅ HK Request Approved",
+                             "Request " + str(req.request_no) + " approved by HK Manager — ready for assignment",
+                             "HK Approved", link=url_for("request_detail", req_id=req.id))
+            if req.requested_by_id:
+                create_notification(req.requested_by_id, req.id,
+                                    ("✅ HK Approved" if decision == "approve" else "❌ HK Rejected"),
+                                    "Your request " + str(req.request_no) + " was " + decision + "d by HK Manager",
+                                    "HK " + decision.title(), url_for("request_detail", req_id=req.id))
+            db.session.commit()
+            flash("✅ Housekeeping request " + decision + "d successfully.", "success")
+            return redirect(url_for("housekeeping_approvals"))
+        except Exception as e:
+            db.session.rollback(); flash("Error: " + str(e),"danger")
+            return redirect(url_for("housekeeping_approval_detail", req_id=req.id))
+    photos = Photo.query.filter_by(object_type="request", object_id=req.id).all()
+    photo_html = ""
+    for p in photos:
+        photo_html += ('<div style="display:inline-block;margin:.35rem .5rem .35rem 0;border:2px solid var(--rori-gold);border-radius:10px;padding:.5rem;background:var(--bg-secondary);">'
+            '<img src="/static/uploads/maintenance/' + str(p.filename) + '" style="max-width:260px;max-height:200px;border-radius:6px;" onerror="this.parentElement.style.display=\'none\'"></div>')
+    content = (
+        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-check"></i> Approve <span>' + str(req.request_no) + '</span></h1>'
+        '<p>' + str(req.location_name) + ' · Requested by ' + ((req.requested_by.full_name or req.requested_by.username) if req.requested_by else "—") + '</p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("housekeeping_approvals") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="row g-3"><div class="col-lg-7">'
+        '<div class="card"><h5 style="color:var(--rori-gold);"><i class="fas fa-info-circle"></i> Request Details</h5>'
+        '<table class="table" style="margin-top:1rem;">'
+        '<tr><th>Request #</th><td>' + str(req.request_no) + '</td></tr>'
+        '<tr><th>Department</th><td>' + (req.department.name if req.department else "—") + '</td></tr>'
+        '<tr><th>Location</th><td>' + str(req.location_name) + '</td></tr>'
+        '<tr><th>Category</th><td>' + (req.category.name if req.category else "—") + '</td></tr>'
+        '<tr><th>Item</th><td>' + (req.working_item.name if req.working_item else "—") + '</td></tr>'
+        '<tr><th>Priority</th><td><span class="badge badge-warning">' + str(req.priority) + '</span></td></tr>'
+        '<tr><th>Description</th><td style="white-space:pre-wrap;">' + str(req.description or "—") + '</td></tr>'
+        '</table>'
+        + (('<h6 style="color:var(--rori-gold);margin-top:1rem;">Attached Photos</h6>' + photo_html) if photo_html else "")
+        + '</div></div>'
+        '<div class="col-lg-5"><div class="card" style="border:2px solid var(--rori-gold);">'
+        '<h5 style="color:var(--rori-gold);"><i class="fas fa-gavel"></i> Your Decision</h5>'
+        '<form method="post" id="hkForm"><div class="mb-3"><label class="form-label">Approval / Rejection Note</label>'
+        '<textarea class="form-control" name="note" rows="3" placeholder="Optional note..."></textarea></div>'
+        '<label class="form-label"><i class="fas fa-pen-nib"></i> Digital Signature (required)</label>'
+        '<div style="border: 2px dashed rgba(197,160,89,0.5); border-radius: 12px; padding: 8px; background: #fff;">'
+        '<canvas id="hk-sig-pad" width="400" height="150" style="width:100%;height:150px;cursor:crosshair;touch-action:none;"></canvas></div>'
+        '<div class="mt-2 mb-3"><button type="button" class="btn-icon" id="hk-clear"><i class="fas fa-eraser"></i> Clear</button>'
+        '<span id="hk-sig-hint" style="color:var(--text-secondary);font-size:.85rem;margin-left:.5rem;">Draw your signature</span></div>'
+        '<input type="hidden" name="signature" id="hk-signature-data">'
+        '<div class="d-flex gap-2">'
+        '<button type="submit" name="decision" value="approve" class="btn-primary" style="background:var(--success);flex:1;justify-content:center;"><i class="fas fa-check"></i> Approve</button>'
+        '<button type="submit" name="decision" value="reject" class="btn-primary" style="background:var(--danger);flex:1;justify-content:center;" onclick="return confirm(\'Reject this request? It will NOT reach Maintenance Manager.\');"><i class="fas fa-times"></i> Reject</button>'
+        '</div></form></div></div></div>'
+        '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
+        '<script>(function(){var c=document.getElementById("hk-sig-pad");var p=new SignaturePad(c,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});var h=document.getElementById("hk-sig-hint");function resize(){var r=Math.max(window.devicePixelRatio||1,1);c.width=c.offsetWidth*r;c.height=c.offsetHeight*r;c.getContext("2d").scale(r,r);p.clear();}window.addEventListener("resize",resize);resize();p.addEventListener("endStroke",function(){h.textContent=p.isEmpty()?"Draw your signature":"✓ Signature captured";});document.getElementById("hk-clear").addEventListener("click",function(){p.clear();h.textContent="Draw your signature";});document.getElementById("hkForm").addEventListener("submit",function(e){if(p.isEmpty()){e.preventDefault();alert("⚠️ Please draw your signature before proceeding.");return false;}document.getElementById("hk-signature-data").value=p.toDataURL("image/png");});})();</script>')
+    return page("HK Approval", content)
 
 @app.route("/requests/<int:req_id>/approve", methods=["POST"])
 @role_required("MANAGER","ADMIN")
 def request_approve(req_id):
     try:
         req = get_or_404(MaintenanceRequest, req_id)
+        # HK gate: must be approved by HK manager first
+        if is_housekeeping_request(req) and not hk_approved(req):
+            flash("This Housekeeping request must first be approved by the Housekeeping Manager.","warning")
+            return redirect(url_for("request_detail", req_id=req_id))
         if req.status != "Pending": flash("Not pending","warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.status = "Approved"; req.manager_id = current_user.id
         log_status_change(req.id,"Approved",notes="Approved by " + str(current_user.full_name))
@@ -1625,7 +1971,7 @@ def request_restore(req_id):
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("deleted_requests"))
 
-# ══════════════════════════════════════════ ANALYTICS HELPERS
+# ══════════════════════════════════════════ ANALYTICS
 COMPLETED_STATES = ["Completed","Verified","Closed"]
 PENDING_STATES = ["Pending","Approved"]
 INPROGRESS_STATES = ["Assigned","In Progress"]
@@ -1810,6 +2156,7 @@ def _build_detailed_report_pack(req):
     accepted_dt = _dt_first(["Approved"]); assigned_dt = _dt_first(["Assigned"])
     started_dt = _dt_first(["In Progress"]); completed_dt = _dt_first(["Completed"])
     verified_dt = _dt_first(["Verified"]); closed_dt = _dt_first(["Closed"])
+    hk_decision_dt = _dt_first(["HK Approve","HK Reject"])
     assigned_by = None
     if assigned_dt:
         for h in hist:
@@ -1841,6 +2188,7 @@ def _build_detailed_report_pack(req):
         "req": req, "wo": wo, "history": hist,
         "accepted_dt": accepted_dt, "assigned_dt": assigned_dt, "started_dt": started_dt,
         "completed_dt": completed_dt, "verified_dt": verified_dt, "closed_dt": closed_dt,
+        "hk_decision_dt": hk_decision_dt,
         "assigned_by": assigned_by, "verifier": verifier, "closer": closer,
         "parts_used": parts_used, "total_cost": total_cost,
         "technician": wo.assigned_to if wo and wo.assigned_to else req.assigned_to,
@@ -1876,6 +2224,19 @@ def _render_detailed_report_block(p, seq=None):
                     + ' · At ' + (req.signature_signed_at.strftime("%Y-%m-%d %H:%M") if req.signature_signed_at else "—") + '</div>')
     else:
         sig_html = '<div style="font-size:.85rem;color:#666;">No digital signature on record.</div>'
+    hk_sig_html = ""
+    if is_housekeeping_request(req):
+        hk_state = (req.hk_approval_status or "pending").title()
+        hk_sig_html = ('<div class="report-section"><div class="report-section-title">Housekeeping Manager Approval</div><div class="report-kv">'
+            '<div class="row"><span class="lbl">Approval Status</span><span class="val">' + hk_state + '</span></div>'
+            '<div class="row"><span class="lbl">Reviewed By</span><span class="val">' + ((req.hk_approved_by.full_name or req.hk_approved_by.username) if req.hk_approved_by else "—") + '</span></div>'
+            '<div class="row"><span class="lbl">Decision Date/Time</span><span class="val">' + fmt(req.hk_approved_at) + '</span></div>'
+            '</div>'
+            + ('<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Approval Notes</div>'
+               '<div class="report-longtext">' + (str(req.hk_approval_notes) if req.hk_approval_notes else "—") + '</div></div>')
+            + ('<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Housekeeping Manager Signature</div>'
+               '<div class="report-sig" style="margin-top:.4rem;"><img src="' + str(req.hk_signature_data) + '" alt="HK Signature"></div></div>' if req.hk_signature_data else "")
+            + '</div>')
     parts_rows = ""
     if p["parts_used"]:
         for i, it in enumerate(p["parts_used"], 1):
@@ -1910,6 +2271,7 @@ def _render_detailed_report_block(p, seq=None):
     + '<div class="row"><span class="lbl">Priority</span><span class="val">' + str(req.priority or "MEDIUM") + '</span></div>'
     + '<div class="row"><span class="lbl">Current Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div>'
     + '</div></div>'
+    + hk_sig_html
     + '<div class="report-section"><div class="report-section-title">2. Location Information</div><div class="report-kv">'
     + '<div class="row"><span class="lbl">Location Type</span><span class="val">' + str(loc_type) + '</span></div>'
     + '<div class="row"><span class="lbl">Floor</span><span class="val">' + str(floor_line) + '</span></div>'
@@ -2068,7 +2430,7 @@ def detailed_report_export():
     cw.writerow(["Period From", args.get("date_from") or "All time"]); cw.writerow(["Period To", args.get("date_to") or "All time"]); cw.writerow([])
     kpis = _compute_report_kpis(reqs)
     cw.writerow(["REPORT SUMMARY"]); cw.writerow(["Total", kpis["total"], "Completed", kpis["completed"], "In Progress", kpis["in_progress"], "Pending", kpis["pending"], "Verified", kpis["verified"], "Closed", kpis["closed"]]); cw.writerow([])
-    headers = ["Request No","Work Order No","Internal Request ID","Internal WO ID","Request Date","Request Time","Department","Requester","Requester Role","Priority","Current Status","Location Type","Floor","Room Number","Area / Location","Full Location","Maintenance Item","Category","Problem Description (Full)","Work Instructions / Notes","Assigned Technician","Technician Role","Assigned By","Assignment Date","Assignment Time","Due Date","Due Time","Accepted Date/Time","Started Date/Time","Completed Date/Time","Labor Hours","Work Performed / Action Taken","Completion Note","Root Cause","Recommendation","Materials Used (detail)","Total Materials Cost","Verified By","Verification Date/Time","Verification Status","Verification Note","Closed By","Closed Date/Time","Closure / Completion Note","Digital Signature (Signed By)","Signature Department","Signature Signed At","Signature Verified","Photos / Attachments"]
+    headers = ["Request No","Work Order No","Internal Request ID","Internal WO ID","Request Date","Request Time","Department","Requester","Requester Role","Priority","Current Status","HK Approval Status","HK Approved By","HK Decision Time","Location Type","Floor","Room Number","Area / Location","Full Location","Maintenance Item","Category","Problem Description (Full)","Work Instructions / Notes","Assigned Technician","Technician Role","Assigned By","Assignment Date","Assignment Time","Due Date","Due Time","Accepted Date/Time","Started Date/Time","Completed Date/Time","Labor Hours","Work Performed / Action Taken","Completion Note","Root Cause","Recommendation","Materials Used (detail)","Total Materials Cost","Verified By","Verification Date/Time","Verification Status","Verification Note","Closed By","Closed Date/Time","Closure / Completion Note","Digital Signature (Signed By)","Signature Department","Signature Signed At","Signature Verified","Photos / Attachments"]
     cw.writerow(headers)
     for req in reqs:
         pack = _build_detailed_report_pack(req); wo = pack["wo"]; tech = pack["technician"]
@@ -2077,7 +2439,9 @@ def detailed_report_export():
         def dt_time(dt): return dt.strftime("%H:%M") if dt else ""
         mats = "; ".join((m["name"] + " [" + str(m["category"]) + "] - " + str(m["quantity"]) + " " + str(m["unit"]) + (" (" + m["notes"] + ")" if m["notes"] else "")) for m in pack["parts_used"])
         photos_str = "; ".join((ph["type"] or "Photo") + ": " + ph["filename"] for ph in pack["photos"])
-        cw.writerow([req.request_no, wo.work_order_no if wo else "", req.id, wo.id if wo else "", dt_date(req.created_at), dt_time(req.created_at), req.department.name if req.department else "", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else "", req.requested_by.role if req.requested_by else "", req.priority or "MEDIUM", req.status, req.location_type or "", req.floor if req.floor else "", req.room.room_number if req.room else "", req.area.name if req.area else "", req.location_name, req.working_item.name if req.working_item else "", req.category.name if req.category else "", str(req.description or ""), (pack["work_performed"] or ""), (tech.full_name or tech.username) if tech else "", tech.role if tech else "", (pack["assigned_by"].full_name or pack["assigned_by"].username) if pack["assigned_by"] else ((req.manager.full_name or req.manager.username) if req.manager else ""), dt_date(pack["assigned_dt"]), dt_time(pack["assigned_dt"]), dt_date(req.due_date), dt_time(req.due_date), fmt(pack["accepted_dt"]), fmt(pack["started_dt"]), fmt(pack["completed_dt"] or req.completed_date), pack["labor_hours"], (pack["work_performed"] or ""), (pack["completion_notes"] or ""), (pack["root_cause"] or ""), (pack["recommendation"] or ""), mats, round(pack["total_cost"], 2), (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else "", fmt(pack["verified_dt"] or (wo.verified_date if wo else None)), "Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending", (pack["completion_notes"] or ""), (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status == "Closed") else "", fmt(pack["closed_dt"]), (req.completion_note or ""), req.signature_name or "", req.signature_department or "", fmt(req.signature_signed_at), "Yes" if req.signature_verified else "No", photos_str])
+        hk_status = req.hk_approval_status or ""
+        hk_by = (req.hk_approved_by.full_name or req.hk_approved_by.username) if req.hk_approved_by else ""
+        cw.writerow([req.request_no, wo.work_order_no if wo else "", req.id, wo.id if wo else "", dt_date(req.created_at), dt_time(req.created_at), req.department.name if req.department else "", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else "", req.requested_by.role if req.requested_by else "", req.priority or "MEDIUM", req.status, hk_status, hk_by, fmt(req.hk_approved_at), req.location_type or "", req.floor if req.floor else "", req.room.room_number if req.room else "", req.area.name if req.area else "", req.location_name, req.working_item.name if req.working_item else "", req.category.name if req.category else "", str(req.description or ""), (pack["work_performed"] or ""), (tech.full_name or tech.username) if tech else "", tech.role if tech else "", (pack["assigned_by"].full_name or pack["assigned_by"].username) if pack["assigned_by"] else ((req.manager.full_name or req.manager.username) if req.manager else ""), dt_date(pack["assigned_dt"]), dt_time(pack["assigned_dt"]), dt_date(req.due_date), dt_time(req.due_date), fmt(pack["accepted_dt"]), fmt(pack["started_dt"]), fmt(pack["completed_dt"] or req.completed_date), pack["labor_hours"], (pack["work_performed"] or ""), (pack["completion_notes"] or ""), (pack["root_cause"] or ""), (pack["recommendation"] or ""), mats, round(pack["total_cost"], 2), (pack["verifier"].full_name or pack["verifier"].username) if pack["verifier"] else "", fmt(pack["verified_dt"] or (wo.verified_date if wo else None)), "Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending", (pack["completion_notes"] or ""), (pack["closer"].full_name or pack["closer"].username) if (pack["closer"] and req.status == "Closed") else "", fmt(pack["closed_dt"]), (req.completion_note or ""), req.signature_name or "", req.signature_department or "", fmt(req.signature_signed_at), "Yes" if req.signature_verified else "No", photos_str])
     output = make_response(si.getvalue())
     fn = "detailed_report_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S") + ".csv"
     output.headers["Content-Disposition"] = "attachment; filename=" + fn
@@ -2120,7 +2484,10 @@ def detailed_report_single_wo_export(wo_id):
     def row(k, v): cw.writerow([k, v])
     row("Request No", req.request_no); row("Work Order No", wo.work_order_no)
     row("Internal Request ID", req.id); row("Internal WO ID", wo.id)
-    row("Department", req.department.name if req.department else ""); row("Requester", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else ""); row("Requester Role", req.requested_by.role if req.requested_by else "")
+    row("Department", req.department.name if req.department else "")
+    row("HK Approval Status", req.hk_approval_status or "")
+    row("HK Approved By", (req.hk_approved_by.full_name or req.hk_approved_by.username) if req.hk_approved_by else "")
+    row("Requester", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else ""); row("Requester Role", req.requested_by.role if req.requested_by else "")
     row("Priority", req.priority or ""); row("Current Status", req.status); row("Location Type", req.location_type or "")
     row("Floor", req.floor if req.floor else ""); row("Room", req.room.room_number if req.room else ""); row("Area", req.area.name if req.area else ""); row("Full Location", req.location_name)
     row("Maintenance Item", req.working_item.name if req.working_item else ""); row("Category", req.category.name if req.category else "")
@@ -2170,7 +2537,7 @@ def detailed_report_request(req_id):
         '<div class="report-doc">' + body + '</div>')
     return page("Request Report", content)
 
-# ══════════════════════════════════════════ DASHBOARD
+# ══════════════════════════════════════════ DASHBOARD (same as original)
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -2388,7 +2755,7 @@ new Chart(c, {type:'bar', data:{labels:x.labels, datasets:[{label:'Requests', da
 })();
 </script></body></html>"""
 
-# ═════════════════════════════════════════ MANAGEMENT REPORTS
+# ══════════════════════════════════════════ MANAGEMENT REPORTS
 @app.route("/management/reports")
 @role_required("ADMIN", "MANAGER")
 def management_reports():
@@ -2541,7 +2908,7 @@ def central_maintenance():
         '<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-clock-rotate-left"></i> Recent Requests</div><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Dept</th><th>Status</th><th>Priority</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(recent_rows) if recent_rows else '<tr><td colspan="7" style="text-align:center;">No requests.</td></tr>') + '</tbody></table></div></div>')
     return page("Central Maintenance", content)
 
-# ══════════════════════════════════════════ DEPARTMENT / EMPLOYEE DASHBOARDS
+# ══════════════════════════════════════════ DEPT / EMPLOYEE DASHBOARDS
 @app.route("/department")
 @login_required
 @role_required("DEPARTMENT")
@@ -2555,9 +2922,17 @@ def department_dashboard():
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i></a></td></tr>')
+        hk_badge = ""
+        if is_housekeeping_request(r):
+            hs = (r.hk_approval_status or "pending").lower()
+            hk_badge = {"pending":' ⏳HK', "approved":' ✓HK', "rejected":' ✗HK'}.get(hs, "")
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span>' + hk_badge + '</td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i></a></td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div>'
+    hk_approval_btn = ""
+    if is_hk_manager(current_user):
+        hk_approval_btn = '<a href="' + url_for("housekeeping_approvals") + '" class="btn-primary" style="background:var(--info);"><i class="fas fa-check-double"></i> HK Approvals</a>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div>'
+         '<div style="display:flex;gap:.6rem;">' + hk_approval_btn + '<a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div></div>'
          '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
          '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;">No requests yet.</td></tr>') + '</tbody></table></div></div>')
     return page("Department Dashboard", c)
@@ -2596,6 +2971,10 @@ def workorders_list():
 @role_required("MANAGER","ADMIN")
 def workorder_create():
     req_id = request.args.get("request_id", type=int); req = get_one(MaintenanceRequest, req_id) if req_id else None
+    # HK gate
+    if req and is_housekeeping_request(req) and not hk_approved(req):
+        flash("This Housekeeping request must be approved by the Housekeeping Manager first.","warning")
+        return redirect(url_for("request_detail", req_id=req.id))
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
     uo = "".join('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) + ' — ' + str(u.role) + '</option>' for u in staff)
     if request.method == "POST":
@@ -2603,6 +2982,9 @@ def workorder_create():
             request_id = request.form.get("request_id", type=int); assigned_to_id = request.form.get("assigned_to_id", type=int); wp = request.form.get("work_performed","")
             if not assigned_to_id: flash("Please select a technician","danger"); return redirect(url_for("workorder_create", request_id=request_id))
             req = get_or_404(MaintenanceRequest, request_id); assigned_user = get_one(User, assigned_to_id)
+            if is_housekeeping_request(req) and not hk_approved(req):
+                flash("Housekeeping Manager approval required before assignment.","warning")
+                return redirect(url_for("request_detail", req_id=req.id))
             existing = WorkOrder.query.filter_by(request_id=req.id).filter(WorkOrder.status != "Completed").first()
             if existing: wo = existing; wo.assigned_to_id = assigned_to_id; wo.status = "Assigned"; wo.work_performed = wp if wp else wo.work_performed
             else: wo = WorkOrder(work_order_no=work_order_no_generator(), request_id=req.id, assigned_to_id=assigned_to_id, status="Assigned", work_performed=wp); db.session.add(wo); db.session.flush()
@@ -3374,6 +3756,7 @@ def reports():
 @app.route("/debug")
 def debug():
     la = Area.query.filter_by(name=LAUNDRY_AREA_NAME).first()
+    hk = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
     return jsonify({
         "database_backend": db.engine.dialect.name,
         "database_url_set": bool(os.environ.get("DATABASE_URL")),
@@ -3382,6 +3765,11 @@ def debug():
         "requests_total_incl_archived": MaintenanceRequest.query.count(),
         "requests_active": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "requests_archived": MaintenanceRequest.query.filter_by(is_deleted=True).count(),
+        "hk_pending_approval": MaintenanceRequest.query.filter_by(hk_approval_status="pending").count(),
+        "hk_approved": MaintenanceRequest.query.filter_by(hk_approval_status="approved").count(),
+        "hk_rejected": MaintenanceRequest.query.filter_by(hk_approval_status="rejected").count(),
+        "hk_items_count": WorkingItem.query.filter_by(department_id=hk.id).count() if hk else 0,
+        "hk_categories_count": Category.query.filter(Category.name.in_(list(HOUSEKEEPING_CATEGORY_NAMES))).count(),
         "work_orders": WorkOrder.query.count(),
         "work_orders_completed": WorkOrder.query.filter_by(status="Completed").count(),
         "work_orders_verified": WorkOrder.query.filter_by(status="Verified").count(),
@@ -3393,6 +3781,8 @@ def debug():
         "inventory_total": InventoryPart.query.count(),
         "inventory_stock_history": InventoryStockHistory.query.count(),
         "marketing_manager_exists": bool(User.query.filter_by(username="yordanose").first()),
+        "hk_manager_exists": bool(User.query.filter_by(username="kasahun").first()),
+        "hotel_areas_configured": len(HOTEL_AREAS),
         "note": "Read-only diagnostics. No data was modified.",
     })
 
@@ -3438,6 +3828,7 @@ with app.app_context():
     seed_data()
     fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
+    print("✅ Housekeeping workflow active — Kasahun Girma (manager) → Maintenance Manager")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
     print("="*60)
 
