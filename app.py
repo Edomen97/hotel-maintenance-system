@@ -770,7 +770,7 @@ def page(title, content):
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --rori-gold:#D4AF37;
@@ -1083,23 +1083,23 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .report-table th{background:#eee!important;color:#000!important}
   .report-table td,.report-table th{border:1px solid #666!important}
 }
-/* ═══════════ SCOPED — NEW REQUEST PAGE (black & gold) ═══════════ */
-.rq-page{--rq-bg:#121212;--rq-card:#1b1b1b;--rq-line:#2f2c26;--rq-gold:#C5A059;--rq-gold-soft:rgba(197,160,89,.14);--rq-tx:#f4f1ea;--rq-mut:#b4afa5;--rq-err:#ff6b5e;--rq-ok:#6fcf97;font-family:'Figtree',system-ui,-apple-system,sans-serif;color:var(--rq-tx);max-width:1200px;margin:0 auto}
-.rq-page h1,.rq-page h2,.rq-page h3{font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;margin:0;color:var(--rq-gold)}
-.rq-page .rq-head{padding:4px 0 12px;border-bottom:1px solid var(--rq-line);margin-bottom:20px}
-.rq-page h1{font-size:34px;line-height:1.15}
-.rq-page .rq-sub{color:var(--rq-mut);margin:6px 0 0;font-size:15px}
-.rq-page .rq-alert{padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:14px;border:1px solid}
-.rq-page .rq-alert-danger{background:rgba(255,107,94,.08);border-color:rgba(255,107,94,.4);color:#ffb3ac}
+/* ═══════ SCOPED — NEW MAINTENANCE REQUEST FORM (black & gold) ═══════ */
+.rq-page{--rq-bg:#121212;--rq-card:#1b1b1b;--rq-line:#2f2c26;--rq-gold:#C5A059;--rq-tx:#f4f1ea;--rq-mut:#b4afa5;--rq-err:#ff6b5e;--rq-ok:#6fcf97;background:var(--rq-bg);color:var(--rq-tx);font-family:'Figtree',system-ui,sans-serif;border-radius:20px;padding:22px 20px 24px;box-shadow:0 8px 32px rgba(0,0,0,.5);border:1px solid var(--rq-line)}
+.rq-page h1,.rq-page h2,.rq-page h3{font-family:'Cormorant Garamond',Georgia,serif;margin:0}
+.rq-page .rq-h1{font-size:34px;color:var(--rq-gold);line-height:1.15}
+.rq-page .rq-sub{color:var(--rq-mut);margin:4px 0 20px;font-size:15px}
+.rq-page .rq-alert{padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:14px;border:1px solid;background:rgba(255,107,94,.08);border-color:rgba(255,107,94,.4);color:#ffb3ac}
 .rq-page .rq-grid{display:grid;gap:20px}
-@media(min-width:960px){.rq-page .rq-grid{grid-template-columns:1fr 340px;align-items:start}
+@media(min-width:960px){
+  .rq-page .rq-grid{grid-template-columns:1fr 340px;align-items:start}
   .rq-page .rq-aside{position:sticky;top:calc(var(--header-h) + 20px)}
-  .rq-page .rq-bar{position:static;background:none;border:0;padding:0;margin-top:8px;grid-template-columns:auto}
-  .rq-page .rq-bar p{text-align:left;margin-top:12px}}
+  .rq-page .rq-bar{position:static;background:none;border:0;padding:0;margin-top:8px}
+  .rq-page .rq-bar p{text-align:left}
+}
 .rq-page .rq-card{background:var(--rq-card);border:1px solid var(--rq-line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
-.rq-page .rq-card>h2{font-size:24px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
-.rq-page .rq-card>h2 span{color:var(--rq-gold);font-size:13px;font-family:'Figtree',sans-serif;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
-.rq-page label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px;color:var(--rq-tx)}
+.rq-page .rq-card-title{font-size:24px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;color:var(--rq-tx);font-family:'Cormorant Garamond',Georgia,serif;font-weight:700}
+.rq-page .rq-req{color:var(--rq-gold);font-size:13px;font-family:'Figtree',sans-serif;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+.rq-page label{display:block;font-weight:600;font-size:15px;margin:14px 0 6px;color:var(--rq-tx)}
 .rq-page label:first-child{margin-top:0}
 .rq-page label i{color:var(--rq-gold);font-style:normal}
 .rq-page input[type="text"],.rq-page input[type="tel"],.rq-page input[type="email"],
@@ -1109,57 +1109,63 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .rq-page input:focus,.rq-page select:focus,.rq-page textarea:focus{outline:none;border-color:var(--rq-gold);box-shadow:0 0 0 3px rgba(197,160,89,.25)}
 .rq-page input:disabled{opacity:.55;cursor:not-allowed}
 .rq-page .rq-err input,.rq-page .rq-err select,.rq-page .rq-err textarea,.rq-page .rq-err .rq-pri{border-color:var(--rq-err)}
-.rq-page .rq-msg{display:none;color:var(--rq-err);font-size:13px;margin-top:6px}
+.rq-page .rq-msg{display:none;color:var(--rq-err);font-size:14px;margin-top:6px}
 .rq-page .rq-err .rq-msg{display:block}
 .rq-page .rq-seg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
 .rq-page .rq-seg button{min-height:52px;border:1.5px solid var(--rq-line);background:#0e0e0e;color:var(--rq-tx);border-radius:12px;font:inherit;font-weight:600;font-size:15px;cursor:pointer;transition:all .15s}
-.rq-page .rq-seg button.on{border-color:var(--rq-gold);background:var(--rq-gold-soft);color:var(--rq-gold)}
+.rq-page .rq-seg button.on{border-color:var(--rq-gold);background:rgba(197,160,89,.14);color:var(--rq-gold)}
 .rq-page .rq-pri{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;border-radius:12px}
 @media(min-width:520px){.rq-page .rq-pri{grid-template-columns:repeat(4,1fr)}}
 .rq-page .rq-pri button{min-height:52px;border:1.5px solid var(--rq-line);background:#0e0e0e;color:var(--rq-tx);border-radius:12px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:center;transition:all .15s}
-.rq-page .rq-pri button.on{background:rgba(255,255,255,.06);border-width:2px}
+.rq-page .rq-pri button.on{background:rgba(255,255,255,.07);border-width:2px}
 .rq-page .rq-pri button[data-v="LOW"].on{border-color:#4aa3ff;color:#bfe0ff}
 .rq-page .rq-pri button[data-v="MEDIUM"].on{border-color:#ffd24a;color:#ffe9a3}
 .rq-page .rq-pri button[data-v="HIGH"].on{border-color:#ff9a3d;color:#ffc993}
 .rq-page .rq-pri button[data-v="URGENT"].on{border-color:#ff4d4d;color:#ffb3b3}
 .rq-page .rq-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
 .rq-page .rq-up{border:2px dashed #6e5c36;border-radius:14px;padding:18px;text-align:center;background:rgba(197,160,89,.03)}
-.rq-page .rq-up .rq-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
-.rq-page .rq-btn{min-height:54px;border-radius:14px;font:inherit;font-weight:700;font-size:15px;border:1.5px solid var(--rq-gold);background:none;color:var(--rq-gold);width:100%;padding:0 16px;cursor:pointer;transition:all .15s}
-.rq-page .rq-btn:hover{background:var(--rq-gold-soft)}
+.rq-page .rq-up-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.rq-page .rq-btn{min-height:54px;border-radius:14px;font:inherit;font-weight:600;font-size:15px;border:1.5px solid var(--rq-gold);background:none;color:var(--rq-gold);width:100%;padding:0 16px;cursor:pointer;transition:all .15s}
+.rq-page .rq-btn:hover{background:rgba(197,160,89,.10)}
 .rq-page .rq-btn.rq-btn-p{background:var(--rq-gold);color:#16120a}
 .rq-page .rq-btn.rq-btn-p:hover{background:#d4b06c;color:#16120a}
 .rq-page .rq-btn:disabled{opacity:.7;cursor:not-allowed}
-.rq-page .rq-thumbs{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:center}
-.rq-page .rq-th{width:84px;height:84px;border-radius:12px;background:linear-gradient(135deg,#3a342a,#241f17);border:1px solid var(--rq-line);position:relative;display:grid;place-items:center;font-size:12px;color:var(--rq-mut);overflow:hidden}
+.rq-page .rq-thumbs{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;justify-content:center}
+.rq-page .rq-th{width:84px;height:84px;border-radius:12px;background:#241f17;border:1px solid var(--rq-line);position:relative;display:grid;place-items:center;font-size:12px;color:var(--rq-mut);overflow:hidden;background-size:cover;background-position:center}
 .rq-page .rq-th button{position:absolute;top:-6px;right:-6px;width:26px;height:26px;border-radius:50%;border:0;background:var(--rq-err);color:#fff;font-size:14px;cursor:pointer;display:grid;place-items:center;line-height:1;z-index:2}
 .rq-page .rq-hide{display:none!important}
 .rq-page .rq-flow{list-style:none;margin:0;padding:0 0 0 6px;border-left:2px solid var(--rq-line)}
-.rq-page .rq-flow li{position:relative;padding:0 0 14px 22px;font-size:14px;color:var(--rq-mut)}
-.rq-page .rq-flow li:before{content:"";position:absolute;left:-8px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--rq-card);border:2px solid var(--rq-line)}
+.rq-page .rq-flow li{position:relative;padding:0 0 14px 22px;font-size:15px;color:var(--rq-mut)}
+.rq-page .rq-flow li:before{content:"";position:absolute;left:-8px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--rq-card);border:2px solid var(--rq-gold)}
 .rq-page .rq-flow li.cur{color:var(--rq-tx);font-weight:600}
 .rq-page .rq-flow li.cur:before{background:var(--rq-gold);border-color:var(--rq-gold)}
 .rq-page .rq-sum{list-style:none;margin:0;padding:0}
-.rq-page .rq-sum dt{color:var(--rq-mut);font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin-top:12px;font-weight:600}
+.rq-page .rq-sum dt{color:var(--rq-mut);font-size:13px;margin-top:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .rq-page .rq-sum dt:first-child{margin-top:0}
-.rq-page .rq-sum dd{margin:2px 0 0;font-weight:600;color:var(--rq-tx);font-size:15px}
+.rq-page .rq-sum dd{margin:2px 0 0;font-weight:600;color:var(--rq-tx)}
 .rq-page .rq-bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:rgba(18,18,18,.97);border-top:1px solid var(--rq-line);display:grid;gap:8px;z-index:40}
-.rq-page .rq-bar .rq-bar-r{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.rq-page .rq-bar p{margin:0;color:var(--rq-mut);font-size:12px;text-align:center}
-.rq-page .rq-sigbox{background:#fff;padding:10px;border-radius:12px;border:1.5px dashed rgba(197,160,89,.55);margin-top:6px}
-.rq-page #signature-pad{display:block;width:100%;height:150px;touch-action:none;cursor:crosshair;border-radius:8px}
-.rq-page .rq-sigmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
-.rq-page .rq-sigmeta .rq-box{background:#0e0e0e;border:1px solid var(--rq-line);border-radius:12px;padding:10px 12px}
-.rq-page .rq-sigmeta .rq-box .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--rq-mut);font-weight:600}
-.rq-page .rq-sigmeta .rq-box .v{margin-top:3px;font-weight:700;color:var(--rq-tx);font-size:14px}
-.rq-page .rq-sigstatus{display:inline-flex;align-items:center;gap:8px;font-weight:700;color:var(--rq-mut);font-size:14px}
+.rq-page .rq-bar-row{display:grid;grid-template-columns:1fr;gap:10px}
+.rq-page .rq-bar p{margin:0;color:var(--rq-mut);font-size:13px;text-align:center}
+.rq-page .rq-sigmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.rq-page .rq-sigbox{background:#0e0e0e;border:1px solid var(--rq-line);border-radius:12px;padding:10px 12px}
+.rq-page .rq-k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--rq-mut);font-weight:600}
+.rq-page .rq-v{margin-top:3px;font-weight:700;color:var(--rq-tx);font-size:14px}
+.rq-page .rq-canvas-wrap{background:#fff;padding:10px;border-radius:12px;border:1.5px dashed rgba(197,160,89,.5);margin-top:6px}
+.rq-page #signature-pad{display:block;width:100%;height:150px;touch-action:none;cursor:crosshair;border-radius:8px;background:#fff}
+.rq-page .rq-sigrow{display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.rq-page .rq-sigrow .rq-btn{width:auto;padding:0 16px;min-height:44px}
+.rq-page .rq-sigstatus{color:var(--rq-mut);font-weight:600;font-size:14px}
 .rq-page .rq-sigstatus.rq-ok{color:var(--rq-ok)}
 .rq-page .rq-spin{display:inline-block;width:14px;height:14px;border:2px solid #16120a;border-top-color:transparent;border-radius:50%;animation:rqs .7s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes rqs{to{transform:rotate(360deg)}}
 @media(max-width:520px){
-  .rq-page h1{font-size:26px}
+  .rq-page{padding:16px}
+  .rq-page .rq-h1{font-size:26px}
   .rq-page .rq-card{padding:14px}
-  .rq-page .rq-card>h2{font-size:20px}
+  .rq-page .rq-card-title{font-size:20px}
+}
+@media(max-width:768px){
+  .rq-page{padding-bottom:150px}
 }
 </style></head><body>
 <header class="header">
@@ -1659,7 +1665,7 @@ def request_create():
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
-            # MODIFIED: support up to 5 photos (was: single request.files.get("photo"))
+            # Support up to 5 uploaded photos
             uploaded_files = request.files.getlist("photo")
             for idx, f in enumerate(uploaded_files[:5]):
                 if f and f.filename and allowed_file(f.filename):
@@ -1679,7 +1685,7 @@ def request_create():
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
 
-    # ══════════ GET — build new black/gold form ══════════
+    # ══════════ GET — build black/gold form ══════════
     is_hk_user = (user_dept_id == hk_dept_id) if hk_dept_id else False
     user_cats = hk_cats if is_hk_user else other_cats
 
@@ -1728,7 +1734,7 @@ def request_create():
     sig_authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
     sig_dept_display = user_dept_name or "Not assigned"
     sig_block_required = current_user.role in ["DEPARTMENT", "EMPLOYEE"]
-    sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="rq-alert rq-alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin.</div>'
+    sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="rq-alert"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin.</div>'
 
     dept_display = user_dept_name or "Not assigned"
     user_display_name = current_user.full_name or current_user.username or "User"
@@ -1736,12 +1742,10 @@ def request_create():
     hk_dept_id_str = str(hk_dept_id or 0)
 
     c = (
-        sig_warning +
         '<div class="rq-page">'
-        '<div class="rq-head">'
-        '<h1>Maintenance Request</h1>'
+        + sig_warning +
+        '<h1 class="rq-h1">Maintenance Request</h1>'
         '<p class="rq-sub">Report a maintenance issue to the Engineering Department</p>'
-        '</div>'
         '<form method="post" id="requestForm" enctype="multipart/form-data" novalidate>'
         '<input type="hidden" name="department_id" value="' + user_dept_id_str + '">'
         '<input type="hidden" name="location_type" id="rq-locationType" value="Room">'
@@ -1752,9 +1756,8 @@ def request_create():
         '<div class="rq-grid">'
         '<div class="rq-main">'
 
-        # Location
-        '<section class="rq-card">'
-        '<h2>Where is the problem?</h2>'
+        # ── Location card ──
+        '<section class="rq-card"><h2 class="rq-card-title">Where is the problem?</h2>'
         '<label>Request Type <i>*</i></label>'
         '<div class="rq-seg" id="rq-type">'
         '<button type="button" class="on" data-v="Room">🛏 Room</button>'
@@ -1774,9 +1777,8 @@ def request_create():
         '</div>'
         '</section>'
 
-        # What needs attention
-        '<section class="rq-card">'
-        '<h2>What needs attention?</h2>'
+        # ── Attention card ──
+        '<section class="rq-card"><h2 class="rq-card-title">What needs attention?</h2>'
         '<div id="rq-cg"><label>Category <i>*</i></label>'
         '<select name="category_id" id="rq-cat" class="rq-input">' + cat_opts + '</select>'
         '<div class="rq-msg">Choose a category.</div></div>'
@@ -1784,13 +1786,12 @@ def request_create():
         '<select name="working_item_id" id="rq-item" class="rq-input"><option value="">Select item</option></select>'
         '<div class="rq-msg">Tell us which item is affected.</div></div>'
         '<div id="rq-dg"><label>Description <i>*</i></label>'
-        '<textarea name="description" id="rq-desc" placeholder="Describe the problem clearly…" required></textarea>'
+        '<textarea name="description" id="rq-desc" class="rq-input" placeholder="Describe the problem clearly…" required></textarea>'
         '<div class="rq-msg">Describe the problem so technicians know what to bring.</div></div>'
         '</section>'
 
-        # Priority
-        '<section class="rq-card" id="rq-pg">'
-        '<h2>Priority</h2>'
+        # ── Priority card ──
+        '<section class="rq-card" id="rq-pg"><h2 class="rq-card-title">Priority <span class="rq-req">Required</span></h2>'
         '<div class="rq-pri" id="rq-pri">'
         '<button type="button" data-v="LOW"><span class="rq-dot" style="background:#4aa3ff"></span>Low</button>'
         '<button type="button" data-v="MEDIUM" class="on"><span class="rq-dot" style="background:#ffd24a"></span>Medium</button>'
@@ -1800,60 +1801,55 @@ def request_create():
         '<div class="rq-msg">Choose how urgent this is.</div>'
         '</section>'
 
-        # Photos
-        '<section class="rq-card">'
-        '<h2>Add Photo or Evidence <span id="rq-cnt">0 / 5</span></h2>'
+        # ── Photos card ──
+        '<section class="rq-card"><h2 class="rq-card-title">Add Photo or Evidence <span class="rq-req" id="rq-cnt">0 / 5</span></h2>'
         '<div class="rq-up">'
-        '<div style="font-size:32px;line-height:1">📷</div>'
-        '<div class="rq-row"><button type="button" class="rq-btn" id="rq-pick">📷 Choose Photos</button>'
-        '<button type="button" class="rq-btn" id="rq-pick2">⬆️ Add More</button></div>'
+        '<div style="font-size:32px;line-height:1">📷 ⬆️</div>'
+        '<div class="rq-up-row">'
+        '<button type="button" class="rq-btn" id="rq-pick">📷 Take Photo</button>'
+        '<button type="button" class="rq-btn" id="rq-pick2">⬆️ Choose from Device</button>'
+        '</div>'
         '<small style="color:#b4afa5">Maximum 5 photos (jpg, png, gif)</small>'
         '<div class="rq-thumbs" id="rq-thumbs"></div>'
         '</div>'
         '<input type="file" name="photo" id="rq-file" accept="image/*" multiple hidden>'
         '</section>'
 
-        # Signature
-        '<section class="rq-card">'
-        '<h2>Authorized Digital Signature ' + ('<span style="color:#ff8a7e">Required</span>' if sig_block_required else '<span>Optional</span>') + '</h2>'
+        # ── Signature card ──
+        '<section class="rq-card"><h2 class="rq-card-title">Authorized Digital Signature ' + ('<span class="rq-req">Required</span>' if sig_block_required else '<span class="rq-req">Optional</span>') + '</h2>'
         '<div class="rq-sigmeta">'
-        '<div class="rq-box"><div class="k">Signed By</div><div class="v">' + str(sig_authorized_name) + '</div></div>'
-        '<div class="rq-box"><div class="k">Department</div><div class="v">' + str(sig_dept_display) + '</div></div>'
-        '<div class="rq-box"><div class="k">Requester</div><div class="v">' + str(user_display_name) + '</div></div>'
+        '<div class="rq-sigbox"><div class="rq-k">Signed By</div><div class="rq-v">' + str(sig_authorized_name) + '</div></div>'
+        '<div class="rq-sigbox"><div class="rq-k">Department</div><div class="rq-v">' + str(sig_dept_display) + '</div></div>'
+        '<div class="rq-sigbox"><div class="rq-k">Requester</div><div class="rq-v">' + str(user_display_name) + '</div></div>'
         '</div>'
-        '<label style="margin-top:14px"><i class="fas fa-pen-nib"></i> Draw your signature below</label>'
-        '<div class="rq-sigbox"><canvas id="signature-pad" width="400" height="150"></canvas></div>'
-        '<div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">'
-        '<button type="button" class="rq-btn" id="rq-sigClear" style="width:auto;padding:0 16px;min-height:44px">🧹 Clear</button>'
+        '<label style="margin-top:14px">✒ Draw your signature below</label>'
+        '<div class="rq-canvas-wrap"><canvas id="signature-pad" width="400" height="150"></canvas></div>'
+        '<div class="rq-sigrow">'
+        '<button type="button" class="rq-btn" id="rq-sigClear">🧹 Clear</button>'
         '<span class="rq-sigstatus" id="rq-sigStatus">Awaiting signature</span>'
         '</div>'
         '</section>'
 
-        # Request info (locked)
-        '<section class="rq-card">'
-        '<h2>Request Information</h2>'
+        # ── Request Info card ──
+        '<section class="rq-card"><h2 class="rq-card-title">Request Information</h2>'
         '<label>Department <i>*</i></label>'
         '<input type="text" value="' + str(dept_display) + '" disabled>'
         '<label>Requested By <i>*</i></label>'
         '<input type="text" value="' + str(user_display_name) + '" disabled>'
-        '<label>Contact / Extension (optional)</label>'
+        '<label>Contact / Extension</label>'
         '<input type="tel" name="contact" inputmode="tel" placeholder="Optional">'
         '</section>'
 
-        '</div>'  # end rq-main
-
-        # Sidebar
+        '</div>'  # rq-main
         '<aside class="rq-aside">'
-        '<section class="rq-card">'
-        '<h2>Request Summary</h2>'
+        '<section class="rq-card"><h2 class="rq-card-title">Request Summary</h2>'
         '<dl class="rq-sum">'
         '<dt>Location</dt><dd id="rq-sL">–</dd>'
         '<dt>Category</dt><dd id="rq-sC">–</dd>'
         '<dt>Priority</dt><dd id="rq-sP">Medium</dd>'
         '</dl>'
         '</section>'
-        '<section class="rq-card">'
-        '<h2>Approval Workflow</h2>'
+        '<section class="rq-card"><h2 class="rq-card-title">Approval Workflow</h2>'
         '<ol class="rq-flow">'
         '<li class="cur">Department Request</li>'
         '<li>Maintenance Manager Approval</li>'
@@ -1865,23 +1861,19 @@ def request_create():
         '</ol>'
         '</section>'
         '</aside>'
+        '</div>'  # rq-grid
 
-        '</div>'  # end rq-grid
-
-        # Submit bar
         '<div class="rq-bar">'
-        '<div class="rq-bar-r">'
+        '<div class="rq-bar-row">'
         '<button type="submit" class="rq-btn rq-btn-p" id="rq-submit">Submit Maintenance Request</button>'
         '</div>'
         '<p>After submission, your request will be reviewed by the Engineering Department.</p>'
         '</div>'
 
         '</form>'
-        '</div>'  # end rq-page
+        '</div>'  # rq-page
 
-        # Data + logic
-        '<script>window.RORI_HK_DEPT_ID=' + hk_dept_id_str + ';'
-        'window.RORI_USER_DEPT_ID=' + user_dept_id_str + ';'
+        '<script>'
         'window.RORI_IS_HK=' + ('true' if is_hk_user else 'false') + ';'
         'window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_cat_json.items()}) + ';'
         'window.RORI_ALL_ITEMS=' + json.dumps(items_json) + ';'
@@ -1910,14 +1902,12 @@ def request_create():
         'var submitBtn=document.getElementById("rq-submit");'
         'var sL=document.getElementById("rq-sL"),sC=document.getElementById("rq-sC"),sP=document.getElementById("rq-sP");'
         'var curType="Room";'
-        // Type toggle
         'typeBtns.forEach(function(b){b.addEventListener("click",function(){'
         'curType=b.dataset.v;locType.value=curType;'
         'typeBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
         'if(curType==="Room"){roomF.classList.remove("rq-hide");areaF.classList.add("rq-hide");}'
         'else{roomF.classList.add("rq-hide");areaF.classList.remove("rq-hide");}'
         'updateSum();});});'
-        // Category → Item cascade
         'function renderItems(){'
         'var cid=catSel.value;'
         'var allowed=null;'
@@ -1928,11 +1918,9 @@ def request_create():
         'var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
         'catSel.addEventListener("change",function(){renderItems();updateSum();});'
         'renderItems();'
-        // Priority
         'priBtns.forEach(function(b){b.addEventListener("click",function(){'
         'priBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
         'priHidden.value=b.dataset.v;updateSum();});});'
-        // Photos
         'var acc=new DataTransfer();'
         'function pick(){fileInp.click();}'
         'document.getElementById("rq-pick").addEventListener("click",pick);'
@@ -1944,25 +1932,23 @@ def request_create():
         'for(var i=0;i<acc.files.length;i++){(function(idx){'
         'var f=acc.files[idx];'
         'var d=document.createElement("div");d.className="rq-th";'
-        'd.style.background="url("+URL.createObjectURL(f)+") center/cover";'
+        'd.style.backgroundImage="url("+URL.createObjectURL(f)+")";'
         'var btn=document.createElement("button");btn.type="button";btn.textContent="✕";btn.setAttribute("aria-label","Remove");'
         'btn.addEventListener("click",function(){'
         'var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}'
         'acc=nd;fileInp.files=acc.files;renderThumbs();});'
         'd.appendChild(btn);thumbs.appendChild(d);})(i);}'
         'cnt.textContent=acc.files.length+" / 5";}'
-        // Signature
         'var canvas=document.getElementById("signature-pad");'
         'var sigPad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});'
         'function resizeCanvas(){var r=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*r;canvas.height=canvas.offsetHeight*r;canvas.getContext("2d").scale(r,r);sigPad.clear();updateSig();}'
         'window.addEventListener("resize",resizeCanvas);'
-        'setTimeout(resizeCanvas,60);resizeCanvas();'
+        'setTimeout(resizeCanvas,60);'
         'document.getElementById("rq-sigClear").addEventListener("click",function(){sigPad.clear();updateSig();});'
         'sigPad.addEventListener("endStroke",updateSig);'
         'function updateSig(){if(sigPad.isEmpty()){sigStatus.textContent="Awaiting signature";sigStatus.className="rq-sigstatus";}'
         'else{sigStatus.textContent="✓ Signature captured";sigStatus.className="rq-sigstatus rq-ok";}}'
         'updateSig();'
-        // Summary
         'function updateSum(){'
         'var loc="";'
         'if(curType==="Room"){var rs=document.getElementById("rq-room");var ro=rs.options[rs.selectedIndex];if(rs.value&&ro)loc=ro.textContent;}'
@@ -1973,7 +1959,6 @@ def request_create():
         'sP.textContent=(priHidden.value||"–");}'
         '["rq-room","rq-area","rq-floorA"].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener("change",updateSum);});'
         'updateSum();'
-        // Validation + submit
         'form.addEventListener("submit",function(e){'
         'var miss=[];'
         'if(curType==="Room"&&!document.getElementById("rq-room").value)miss.push("Room");'
@@ -4041,7 +4026,7 @@ with app.app_context():
     seed_data()
     fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
-    print("✅ New black & gold Maintenance Request UI active on /requests/new")
+    print("✅ /requests/new uses the black & gold Rori design (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
     print("="*60)
 
