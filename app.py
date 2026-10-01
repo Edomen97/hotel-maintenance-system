@@ -53,6 +53,10 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
+# ── Profile Photo configuration (NEW) ──
+PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
 RORI_ROOM_STRUCTURE = {2: list(range(201, 226)), 3: list(range(301, 326)),
                         4: list(range(401, 426)), 5: list(range(501, 526))}
 
@@ -576,6 +580,29 @@ def work_order_no_generator():
 def allowed_file(fn):
     return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# ── NEW: image content validation helper (JPG/JPEG/PNG/WEBP) ──
+def _is_valid_image_file(f):
+    """Verify the file's magic bytes match an allowed image format.
+    Guards against renamed executables / arbitrary files."""
+    try:
+        f.seek(0)
+        header = f.read(12)
+        f.seek(0)
+        if not header or len(header) < 3:
+            return False
+        # JPEG (also covers JPG / JPEG)
+        if header[:3] == b'\xff\xd8\xff':
+            return True
+        # PNG
+        if header[:8] == b'\x89PNG\r\n\x1a\n':
+            return True
+        # WEBP: RIFF....WEBP
+        if len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+            return True
+        return False
+    except Exception:
+        return False
+
 def get_one(model, ident): return db.session.get(model, ident)
 def get_or_404(model, ident):
     obj = db.session.get(model, ident)
@@ -641,6 +668,7 @@ def ensure_database_schema():
                 ("signature_user_id","ALTER TABLE maintenance_requests ADD COLUMN signature_user_id INTEGER"),
             ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
+            add_column_if_missing("users","profile_pic","ALTER TABLE users ADD COLUMN profile_pic VARCHAR(255)")
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
             add_column_if_missing("work_orders","verified_date","ALTER TABLE work_orders ADD COLUMN verified_date " + dt)
@@ -1168,6 +1196,11 @@ input[type="checkbox"]{accent-color:var(--gold)}
 @media(max-width:768px){
   .rq-page{padding-bottom:150px}
 }
+/* Profile photo (small addition) */
+.profile-photo-btn{min-height:44px;padding:.55rem 1.1rem;font-size:.85rem}
+@media(max-width:520px){
+  .profile-photo-btn{width:100%;justify-content:center}
+}
 </style></head><body>
 <header class="header">
     <div class="header-left">
@@ -1440,21 +1473,156 @@ def login():
 def logout():
     log_audit("Logout","User",current_user.id); db.session.commit(); logout_user(); return redirect(url_for("login"))
 
+# ══════════════════════════════════════════ PROFILE (with Profile Photo)
 @app.route("/profile", methods=["GET","POST"])
 @login_required
 def profile():
     u = current_user
     if request.method == "POST":
+        action = (request.form.get("action") or "update_info").strip()
+
+        # ── Upload / Change profile photo ──
+        if action == "upload_photo":
+            f = request.files.get("profile_photo")
+            if not f or not f.filename:
+                flash("Please choose a photo to upload.", "danger")
+                return redirect(url_for("profile"))
+            raw_name = f.filename
+            if "." not in raw_name:
+                flash("Invalid file. Allowed formats: JPG, JPEG, PNG, WEBP.", "danger")
+                return redirect(url_for("profile"))
+            ext = raw_name.rsplit(".", 1)[-1].lower()
+            if ext not in PROFILE_PHOTO_EXTENSIONS:
+                flash("Invalid file type. Allowed: JPG, JPEG, PNG, WEBP.", "danger")
+                return redirect(url_for("profile"))
+            # Size check (5 MB)
+            try:
+                f.seek(0, os.SEEK_END); size = f.tell(); f.seek(0)
+            except Exception:
+                size = 0
+            if size <= 0:
+                flash("Uploaded file is empty.", "danger")
+                return redirect(url_for("profile"))
+            if size > PROFILE_PHOTO_MAX_BYTES:
+                flash("File too large. Maximum size is 5 MB.", "danger")
+                return redirect(url_for("profile"))
+            # Magic-byte validation
+            if not _is_valid_image_file(f):
+                flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger")
+                return redirect(url_for("profile"))
+            # Build a safe unique filename
+            safe_name = secure_filename(
+                "user_" + str(u.id) + "_" +
+                datetime.now().strftime("%Y%m%d%H%M%S") + "_" +
+                uuid.uuid4().hex[:8] + "." + ext
+            )
+            if not safe_name:
+                flash("Could not generate a safe filename.", "danger")
+                return redirect(url_for("profile"))
+            # Delete previous photo (only this user's file)
+            old = (u.profile_pic or "").strip()
+            if old:
+                old_safe = os.path.basename(old)  # prevent path traversal
+                old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
+                if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
+                    try: os.remove(old_path)
+                    except Exception as ex: print("Old photo remove warn: " + str(ex))
+            # Save new photo
+            try:
+                os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
+                f.save(os.path.join(PROFILE_PIC_FOLDER, safe_name))
+            except Exception as ex:
+                flash("Could not save photo: " + str(ex), "danger")
+                return redirect(url_for("profile"))
+            u.profile_pic = safe_name
+            log_audit("Profile Photo Uploaded", "User", u.id, new_value=safe_name)
+            db.session.commit()
+            flash("✅ Profile photo updated successfully", "success")
+            return redirect(url_for("profile"))
+
+        # ── Remove profile photo ──
+        if action == "remove_photo":
+            old = (u.profile_pic or "").strip()
+            if old:
+                old_safe = os.path.basename(old)
+                old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
+                if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
+                    try: os.remove(old_path)
+                    except Exception as ex: print("Remove photo warn: " + str(ex))
+                u.profile_pic = None
+                log_audit("Profile Photo Removed", "User", u.id, old_value=old_safe)
+                db.session.commit()
+                flash("Profile photo removed.", "success")
+            else:
+                flash("No profile photo to remove.", "info")
+            return redirect(url_for("profile"))
+
+        # ── Default: existing behavior — update email / phone / password ──
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1></div></div>'
-         '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name) + '</h4>'
+
+    # ── GET: render profile page (with new Profile Photo section) ──
+    has_photo = bool(u.profile_pic and str(u.profile_pic).strip())
+
+    if has_photo:
+        avatar_src = url_for("static", filename="profile_pics/" + os.path.basename(u.profile_pic))
+        avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" '
+                       'style="width:150px;height:150px;border-radius:50%;object-fit:cover;'
+                       'border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5);display:block;">')
+        primary_label = "Change Photo"
+        primary_icon = "fa-camera"
+    else:
+        letter = ((u.full_name or u.username or "U")[:1]).upper()
+        avatar_html = ('<div style="width:150px;height:150px;border-radius:50%;'
+                       'background:var(--rori-gold);color:#16120a;display:flex;align-items:center;'
+                       'justify-content:center;font-family:\'Cormorant Garamond\',Georgia,serif;'
+                       'font-size:4.25rem;font-weight:700;border:3px solid var(--rori-gold);'
+                       'box-shadow:0 8px 24px rgba(0,0,0,.5);">' + letter + '</div>')
+        primary_label = "Upload Photo"
+        primary_icon = "fa-upload"
+
+    remove_btn_html = ""
+    if has_photo:
+        remove_btn_html = (
+            '<form method="post" style="display:inline;margin:0;">'
+            '<input type="hidden" name="action" value="remove_photo">'
+            '<button type="submit" class="btn-primary profile-photo-btn" '
+            'style="background:var(--danger-bg);border:1.5px solid rgba(255,107,94,0.5);color:var(--danger);" '
+            'onclick="return confirm(\'Remove your profile photo? This cannot be undone.\');">'
+            '<i class="fas fa-trash"></i> Remove Photo</button></form>'
+        )
+
+    photo_section = (
+        '<div class="card" style="text-align:center;">'
+        '<div class="card-title" style="justify-content:center;margin-bottom:1.25rem;font-size:1.25rem;">'
+        '<i class="fas fa-camera"></i> Profile Photo</div>'
+        '<div style="display:flex;justify-content:center;margin-bottom:1.25rem;">' + avatar_html + '</div>'
+        '<form method="post" enctype="multipart/form-data" style="display:inline;margin:0;">'
+        '<input type="hidden" name="action" value="upload_photo">'
+        '<input type="file" name="profile_photo" id="roriProfilePhotoInput" '
+        'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" '
+        'style="display:none;" onchange="this.form.submit();">'
+        '<button type="button" class="btn-primary profile-photo-btn" '
+        'onclick="document.getElementById(\'roriProfilePhotoInput\').click();">'
+        '<i class="fas ' + primary_icon + '"></i> ' + primary_label + '</button>'
+        '</form>'
+        + (' ' + remove_btn_html if remove_btn_html else '') +
+        '<p style="color:var(--text-secondary);font-size:.8rem;margin-top:1rem;margin-bottom:0;">'
+        '<i class="fas fa-info-circle"></i> JPG, JPEG, PNG or WEBP · Maximum 5 MB</p>'
+        '</div>'
+    )
+
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1>'
+         '<p>Manage your account information and profile photo</p></div></div>'
+         + photo_section +
+         '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name or u.username) + '</h4>'
          '<p>@' + str(u.username) + ' · <span class="badge badge-warning">' + str(u.role) + '</span></p>'
          '<p style="color:var(--text-secondary);">📧 ' + str(u.email or "—") + ' | 📱 ' + str(u.phone or "—") + '</p>'
          '<p style="color:var(--text-secondary);"> Department: <strong style="color:var(--text-primary);">' + str(u.department.name if u.department else "Not assigned") + '</strong></p><hr style="border-color:var(--border-color);">'
-         '<form method="post"><div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
+         '<form method="post"><input type="hidden" name="action" value="update_info">'
+         '<div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="' + str(u.email or "") + '"></div>'
          '<div class="mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="' + str(u.phone or "") + '"></div>'
          '<div class="mb-3"><label class="form-label">New Password</label><input type="password" class="form-control" name="new_password" placeholder="Leave blank to keep current"></div>'
          '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
@@ -4021,6 +4189,7 @@ with app.app_context():
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
     print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
+    print("✅ Profile Photo upload added to /profile (all users — upload/change/remove, 5 MB max, JPG/PNG/WEBP only)")
     print("="*60)
 
 if __name__ == "__main__":
