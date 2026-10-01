@@ -105,7 +105,6 @@ LAUNDRY_ITEMS = ["Washing Machine", "Dryer", "Ironing Machine / Press", "Sewing 
     "Power Supply / UPS", "Floor / Wall / Ceiling", "Water Leakage"]
 LAUNDRY_AREA_NAME = "Laundry Area"
 
-# ══════════════════════════════════════════ COMPLETE HOTEL LOCATIONS (Farm Area included)
 HOTEL_AREAS = [
     "Main Hotel Entrance Gate", "VIP Parking Area", "Expansion Building Area",
     "Staff Gate Area", "Customer Restroom", "Fountain Area", "Garden Area",
@@ -125,7 +124,6 @@ HOTEL_AREAS = [
     "Security Office", "Waste Collection Area",
 ]
 
-# ══════════════════════════════════════════ HOUSEKEEPING ITEM MASTER LIST (bilingual)
 HOUSEKEEPING_DEPT_NAME = "Housekeeping"
 HOUSEKEEPING_CATEGORIES = {
     "Beds & Linens": [
@@ -740,7 +738,6 @@ def page(title, content):
                 '<button class="btn-icon" onclick="roriTestSound()" title="Test Sound" aria-label="Test Sound"><i class="fas fa-play"></i></button>'
                 '</div>')
 
-    # Flash messages — short success becomes a premium pill, others become compact alerts
     flash_html = ""
     for c, m in get_flashed_messages(with_categories=True):
         msg_str = str(m)
@@ -775,9 +772,7 @@ def page(title, content):
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════ RORI LUXURY EXECUTIVE THEME ═══════════════════ */
 :root{
-  /* Legacy aliases preserved — inline styles throughout the app use these names */
   --rori-gold:#D4AF37;
   --rori-gold-dark:#B8912A;
   --bg-primary:#0F172A;
@@ -791,7 +786,6 @@ def page(title, content):
   --warning:#FACC15;
   --danger:#F87171;
   --info:#38BDF8;
-  /* New design system aliases */
   --app-bg:#0F172A;
   --app-bg-2:#0B1220;
   --card-bg:#1E293B;
@@ -825,8 +819,6 @@ body{font-family:'Inter','Plus Jakarta Sans',system-ui,-apple-system,sans-serif;
 a{color:var(--gold);text-decoration:none}
 a:hover{color:var(--gold-bright)}
 ::selection{background:rgba(212,175,55,0.30);color:#fff}
-
-/* ═══════════ HEADER ═══════════ */
 .header{position:fixed;top:0;left:0;right:0;height:var(--header-h);background:rgba(15,23,42,0.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;z-index:1000}
 .header-left{display:flex;align-items:center;gap:.75rem;min-width:0}
 .logo{display:flex;align-items:center;gap:.6rem;font-size:1rem;font-weight:800;letter-spacing:.14em;color:var(--gold);text-decoration:none;white-space:nowrap}
@@ -848,8 +840,6 @@ a:hover{color:var(--gold-bright)}
 .btn-icon:hover{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft)}
 .menu-toggle{display:none;background:transparent;border:1px solid var(--border);color:var(--text-primary);width:42px;height:42px;border-radius:12px;cursor:pointer;font-size:1.05rem;align-items:center;justify-content:center}
 .menu-toggle:hover{border-color:var(--gold-line);color:var(--gold)}
-
-/* ═══════════ SIDEBAR ═══════════ */
 .sidebar-overlay{position:fixed;inset:0;background:rgba(8,12,22,0.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:998;opacity:0;pointer-events:none;transition:opacity .22s ease}
 .sidebar-overlay.active{opacity:1;pointer-events:auto}
 .sidebar{position:fixed;left:0;top:var(--header-h);bottom:0;width:var(--sidebar-w);background:var(--app-bg-2);border-right:1px solid var(--gold-line);padding:1rem 0 2rem;overflow-y:auto;z-index:999;transition:transform .25s cubic-bezier(.4,0,.2,1)}
@@ -861,34 +851,24 @@ a:hover{color:var(--gold-bright)}
 .sidebar-nav .nav-link:hover i{color:var(--gold)}
 .sidebar-nav .nav-link.active{background:var(--gold-soft);color:var(--gold);border-color:rgba(212,175,55,0.22);font-weight:600}
 .sidebar-nav .nav-link.active i{color:var(--gold)}
-
-/* ═══════════ MAIN ═══════════ */
 .main-content{margin-left:var(--sidebar-w);padding:1.75rem 1.75rem 4rem;min-height:calc(100vh - var(--header-h));animation:fadeIn .25s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-
-/* ═══════════ PAGE HEADER ═══════════ */
 .page-header{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1.75rem;flex-wrap:wrap}
 .page-title h1{font-size:1.55rem;font-weight:700;letter-spacing:-.01em;color:var(--text-primary);margin-bottom:.25rem;line-height:1.25}
 .page-title h1 span{color:var(--gold)}
 .page-title h1 i{color:var(--gold);margin-right:.35rem}
 .page-title p{font-size:.85rem;color:var(--text-secondary);line-height:1.4}
-
-/* ═══════════ BUTTONS ═══════════ */
 .btn-primary{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#0F172A !important;border:1px solid transparent;padding:.68rem 1.15rem;border-radius:var(--radius-xs);font-weight:600;font-size:.85rem;letter-spacing:.01em;cursor:pointer;transition:all .2s ease;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;min-height:44px;line-height:1.1;box-shadow:0 4px 14px rgba(212,175,55,0.16)}
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(212,175,55,0.28);color:#0F172A}
 .btn-primary:active{transform:translateY(0)}
 .btn-primary i{font-size:.82rem}
 .btn-danger,.btn-outline-danger{background:var(--danger-bg);color:var(--danger-fg);border:1px solid rgba(248,113,113,0.28)}
-
-/* ═══════════ CARDS ═══════════ */
 .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:1.35rem 1.4rem;margin-bottom:1.25rem}
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem;flex-wrap:wrap;gap:.6rem}
 .card-title{font-size:1rem;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:.5rem}
 .card-title i{color:var(--gold)}
 .card h5{color:var(--gold);font-weight:600;font-size:.98rem;letter-spacing:.01em}
 .card h4{color:var(--text-primary);font-weight:700}
-
-/* ═══════════ KPI / METRIC CARDS ═══════════ */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem;margin-bottom:1.5rem}
 .kpi-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.15rem;transition:all .2s ease;position:relative;overflow:hidden}
 .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent);opacity:.55}
@@ -901,8 +881,6 @@ a:hover{color:var(--gold-bright)}
 .kpi-mini-card::before{content:'';position:absolute;top:12px;bottom:12px;left:0;width:3px;background:var(--gold);border-radius:0 3px 3px 0;opacity:.7}
 .kpi-mini-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);font-weight:600}
 .kpi-mini-value{font-size:1.55rem;font-weight:700;color:var(--text-primary);margin-top:.3rem;line-height:1.05}
-
-/* ═══════════ TABLES ═══════════ */
 .table{width:100%;color:var(--text-primary);border-collapse:separate;border-spacing:0;background:transparent;--bs-table-bg:transparent;--bs-table-color:var(--text-primary)}
 .table>thead th{background:transparent;color:var(--text-secondary);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:.85rem 1rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border-strong)}
 .table>tbody td{padding:.9rem 1rem;font-size:.86rem;color:var(--text-primary);border-bottom:1px solid rgba(255,255,255,0.045);vertical-align:middle;background:transparent}
@@ -914,8 +892,6 @@ a:hover{color:var(--gold-bright)}
 .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .table-responsive::-webkit-scrollbar{height:6px}
 .table-responsive::-webkit-scrollbar-thumb{background:rgba(212,175,55,0.35);border-radius:4px}
-
-/* ═══════════ BADGES / PILLS ═══════════ */
 .badge{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.2;white-space:nowrap;border:1px solid transparent}
 .badge-success{background:var(--success-bg);color:var(--success);border-color:rgba(74,222,128,0.20)}
 .badge-warning{background:var(--warn-bg);color:var(--warning);border-color:rgba(250,204,21,0.20)}
@@ -930,8 +906,6 @@ a:hover{color:var(--gold-bright)}
 .rpro-chip.red{background:var(--danger-bg);color:var(--danger);border-color:rgba(248,113,113,0.20)}
 .flash-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--success-bg);color:var(--success);font-size:12.5px;font-weight:600;border:1px solid rgba(74,222,128,0.28);margin-bottom:.85rem;box-shadow:0 4px 14px rgba(34,197,94,0.10)}
 .flash-pill i{font-size:.95rem}
-
-/* ═══════════ ALERTS ═══════════ */
 .alert{display:flex;align-items:flex-start;gap:.75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.9rem 1.1rem;margin-bottom:.75rem;color:var(--text-primary);font-size:.86rem;line-height:1.5}
 .alert i.alert-icon{font-size:1rem;margin-top:.15rem;flex-shrink:0}
 .alert > span{flex:1}
@@ -944,8 +918,6 @@ a:hover{color:var(--gold-bright)}
 .alert-info{border-left:3px solid var(--info);background:rgba(56,189,248,0.05)}
 .alert-info i{color:var(--info)}
 .btn-close{filter:invert(1) grayscale(1);opacity:.5;width:.7em;height:.7em;padding:.5rem;flex-shrink:0}
-
-/* ═══════════ FORMS ═══════════ */
 .form-control,.form-select{background:rgba(15,23,42,0.65)!important;border:1px solid rgba(255,255,255,0.10);color:var(--text-primary);border-radius:var(--radius-xs);padding:.7rem .9rem;font-size:.88rem;min-height:44px;transition:all .2s ease;width:100%}
 .form-control:focus,.form-select:focus{background:rgba(15,23,42,0.9)!important;color:var(--text-primary);border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,0.15);outline:none}
 .form-control::placeholder{color:var(--text-muted)}
@@ -954,8 +926,6 @@ select.form-select option{background:var(--card-bg);color:var(--text-primary)}
 textarea.form-control{min-height:auto}
 input[type="file"].form-control{padding:.5rem}
 input[type="checkbox"]{accent-color:var(--gold)}
-
-/* ═══════════ KV BLOCKS (rpro) ═══════════ */
 .rpro-section{margin-bottom:1.4rem}
 .rpro-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.35rem;margin-bottom:1rem;box-shadow:var(--shadow-sm)}
 .rpro-card .table{background:transparent!important}
@@ -966,8 +936,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .rpro-kv-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);margin-bottom:.3rem;line-height:1.3}
 .rpro-kv-value{font-size:.92rem;color:var(--text-primary);font-weight:600;word-break:break-word;line-height:1.4}
 .rpro-kv-value.mono{font-family:'JetBrains Mono','Courier New',monospace;color:var(--gold);font-size:.86rem;font-weight:600}
-
-/* ═══════════ TIMELINE ═══════════ */
 .rpro-timeline{position:relative;padding-left:1.9rem}
 .rpro-timeline::before{content:'';position:absolute;left:.55rem;top:.35rem;bottom:.35rem;width:2px;background:linear-gradient(180deg,var(--gold),rgba(212,175,55,0.05))}
 .rpro-timeline-item{position:relative;padding-bottom:1.1rem}
@@ -976,24 +944,16 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .rpro-timeline-status{font-size:.78rem;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.06em}
 .rpro-timeline-meta{font-size:.72rem;color:var(--text-secondary);margin-top:.15rem}
 .rpro-timeline-note{font-size:.82rem;color:var(--text-primary);margin-top:.35rem;padding:.5rem .7rem;background:var(--app-bg-2);border-radius:8px;border-left:2px solid var(--gold);line-height:1.5}
-
-/* ═══════════ SIGNATURE BOX ═══════════ */
 .rpro-sig-box{background:#ffffff;padding:.75rem;border-radius:var(--radius-xs);border:2px solid var(--success);display:inline-block;max-width:100%}
 .rpro-sig-box img{max-width:260px;max-height:110px;display:block}
-
-/* ═══════════ ROOM GRID ═══════════ */
 .rpro-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.75rem}
 .rpro-room-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;transition:all .2s ease}
 .rpro-room-card:hover{transform:translateY(-2px);border-color:rgba(212,175,55,0.30)}
 .rpro-room-num{font-size:1.4rem;font-weight:800;color:var(--gold);line-height:1}
 .rpro-room-floor{font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;margin-top:.15rem}
 .rpro-room-stats{display:flex;gap:.4rem;margin-top:.65rem;flex-wrap:wrap}
-
-/* ═══════════ TOOLBARS ═══════════ */
 .rpro-toolbar,.area-toolbar{display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem 1rem;margin-bottom:1.4rem}
 .rpro-toolbar .form-control,.rpro-toolbar .form-select,.area-toolbar .form-control,.area-toolbar .form-select{min-width:140px;flex:1;min-height:42px}
-
-/* ═══════════ AREA CARDS ═══════════ */
 .area-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:1rem}
 .area-card{position:relative;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:1.15rem 1.2rem;transition:all .2s ease;overflow:hidden;display:flex;flex-direction:column;gap:.75rem}
 .area-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent);opacity:.55}
@@ -1016,36 +976,22 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .area-card-actions .btn-primary{font-size:.78rem;padding:.5rem .8rem;flex:1;justify-content:center}
 .empty-state{grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:2.5rem 1rem;background:var(--card-bg);border:1px dashed rgba(212,175,55,0.25);border-radius:var(--radius)}
 .empty-state i{font-size:1.8rem;color:var(--gold);opacity:.55;display:block;margin-bottom:.6rem}
-
-/* ═══════════ LIST GROUP ═══════════ */
 .list-group-item{background:transparent!important;color:var(--text-primary)!important;border-color:var(--border)!important;padding:.75rem 1rem;font-size:.86rem}
 .list-group-flush .list-group-item:last-child{border-bottom:none!important}
-
-/* ═══════════ ALERT BANNER ═══════════ */
 #roriAlertBanner{position:fixed;top:calc(var(--header-h) + 12px);right:16px;z-index:9999;background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#0F172A;border-radius:14px;padding:.85rem 1.1rem;box-shadow:var(--shadow-lg);display:none;max-width:340px;font-weight:600;font-size:.86rem;line-height:1.4}
 #roriAlertBanner.show{display:block;animation:roriSlideIn .28s ease-out}
 #roriAlertBanner .ra-title{font-weight:800;font-size:.9rem;margin-bottom:.3rem}
 #roriAlertBanner .ra-btn{margin-top:.55rem;background:#0F172A;color:var(--gold);border:none;padding:.45rem 1rem;border-radius:8px;font-weight:700;font-size:.78rem;cursor:pointer}
 @keyframes roriSlideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
-
-/* ═══════════ FOOTER ═══════════ */
 .rori-footer{margin-top:2.5rem;padding:1.25rem 1rem;text-align:center;font-size:.75rem;color:var(--text-secondary);border-top:1px solid var(--border)}
 .rori-footer .dev-name{color:var(--gold);font-weight:700;letter-spacing:.03em}
-
-/* ═══════════ SCROLLBAR ═══════════ */
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:var(--app-bg-2)}
 ::-webkit-scrollbar-thumb{background:rgba(212,175,55,0.32);border-radius:4px}
 ::-webkit-scrollbar-thumb:hover{background:var(--gold)}
-
-/* ═══════════ FOCUS ═══════════ */
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px}
-
-/* ═══════════ LOGIN CARD ═══════════ */
 .login-container{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--header-h) - 2rem);padding:2rem 1rem}
 .login-card{background:var(--card-bg);border:1px solid rgba(212,175,55,0.18);border-radius:20px;padding:2.25rem 2rem;max-width:440px;width:100%;box-shadow:var(--shadow-lg)}
-
-/* ═══════════ DETAILED REPORT (print-friendly — stays WHITE) ═══════════ */
 .report-doc{background:#ffffff;color:#111111;border-radius:16px;padding:2rem;margin-bottom:1.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
 .report-head{border-bottom:3px double #C5A059;padding-bottom:1rem;margin-bottom:1.5rem;text-align:center}
 .report-head .brand{font-size:1.9rem;font-weight:900;letter-spacing:2px;color:#8B6F26}
@@ -1078,8 +1024,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .report-photo{border:2px solid #C5A059;border-radius:10px;padding:.5rem;background:#fafafa;display:inline-block;max-width:100%}
 .report-photo img{max-width:340px;max-height:240px;display:block;border-radius:6px}
 .report-footer{margin-top:1.5rem;padding-top:.75rem;border-top:1px solid #ddd;font-size:.72rem;color:#666;text-align:center}
-
-/* ═══════════ RESPONSIVE ═══════════ */
 @media(max-width:1024px){
   .sidebar{transform:translateX(-100%);box-shadow:0 0 40px rgba(0,0,0,0.5)}
   .sidebar.active{transform:translateX(0)}
@@ -1138,6 +1082,84 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .report-head .brand,.report-head .dept,.report-head .doctype{color:#000!important}
   .report-table th{background:#eee!important;color:#000!important}
   .report-table td,.report-table th{border:1px solid #666!important}
+}
+/* ═══════════ SCOPED — NEW REQUEST PAGE (black & gold) ═══════════ */
+.rq-page{--rq-bg:#121212;--rq-card:#1b1b1b;--rq-line:#2f2c26;--rq-gold:#C5A059;--rq-gold-soft:rgba(197,160,89,.14);--rq-tx:#f4f1ea;--rq-mut:#b4afa5;--rq-err:#ff6b5e;--rq-ok:#6fcf97;font-family:'Figtree',system-ui,-apple-system,sans-serif;color:var(--rq-tx);max-width:1200px;margin:0 auto}
+.rq-page h1,.rq-page h2,.rq-page h3{font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;margin:0;color:var(--rq-gold)}
+.rq-page .rq-head{padding:4px 0 12px;border-bottom:1px solid var(--rq-line);margin-bottom:20px}
+.rq-page h1{font-size:34px;line-height:1.15}
+.rq-page .rq-sub{color:var(--rq-mut);margin:6px 0 0;font-size:15px}
+.rq-page .rq-alert{padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:14px;border:1px solid}
+.rq-page .rq-alert-danger{background:rgba(255,107,94,.08);border-color:rgba(255,107,94,.4);color:#ffb3ac}
+.rq-page .rq-grid{display:grid;gap:20px}
+@media(min-width:960px){.rq-page .rq-grid{grid-template-columns:1fr 340px;align-items:start}
+  .rq-page .rq-aside{position:sticky;top:calc(var(--header-h) + 20px)}
+  .rq-page .rq-bar{position:static;background:none;border:0;padding:0;margin-top:8px;grid-template-columns:auto}
+  .rq-page .rq-bar p{text-align:left;margin-top:12px}}
+.rq-page .rq-card{background:var(--rq-card);border:1px solid var(--rq-line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+.rq-page .rq-card>h2{font-size:24px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.rq-page .rq-card>h2 span{color:var(--rq-gold);font-size:13px;font-family:'Figtree',sans-serif;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+.rq-page label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px;color:var(--rq-tx)}
+.rq-page label:first-child{margin-top:0}
+.rq-page label i{color:var(--rq-gold);font-style:normal}
+.rq-page input[type="text"],.rq-page input[type="tel"],.rq-page input[type="email"],
+.rq-page select,.rq-page textarea{width:100%;min-height:52px;background:#0e0e0e;color:var(--rq-tx);border:1.5px solid var(--rq-line);border-radius:12px;padding:12px 14px;font:inherit;font-size:15px;transition:border-color .15s,box-shadow .15s;appearance:none;-webkit-appearance:none}
+.rq-page select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23C5A059' d='M6 8L0 0h12z'/></svg>");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+.rq-page textarea{min-height:120px;resize:vertical}
+.rq-page input:focus,.rq-page select:focus,.rq-page textarea:focus{outline:none;border-color:var(--rq-gold);box-shadow:0 0 0 3px rgba(197,160,89,.25)}
+.rq-page input:disabled{opacity:.55;cursor:not-allowed}
+.rq-page .rq-err input,.rq-page .rq-err select,.rq-page .rq-err textarea,.rq-page .rq-err .rq-pri{border-color:var(--rq-err)}
+.rq-page .rq-msg{display:none;color:var(--rq-err);font-size:13px;margin-top:6px}
+.rq-page .rq-err .rq-msg{display:block}
+.rq-page .rq-seg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.rq-page .rq-seg button{min-height:52px;border:1.5px solid var(--rq-line);background:#0e0e0e;color:var(--rq-tx);border-radius:12px;font:inherit;font-weight:600;font-size:15px;cursor:pointer;transition:all .15s}
+.rq-page .rq-seg button.on{border-color:var(--rq-gold);background:var(--rq-gold-soft);color:var(--rq-gold)}
+.rq-page .rq-pri{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;border-radius:12px}
+@media(min-width:520px){.rq-page .rq-pri{grid-template-columns:repeat(4,1fr)}}
+.rq-page .rq-pri button{min-height:52px;border:1.5px solid var(--rq-line);background:#0e0e0e;color:var(--rq-tx);border-radius:12px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:center;transition:all .15s}
+.rq-page .rq-pri button.on{background:rgba(255,255,255,.06);border-width:2px}
+.rq-page .rq-pri button[data-v="LOW"].on{border-color:#4aa3ff;color:#bfe0ff}
+.rq-page .rq-pri button[data-v="MEDIUM"].on{border-color:#ffd24a;color:#ffe9a3}
+.rq-page .rq-pri button[data-v="HIGH"].on{border-color:#ff9a3d;color:#ffc993}
+.rq-page .rq-pri button[data-v="URGENT"].on{border-color:#ff4d4d;color:#ffb3b3}
+.rq-page .rq-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.rq-page .rq-up{border:2px dashed #6e5c36;border-radius:14px;padding:18px;text-align:center;background:rgba(197,160,89,.03)}
+.rq-page .rq-up .rq-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.rq-page .rq-btn{min-height:54px;border-radius:14px;font:inherit;font-weight:700;font-size:15px;border:1.5px solid var(--rq-gold);background:none;color:var(--rq-gold);width:100%;padding:0 16px;cursor:pointer;transition:all .15s}
+.rq-page .rq-btn:hover{background:var(--rq-gold-soft)}
+.rq-page .rq-btn.rq-btn-p{background:var(--rq-gold);color:#16120a}
+.rq-page .rq-btn.rq-btn-p:hover{background:#d4b06c;color:#16120a}
+.rq-page .rq-btn:disabled{opacity:.7;cursor:not-allowed}
+.rq-page .rq-thumbs{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:center}
+.rq-page .rq-th{width:84px;height:84px;border-radius:12px;background:linear-gradient(135deg,#3a342a,#241f17);border:1px solid var(--rq-line);position:relative;display:grid;place-items:center;font-size:12px;color:var(--rq-mut);overflow:hidden}
+.rq-page .rq-th button{position:absolute;top:-6px;right:-6px;width:26px;height:26px;border-radius:50%;border:0;background:var(--rq-err);color:#fff;font-size:14px;cursor:pointer;display:grid;place-items:center;line-height:1;z-index:2}
+.rq-page .rq-hide{display:none!important}
+.rq-page .rq-flow{list-style:none;margin:0;padding:0 0 0 6px;border-left:2px solid var(--rq-line)}
+.rq-page .rq-flow li{position:relative;padding:0 0 14px 22px;font-size:14px;color:var(--rq-mut)}
+.rq-page .rq-flow li:before{content:"";position:absolute;left:-8px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--rq-card);border:2px solid var(--rq-line)}
+.rq-page .rq-flow li.cur{color:var(--rq-tx);font-weight:600}
+.rq-page .rq-flow li.cur:before{background:var(--rq-gold);border-color:var(--rq-gold)}
+.rq-page .rq-sum{list-style:none;margin:0;padding:0}
+.rq-page .rq-sum dt{color:var(--rq-mut);font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin-top:12px;font-weight:600}
+.rq-page .rq-sum dt:first-child{margin-top:0}
+.rq-page .rq-sum dd{margin:2px 0 0;font-weight:600;color:var(--rq-tx);font-size:15px}
+.rq-page .rq-bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:rgba(18,18,18,.97);border-top:1px solid var(--rq-line);display:grid;gap:8px;z-index:40}
+.rq-page .rq-bar .rq-bar-r{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rq-page .rq-bar p{margin:0;color:var(--rq-mut);font-size:12px;text-align:center}
+.rq-page .rq-sigbox{background:#fff;padding:10px;border-radius:12px;border:1.5px dashed rgba(197,160,89,.55);margin-top:6px}
+.rq-page #signature-pad{display:block;width:100%;height:150px;touch-action:none;cursor:crosshair;border-radius:8px}
+.rq-page .rq-sigmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
+.rq-page .rq-sigmeta .rq-box{background:#0e0e0e;border:1px solid var(--rq-line);border-radius:12px;padding:10px 12px}
+.rq-page .rq-sigmeta .rq-box .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--rq-mut);font-weight:600}
+.rq-page .rq-sigmeta .rq-box .v{margin-top:3px;font-weight:700;color:var(--rq-tx);font-size:14px}
+.rq-page .rq-sigstatus{display:inline-flex;align-items:center;gap:8px;font-weight:700;color:var(--rq-mut);font-size:14px}
+.rq-page .rq-sigstatus.rq-ok{color:var(--rq-ok)}
+.rq-page .rq-spin{display:inline-block;width:14px;height:14px;border:2px solid #16120a;border-top-color:transparent;border-radius:50%;animation:rqs .7s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes rqs{to{transform:rotate(360deg)}}
+@media(max-width:520px){
+  .rq-page h1{font-size:26px}
+  .rq-page .rq-card{padding:14px}
+  .rq-page .rq-card>h2{font-size:20px}
 }
 </style></head><body>
 <header class="header">
@@ -1249,7 +1271,6 @@ def seed_data():
             else:
                 existing.department_id = hk_dept.id; existing.area_id = laundry_area.id
         db.session.commit()
-    # Housekeeping bilingual categories & items
     if hk_dept:
         for cat_name in HOUSEKEEPING_CATEGORIES.keys():
             if not Category.query.filter_by(name=cat_name).first():
@@ -1638,14 +1659,15 @@ def request_create():
             )
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
-            # Optional photo
-            f = request.files.get("photo")
-            if f and f.filename and allowed_file(f.filename):
-                ext = f.filename.rsplit(".",1)[-1].lower()
-                fname = secure_filename("req_" + str(req.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext)
-                f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
-                db.session.add(Photo(filename=fname, object_type="request", object_id=req.id,
-                                     photo_type="Problem", uploaded_by_id=current_user.id))
+            # MODIFIED: support up to 5 photos (was: single request.files.get("photo"))
+            uploaded_files = request.files.getlist("photo")
+            for idx, f in enumerate(uploaded_files[:5]):
+                if f and f.filename and allowed_file(f.filename):
+                    ext = f.filename.rsplit(".",1)[-1].lower()
+                    fname = secure_filename("req_" + str(req.id) + "_" + str(idx) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext)
+                    f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
+                    db.session.add(Photo(filename=fname, object_type="request", object_id=req.id,
+                                         photo_type="Problem", uploaded_by_id=current_user.id))
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
             log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
@@ -1657,17 +1679,20 @@ def request_create():
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
 
-    dept_opts = "".join('<option value="' + str(d.id) + '"' + (' selected' if d.id == user_dept_id else '') + '>' + str(d.name) + '</option>' for d in all_depts)
-    hk_cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in hk_cats)
-    other_cat_opts = "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in other_cats)
+    # ══════════ GET — build new black/gold form ══════════
+    is_hk_user = (user_dept_id == hk_dept_id) if hk_dept_id else False
+    user_cats = hk_cats if is_hk_user else other_cats
 
-    items_by_dept = {}
-    for d in all_depts:
-        items = WorkingItem.query.filter_by(department_id=d.id).filter((WorkingItem.is_active == True) | (WorkingItem.is_active == None)).order_by(WorkingItem.name).all()
-        items_by_dept[d.id] = [{"id": w.id, "name": w.name, "area_id": w.area_id} for w in items]
+    user_items = []
+    if user_dept_id:
+        user_items = WorkingItem.query.filter_by(department_id=user_dept_id).filter(
+            (WorkingItem.is_active == True) | (WorkingItem.is_active == None)
+        ).order_by(WorkingItem.name).all()
 
-    hk_items_by_category = {}
-    if hk_dept_id:
+    items_json = [{"id": w.id, "name": w.name} for w in user_items]
+
+    hk_items_by_cat_json = {}
+    if is_hk_user and hk_dept_id:
         for cat_name, item_names in HOUSEKEEPING_CATEGORIES.items():
             cat = Category.query.filter_by(name=cat_name).first()
             if not cat: continue
@@ -1675,67 +1700,306 @@ def request_create():
             for iname in item_names:
                 w = WorkingItem.query.filter_by(name=iname, department_id=hk_dept_id).first()
                 if w: ids.append(w.id)
-            hk_items_by_category[cat.id] = ids
+            hk_items_by_cat_json[cat.id] = ids
 
-    areas_json = [{"id": a.id, "name": a.name, "dept": a.department or ""} for a in areas]
-    fo = "".join('<option value="' + str(f) + '">Floor ' + str(f) + '</option>' for f in floors)
-    ro = "".join('<option value="' + str(r.id) + '">Room ' + str(r.room_number) + ' (F' + str(r.floor) + ')</option>' for r in rooms)
-    po = "".join('<option value="' + p + '"' + (' selected' if p=="MEDIUM" else '') + '>' + p + '</option>' for p in ["URGENT","HIGH","MEDIUM","LOW"])
+    cat_opts = '<option value="">Select category</option>' + "".join(
+        '<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in user_cats
+    )
+
+    rooms_by_floor = {}
+    for r in rooms:
+        rooms_by_floor.setdefault(r.floor, []).append(r)
+    room_opts = '<option value="">Select room</option>'
+    for f in sorted(rooms_by_floor.keys()):
+        room_opts += '<optgroup label="Floor ' + str(f) + '">'
+        for r in sorted(rooms_by_floor[f], key=lambda x: int(x.room_number)):
+            room_opts += '<option value="' + str(r.id) + '">Room ' + str(r.room_number) + '</option>'
+        room_opts += '</optgroup>'
+
+    floor_opts = '<option value="">Select floor (optional)</option>'
+    for f in sorted(floors):
+        floor_opts += '<option value="' + str(f) + '">Floor ' + str(f) + '</option>'
+    floor_opts += '<option value="0">Ground / General Area</option>'
+
+    area_opts = '<option value="">Select area</option>' + "".join(
+        '<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas
+    )
+
     sig_authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
     sig_dept_display = user_dept_name or "Not assigned"
     sig_block_required = current_user.role in ["DEPARTMENT", "EMPLOYEE"]
-    sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department.</div>'
+    sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="rq-alert rq-alert-danger"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin.</div>'
 
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>New</span> Maintenance Request</h1></div></div>' + sig_warning +
-         '<div class="card"><form method="post" id="requestForm" enctype="multipart/form-data"><div class="row">'
-         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" id="deptSelect" required>' + dept_opts + '</select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Category *</label><select class="form-select" name="category_id" id="catSelect" required><option value="">-- Select Category --</option>' + other_cat_opts + '</select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Maintenance Item *</label><select class="form-select" name="working_item_id" id="itemSelect" required><option value="">-- Select Item --</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Location Type *</label><select class="form-select" name="location_type" id="locationType" required><option value="Room" selected>Room</option><option value="Area">Area</option></select></div>'
-         '<div class="col-md-6 mb-3" id="roomWrap"><label class="form-label">Room</label><select class="form-select" name="room_id" id="roomSelect"><option value="">-- Select Room --</option>' + ro + '</select></div>'
-         '<div class="col-md-6 mb-3" id="floorWrap" style="display:none"><label class="form-label">Floor</label><select class="form-select" name="floor"><option value="">-- Floor --</option>' + fo + '</select></div>'
-         '<div class="col-md-6 mb-3" id="areaWrap" style="display:none"><label class="form-label">Area / Location</label><select class="form-select" name="area_id" id="areaSelect"><option value="">-- Select Area --</option></select></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Priority *</label><select class="form-select" name="priority">' + po + '</select></div>'
-         '<div class="col-12 mb-3"><label class="form-label">Description *</label><textarea class="form-control" name="description" rows="4" required placeholder="Describe the issue…"></textarea></div>'
-         '<div class="col-md-6 mb-3"><label class="form-label">Photo (optional)</label><input type="file" class="form-control" name="photo" accept="image/*"></div>'
-         '<div class="col-12 mb-3"><div class="card" style="background:rgba(34,197,94,0.05);border:2px solid ' + ("var(--success)" if sig_block_required else "var(--border-color)") + '">'
-         '<h5 style="color:var(--success);margin-bottom:1rem"><i class="fas fa-signature"></i> Authorized Digital Signature ' + ("(required)" if sig_block_required else "(optional for manager/admin)") + '</h5>'
-         '<div class="row g-3">'
-         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signed By</div><div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_authorized_name) + '</div><input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '"></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Department</div><div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:.25rem">' + str(sig_dept_display) + '</div></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid var(--success)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Signature Status</div><div id="sigStatusText" style="font-size:1rem;font-weight:700;color:var(--rori-gold);margin-top:.25rem"><i class="fas fa-hourglass-half"></i> Awaiting Signature</div></div></div>'
-         '<div class="col-md-6"><div style="padding:.75rem;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-color)"><div style="font-size:.75rem;color:var(--text-secondary);text-transform:uppercase">Requester</div><div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:.25rem">' + str(current_user.full_name or current_user.username) + ' (@' + str(current_user.username) + ')</div></div></div>'
-         '</div><hr style="border-color:var(--success);margin:1rem 0">'
-         '<label class="form-label" style="color:var(--success);font-weight:600"><i class="fas fa-pen-nib"></i> Draw Your Signature Below</label>'
-         '<div style="border: 2px dashed rgba(197,160,89,0.4); border-radius: 12px; padding: 10px; background: #fff;">'
-         '<canvas id="signature-pad" width="400" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>'
-         '</div>'
-         '<div class="mt-2 d-flex gap-2"><button type="button" class="btn-icon" id="clear-signature"><i class="fas fa-eraser"></i> Clear</button><span id="sigHint" style="color:var(--text-secondary);font-size:.85rem;margin-left:.5rem">Draw your signature above</span></div>'
-         '<input type="hidden" name="signature_data" id="signature-data"></div></div>'
-         '<div class="col-12 d-flex gap-2"><a href="' + url_for("index") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-times"></i> Cancel</a><button type="submit" class="btn-primary" id="submitBtn"><i class="fas fa-paper-plane"></i> Submit Request</button></div></div></form></div>'
-         '<script>window.RORI_ITEMS_BY_DEPT=' + json.dumps({str(k): v for k, v in items_by_dept.items()}) + ';</script>'
-         '<script>window.RORI_AREAS=' + json.dumps(areas_json) + ';</script>'
-         '<script>window.RORI_SIG_REQUIRED=' + ("true" if sig_block_required else "false") + ';</script>'
-         '<script>window.RORI_HK_DEPT_ID=' + str(hk_dept_id or 0) + ';</script>'
-         '<script>window.RORI_HK_CAT_OPTS=' + json.dumps(hk_cat_opts) + ';</script>'
-         '<script>window.RORI_OTHER_CAT_OPTS=' + json.dumps(other_cat_opts) + ';</script>'
-         '<script>window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_category.items()}) + ';</script>'
-         '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
-         '<script>(function(){var canvas=document.getElementById("signature-pad");var signaturePad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});var sigStatusText=document.getElementById("sigStatusText");var sigHint=document.getElementById("sigHint");var sigRequired=window.RORI_SIG_REQUIRED===true;function resizeCanvas(){var ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext("2d").scale(ratio,ratio);signaturePad.clear();updateSigStatus();}window.addEventListener("resize",resizeCanvas);resizeCanvas();document.getElementById("clear-signature").addEventListener("click",function(){signaturePad.clear();updateSigStatus();});signaturePad.addEventListener("endStroke",updateSigStatus);function updateSigStatus(){if(signaturePad.isEmpty()){sigStatusText.innerHTML=\'<i class="fas fa-hourglass-half"></i> Awaiting Signature\';sigStatusText.style.color="var(--rori-gold)";sigHint.textContent="Draw your signature above";}else{sigStatusText.innerHTML=\'<i class="fas fa-check-circle"></i> Signature Captured\';sigStatusText.style.color="var(--success)";sigHint.textContent="✓ Ready to submit";}}document.querySelector("#requestForm").addEventListener("submit",function(e){if(sigRequired&&signaturePad.isEmpty()){e.preventDefault();alert("⚠️ Digital signature is required.");return false;}if(!signaturePad.isEmpty()){document.getElementById("signature-data").value=signaturePad.toDataURL("image/png");}});updateSigStatus();})();</script>'
-         '<script>(function(){'
-         'var lt=document.getElementById("locationType");var rw=document.getElementById("roomWrap");var aw=document.getElementById("areaWrap");var fw=document.getElementById("floorWrap");'
-         'var deptSel=document.getElementById("deptSelect");var catSel=document.getElementById("catSelect");var itemSel=document.getElementById("itemSelect");var areaSel=document.getElementById("areaSelect");'
-         'var itemsByDept=window.RORI_ITEMS_BY_DEPT||{};var allAreas=window.RORI_AREAS||[];var HK_DEPT_ID=String(window.RORI_HK_DEPT_ID||0);'
-         'var HK_CAT_OPTS=window.RORI_HK_CAT_OPTS||"";var OTHER_CAT_OPTS=window.RORI_OTHER_CAT_OPTS||"";var HK_ITEMS_BY_CAT=window.RORI_HK_ITEMS_BY_CAT||{};'
-         'function updLoc(){var v=lt.value;if(v==="Room"){rw.style.display="";aw.style.display="none";fw.style.display="none";}else{rw.style.display="none";aw.style.display="";fw.style.display="";}}'
-         'function renderCats(){var d=String(deptSel.value||"");if(d===HK_DEPT_ID){catSel.innerHTML=\'<option value="">-- Select Category --</option>\'+HK_CAT_OPTS;}else{catSel.innerHTML=\'<option value="">-- Select Category --</option>\'+OTHER_CAT_OPTS;}renderItems();}'
-         'function renderItems(){var d=String(deptSel.value||"");var cid=String(catSel.value||"");var list=(itemsByDept[d]||[]).slice();'
-         'if(d===HK_DEPT_ID&&cid&&HK_ITEMS_BY_CAT[cid]){var allowed=HK_ITEMS_BY_CAT[cid];list=list.filter(function(it){return allowed.indexOf(it.id)>=0;});}'
-         'itemSel.innerHTML=\'<option value="">-- Select Item --</option>\';list.forEach(function(it){var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
-         'function renderAreas(){areaSel.innerHTML=\'<option value="">-- Select Area --</option>\';allAreas.forEach(function(a){var o=document.createElement("option");o.value=a.id;o.textContent=a.name;areaSel.appendChild(o);});}'
-         'lt.addEventListener("change",updLoc);deptSel.addEventListener("change",renderCats);catSel.addEventListener("change",renderItems);areaSel.addEventListener("change",renderItems);'
-         'updLoc();renderAreas();renderCats();'
-         '})();</script>')
+    dept_display = user_dept_name or "Not assigned"
+    user_display_name = current_user.full_name or current_user.username or "User"
+    user_dept_id_str = str(user_dept_id or 0)
+    hk_dept_id_str = str(hk_dept_id or 0)
+
+    c = (
+        sig_warning +
+        '<div class="rq-page">'
+        '<div class="rq-head">'
+        '<h1>Maintenance Request</h1>'
+        '<p class="rq-sub">Report a maintenance issue to the Engineering Department</p>'
+        '</div>'
+        '<form method="post" id="requestForm" enctype="multipart/form-data" novalidate>'
+        '<input type="hidden" name="department_id" value="' + user_dept_id_str + '">'
+        '<input type="hidden" name="location_type" id="rq-locationType" value="Room">'
+        '<input type="hidden" name="priority" id="rq-priority" value="MEDIUM">'
+        '<input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '">'
+        '<input type="hidden" name="signature_data" id="rq-sigData" value="">'
+
+        '<div class="rq-grid">'
+        '<div class="rq-main">'
+
+        # Location
+        '<section class="rq-card">'
+        '<h2>Where is the problem?</h2>'
+        '<label>Request Type <i>*</i></label>'
+        '<div class="rq-seg" id="rq-type">'
+        '<button type="button" class="on" data-v="Room">🛏 Room</button>'
+        '<button type="button" data-v="Area">📍 Area / Location</button>'
+        '</div>'
+        '<div id="rq-roomF">'
+        '<div id="rq-rm"><label>Room Number <i>*</i></label>'
+        '<select name="room_id" id="rq-room" class="rq-input">' + room_opts + '</select>'
+        '<div class="rq-msg">Choose a room number.</div></div>'
+        '</div>'
+        '<div id="rq-areaF" class="rq-hide">'
+        '<div id="rq-fl2"><label>Floor (optional)</label>'
+        '<select name="floor" id="rq-floorA" class="rq-input">' + floor_opts + '</select></div>'
+        '<div id="rq-ar"><label>Area / Location <i>*</i></label>'
+        '<select name="area_id" id="rq-area" class="rq-input">' + area_opts + '</select>'
+        '<div class="rq-msg">Choose an area.</div></div>'
+        '</div>'
+        '</section>'
+
+        # What needs attention
+        '<section class="rq-card">'
+        '<h2>What needs attention?</h2>'
+        '<div id="rq-cg"><label>Category <i>*</i></label>'
+        '<select name="category_id" id="rq-cat" class="rq-input">' + cat_opts + '</select>'
+        '<div class="rq-msg">Choose a category.</div></div>'
+        '<div id="rq-ig"><label>Item / Equipment <i>*</i></label>'
+        '<select name="working_item_id" id="rq-item" class="rq-input"><option value="">Select item</option></select>'
+        '<div class="rq-msg">Tell us which item is affected.</div></div>'
+        '<div id="rq-dg"><label>Description <i>*</i></label>'
+        '<textarea name="description" id="rq-desc" placeholder="Describe the problem clearly…" required></textarea>'
+        '<div class="rq-msg">Describe the problem so technicians know what to bring.</div></div>'
+        '</section>'
+
+        # Priority
+        '<section class="rq-card" id="rq-pg">'
+        '<h2>Priority</h2>'
+        '<div class="rq-pri" id="rq-pri">'
+        '<button type="button" data-v="LOW"><span class="rq-dot" style="background:#4aa3ff"></span>Low</button>'
+        '<button type="button" data-v="MEDIUM" class="on"><span class="rq-dot" style="background:#ffd24a"></span>Medium</button>'
+        '<button type="button" data-v="HIGH"><span class="rq-dot" style="background:#ff9a3d"></span>High</button>'
+        '<button type="button" data-v="URGENT"><span class="rq-dot" style="background:#ff4d4d"></span>Urgent</button>'
+        '</div>'
+        '<div class="rq-msg">Choose how urgent this is.</div>'
+        '</section>'
+
+        # Photos
+        '<section class="rq-card">'
+        '<h2>Add Photo or Evidence <span id="rq-cnt">0 / 5</span></h2>'
+        '<div class="rq-up">'
+        '<div style="font-size:32px;line-height:1">📷</div>'
+        '<div class="rq-row"><button type="button" class="rq-btn" id="rq-pick">📷 Choose Photos</button>'
+        '<button type="button" class="rq-btn" id="rq-pick2">⬆️ Add More</button></div>'
+        '<small style="color:#b4afa5">Maximum 5 photos (jpg, png, gif)</small>'
+        '<div class="rq-thumbs" id="rq-thumbs"></div>'
+        '</div>'
+        '<input type="file" name="photo" id="rq-file" accept="image/*" multiple hidden>'
+        '</section>'
+
+        # Signature
+        '<section class="rq-card">'
+        '<h2>Authorized Digital Signature ' + ('<span style="color:#ff8a7e">Required</span>' if sig_block_required else '<span>Optional</span>') + '</h2>'
+        '<div class="rq-sigmeta">'
+        '<div class="rq-box"><div class="k">Signed By</div><div class="v">' + str(sig_authorized_name) + '</div></div>'
+        '<div class="rq-box"><div class="k">Department</div><div class="v">' + str(sig_dept_display) + '</div></div>'
+        '<div class="rq-box"><div class="k">Requester</div><div class="v">' + str(user_display_name) + '</div></div>'
+        '</div>'
+        '<label style="margin-top:14px"><i class="fas fa-pen-nib"></i> Draw your signature below</label>'
+        '<div class="rq-sigbox"><canvas id="signature-pad" width="400" height="150"></canvas></div>'
+        '<div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">'
+        '<button type="button" class="rq-btn" id="rq-sigClear" style="width:auto;padding:0 16px;min-height:44px">🧹 Clear</button>'
+        '<span class="rq-sigstatus" id="rq-sigStatus">Awaiting signature</span>'
+        '</div>'
+        '</section>'
+
+        # Request info (locked)
+        '<section class="rq-card">'
+        '<h2>Request Information</h2>'
+        '<label>Department <i>*</i></label>'
+        '<input type="text" value="' + str(dept_display) + '" disabled>'
+        '<label>Requested By <i>*</i></label>'
+        '<input type="text" value="' + str(user_display_name) + '" disabled>'
+        '<label>Contact / Extension (optional)</label>'
+        '<input type="tel" name="contact" inputmode="tel" placeholder="Optional">'
+        '</section>'
+
+        '</div>'  # end rq-main
+
+        # Sidebar
+        '<aside class="rq-aside">'
+        '<section class="rq-card">'
+        '<h2>Request Summary</h2>'
+        '<dl class="rq-sum">'
+        '<dt>Location</dt><dd id="rq-sL">–</dd>'
+        '<dt>Category</dt><dd id="rq-sC">–</dd>'
+        '<dt>Priority</dt><dd id="rq-sP">Medium</dd>'
+        '</dl>'
+        '</section>'
+        '<section class="rq-card">'
+        '<h2>Approval Workflow</h2>'
+        '<ol class="rq-flow">'
+        '<li class="cur">Department Request</li>'
+        '<li>Maintenance Manager Approval</li>'
+        '<li>Technical Staff Assignment</li>'
+        '<li>Work In Progress</li>'
+        '<li>Completed</li>'
+        '<li>Manager Verification</li>'
+        '<li>Closed</li>'
+        '</ol>'
+        '</section>'
+        '</aside>'
+
+        '</div>'  # end rq-grid
+
+        # Submit bar
+        '<div class="rq-bar">'
+        '<div class="rq-bar-r">'
+        '<button type="submit" class="rq-btn rq-btn-p" id="rq-submit">Submit Maintenance Request</button>'
+        '</div>'
+        '<p>After submission, your request will be reviewed by the Engineering Department.</p>'
+        '</div>'
+
+        '</form>'
+        '</div>'  # end rq-page
+
+        # Data + logic
+        '<script>window.RORI_HK_DEPT_ID=' + hk_dept_id_str + ';'
+        'window.RORI_USER_DEPT_ID=' + user_dept_id_str + ';'
+        'window.RORI_IS_HK=' + ('true' if is_hk_user else 'false') + ';'
+        'window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_cat_json.items()}) + ';'
+        'window.RORI_ALL_ITEMS=' + json.dumps(items_json) + ';'
+        'window.RORI_SIG_REQUIRED=' + ('true' if sig_block_required else 'false') + ';'
+        '</script>'
+        '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
+        '<script>(function(){'
+        'var form=document.getElementById("requestForm");if(!form)return;'
+        'var IS_HK=window.RORI_IS_HK===true;'
+        'var HK_BY_CAT=window.RORI_HK_ITEMS_BY_CAT||{};'
+        'var ALL_ITEMS=window.RORI_ALL_ITEMS||[];'
+        'var SIG_REQUIRED=window.RORI_SIG_REQUIRED===true;'
+        'var locType=document.getElementById("rq-locationType");'
+        'var typeBtns=document.querySelectorAll("#rq-type button");'
+        'var roomF=document.getElementById("rq-roomF");'
+        'var areaF=document.getElementById("rq-areaF");'
+        'var catSel=document.getElementById("rq-cat");'
+        'var itemSel=document.getElementById("rq-item");'
+        'var priBtns=document.querySelectorAll("#rq-pri button");'
+        'var priHidden=document.getElementById("rq-priority");'
+        'var fileInp=document.getElementById("rq-file");'
+        'var thumbs=document.getElementById("rq-thumbs");'
+        'var cnt=document.getElementById("rq-cnt");'
+        'var sigData=document.getElementById("rq-sigData");'
+        'var sigStatus=document.getElementById("rq-sigStatus");'
+        'var submitBtn=document.getElementById("rq-submit");'
+        'var sL=document.getElementById("rq-sL"),sC=document.getElementById("rq-sC"),sP=document.getElementById("rq-sP");'
+        'var curType="Room";'
+        // Type toggle
+        'typeBtns.forEach(function(b){b.addEventListener("click",function(){'
+        'curType=b.dataset.v;locType.value=curType;'
+        'typeBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
+        'if(curType==="Room"){roomF.classList.remove("rq-hide");areaF.classList.add("rq-hide");}'
+        'else{roomF.classList.add("rq-hide");areaF.classList.remove("rq-hide");}'
+        'updateSum();});});'
+        // Category → Item cascade
+        'function renderItems(){'
+        'var cid=catSel.value;'
+        'var allowed=null;'
+        'if(IS_HK&&cid&&HK_BY_CAT[cid]){allowed=HK_BY_CAT[cid];}'
+        'itemSel.innerHTML=\'<option value="">Select item</option>\';'
+        'ALL_ITEMS.forEach(function(it){'
+        'if(allowed&&allowed.indexOf(it.id)<0)return;'
+        'var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
+        'catSel.addEventListener("change",function(){renderItems();updateSum();});'
+        'renderItems();'
+        // Priority
+        'priBtns.forEach(function(b){b.addEventListener("click",function(){'
+        'priBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
+        'priHidden.value=b.dataset.v;updateSum();});});'
+        // Photos
+        'var acc=new DataTransfer();'
+        'function pick(){fileInp.click();}'
+        'document.getElementById("rq-pick").addEventListener("click",pick);'
+        'document.getElementById("rq-pick2").addEventListener("click",pick);'
+        'fileInp.addEventListener("change",function(e){'
+        'for(var i=0;i<e.target.files.length;i++){if(acc.items.length>=5)break;acc.items.add(e.target.files[i]);}'
+        'fileInp.files=acc.files;renderThumbs();});'
+        'function renderThumbs(){thumbs.innerHTML="";'
+        'for(var i=0;i<acc.files.length;i++){(function(idx){'
+        'var f=acc.files[idx];'
+        'var d=document.createElement("div");d.className="rq-th";'
+        'd.style.background="url("+URL.createObjectURL(f)+") center/cover";'
+        'var btn=document.createElement("button");btn.type="button";btn.textContent="✕";btn.setAttribute("aria-label","Remove");'
+        'btn.addEventListener("click",function(){'
+        'var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}'
+        'acc=nd;fileInp.files=acc.files;renderThumbs();});'
+        'd.appendChild(btn);thumbs.appendChild(d);})(i);}'
+        'cnt.textContent=acc.files.length+" / 5";}'
+        // Signature
+        'var canvas=document.getElementById("signature-pad");'
+        'var sigPad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});'
+        'function resizeCanvas(){var r=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*r;canvas.height=canvas.offsetHeight*r;canvas.getContext("2d").scale(r,r);sigPad.clear();updateSig();}'
+        'window.addEventListener("resize",resizeCanvas);'
+        'setTimeout(resizeCanvas,60);resizeCanvas();'
+        'document.getElementById("rq-sigClear").addEventListener("click",function(){sigPad.clear();updateSig();});'
+        'sigPad.addEventListener("endStroke",updateSig);'
+        'function updateSig(){if(sigPad.isEmpty()){sigStatus.textContent="Awaiting signature";sigStatus.className="rq-sigstatus";}'
+        'else{sigStatus.textContent="✓ Signature captured";sigStatus.className="rq-sigstatus rq-ok";}}'
+        'updateSig();'
+        // Summary
+        'function updateSum(){'
+        'var loc="";'
+        'if(curType==="Room"){var rs=document.getElementById("rq-room");var ro=rs.options[rs.selectedIndex];if(rs.value&&ro)loc=ro.textContent;}'
+        'else{var as=document.getElementById("rq-area");var ao=as.options[as.selectedIndex];if(as.value&&ao)loc=ao.textContent;'
+        'var fs=document.getElementById("rq-floorA");if(fs&&fs.value&&fs.value!=="0"&&loc)loc+=", Floor "+fs.value;}'
+        'sL.textContent=loc||"–";'
+        'sC.textContent=(catSel.value&&catSel.options[catSel.selectedIndex])?catSel.options[catSel.selectedIndex].textContent:"–";'
+        'sP.textContent=(priHidden.value||"–");}'
+        '["rq-room","rq-area","rq-floorA"].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener("change",updateSum);});'
+        'updateSum();'
+        // Validation + submit
+        'form.addEventListener("submit",function(e){'
+        'var miss=[];'
+        'if(curType==="Room"&&!document.getElementById("rq-room").value)miss.push("Room");'
+        'if(curType==="Area"&&!document.getElementById("rq-area").value)miss.push("Area");'
+        'if(!catSel.value)miss.push("Category");'
+        'if(!itemSel.value)miss.push("Item");'
+        'if(!document.getElementById("rq-desc").value.trim())miss.push("Description");'
+        'if(!priHidden.value)miss.push("Priority");'
+        'if(SIG_REQUIRED&&sigPad.isEmpty())miss.push("Signature");'
+        'if(miss.length){e.preventDefault();'
+        'document.querySelectorAll(".rq-page .rq-err").forEach(function(x){x.classList.remove("rq-err");});'
+        'var first=null;'
+        'if(curType==="Room"&&!document.getElementById("rq-room").value){var w=document.getElementById("rq-rm");w.classList.add("rq-err");first=first||w;}'
+        'if(curType==="Area"&&!document.getElementById("rq-area").value){var w2=document.getElementById("rq-ar");w2.classList.add("rq-err");first=first||w2;}'
+        'if(!catSel.value){var w3=document.getElementById("rq-cg");w3.classList.add("rq-err");first=first||w3;}'
+        'if(!itemSel.value){var w4=document.getElementById("rq-ig");w4.classList.add("rq-err");first=first||w4;}'
+        'if(!document.getElementById("rq-desc").value.trim()){var w5=document.getElementById("rq-dg");w5.classList.add("rq-err");first=first||w5;}'
+        'if(SIG_REQUIRED&&sigPad.isEmpty()){alert("⚠️ Digital signature is required.");}'
+        'if(first)first.scrollIntoView({behavior:"smooth",block:"center"});'
+        'else alert("Please complete: "+miss.join(", "));'
+        'return false;}'
+        'if(!sigPad.isEmpty()){sigData.value=sigPad.toDataURL("image/png");}'
+        'submitBtn.disabled=true;submitBtn.innerHTML=\'<span class="rq-spin"></span>Submitting…\';'
+        '});'
+        '})();</script>'
+    )
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -1798,7 +2062,6 @@ def request_detail(req_id):
         + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.description or "No description provided.") + '</div></div>')
         + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(34,197,94,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
         + '</div>')
-    # Photos
     photos = Photo.query.filter_by(object_type="request", object_id=req.id).order_by(Photo.created_at.asc()).all()
     photo_html = ""
     if photos:
@@ -3778,7 +4041,7 @@ with app.app_context():
     seed_data()
     fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
-    print("✅ Luxury Executive Dark UI active")
+    print("✅ New black & gold Maintenance Request UI active on /requests/new")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
     print("="*60)
 
