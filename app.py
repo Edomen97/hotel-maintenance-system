@@ -53,15 +53,11 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ── Profile Photo configuration ──
 PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
-PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 
-# ── Online / Active status configuration ──
-# A user is considered ONLINE if their last_seen timestamp is within this window.
-# Request-driven only (no background processes) → safe on Render.
-ONLINE_WINDOW_SECONDS = 120   # 2 minutes
-LAST_SEEN_THROTTLE_SECONDS = 60  # write at most once per minute per user
+ONLINE_WINDOW_SECONDS = 120
+LAST_SEEN_THROTTLE_SECONDS = 60
 
 RORI_ROOM_STRUCTURE = {2: list(range(201, 226)), 3: list(range(301, 326)),
                         4: list(range(401, 426)), 5: list(range(501, 526))}
@@ -207,13 +203,12 @@ class User(UserMixin, db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     profile_pic = db.Column(db.String(255), nullable=True)
     active = db.Column(db.Boolean, default=True)
-    last_seen = db.Column(db.DateTime, nullable=True)   # NEW — for online/active status
+    last_seen = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     department = db.relationship("Department", foreign_keys=[department_id])
     def set_password(self, p): self.password_hash = generate_password_hash(p)
     def check_password(self, p): return check_password_hash(self.password_hash, p)
 
-# NEW — internal user-to-user messaging (additive table; no existing tables altered)
 class Message(db.Model):
     __tablename__ = "messages"
     id = db.Column(db.Integer, primary_key=True)
@@ -526,8 +521,6 @@ def load_user(user_id): return db.session.get(User, int(user_id))
 # ══════════════════════════════════════════ ACTIVE STATUS (request-driven, no background jobs)
 @app.before_request
 def _rori_track_activity():
-    """Update last_seen for the current user. Throttled to once per minute.
-    No background processes / schedulers → safe on Render / free dynos."""
     try:
         if current_user.is_authenticated:
             now = datetime.utcnow()
@@ -540,7 +533,6 @@ def _rori_track_activity():
         except Exception: pass
 
 def _user_is_online(u):
-    """Return True if the given user is currently active (seen within window)."""
     if not u: return False
     ls = getattr(u, "last_seen", None)
     if not ls: return False
@@ -633,23 +625,17 @@ def work_order_no_generator():
 def allowed_file(fn):
     return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── image content validation helper (JPG/JPEG/PNG/WEBP) ──
 def _is_valid_image_file(f):
-    """Verify the file's magic bytes match an allowed image format.
-    Guards against renamed executables / arbitrary files."""
     try:
         f.seek(0)
         header = f.read(12)
         f.seek(0)
         if not header or len(header) < 3:
             return False
-        # JPEG (also covers JPG / JPEG)
         if header[:3] == b'\xff\xd8\xff':
             return True
-        # PNG
         if header[:8] == b'\x89PNG\r\n\x1a\n':
             return True
-        # WEBP: RIFF....WEBP
         if len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WEBP':
             return True
         return False
@@ -722,7 +708,6 @@ def ensure_database_schema():
             ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("users","profile_pic","ALTER TABLE users ADD COLUMN profile_pic VARCHAR(255)")
-            # NEW — last_seen for online/active status (nullable; existing rows unaffected)
             add_column_if_missing("users","last_seen","ALTER TABLE users ADD COLUMN last_seen " + dt)
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
@@ -759,7 +744,6 @@ def page(title, content):
     nav = []
     _msg_entry = None
     if current_user.is_authenticated:
-        # Build the Messages nav entry with an unread badge (additive feature)
         try:
             _msg_unread = Message.query.filter_by(recipient_id=current_user.id, is_read=False).count()
         except Exception:
@@ -857,7 +841,6 @@ def page(title, content):
         _display_name = current_user.full_name or current_user.username or "User"
         _avatar_letter = _display_name[0].upper() if _display_name else "U"
         _display_role = current_user.role or ""
-        # CHANGED: show real profile photo if available, else fallback initial.
         _pic = (current_user.profile_pic or "").strip()
         if _pic:
             _pic_src = url_for("static", filename="profile_pics/" + os.path.basename(_pic))
@@ -881,7 +864,6 @@ def page(title, content):
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  /* ═══ Rori Hotel black & gold palette ═══ */
   --rori-gold:#C5A059;
   --rori-gold-dark:#A8873F;
   --bg-primary:#0e0e0e;
@@ -1193,7 +1175,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .report-table th{background:#eee!important;color:#000!important}
   .report-table td,.report-table th{border:1px solid #666!important}
 }
-/* ═══════ SCOPED — NEW MAINTENANCE REQUEST FORM (black & gold) ═══════ */
 .rq-page{--rq-bg:#121212;--rq-card:#1b1b1b;--rq-line:#2f2c26;--rq-gold:#C5A059;--rq-tx:#f4f1ea;--rq-mut:#b4afa5;--rq-err:#ff6b5e;--rq-ok:#6fcf97;background:var(--rq-bg);color:var(--rq-tx);font-family:'Figtree',system-ui,sans-serif;border-radius:20px;padding:22px 20px 24px;box-shadow:0 8px 32px rgba(0,0,0,.5);border:1px solid var(--rq-line)}
 .rq-page h1,.rq-page h2,.rq-page h3{font-family:'Cormorant Garamond',Georgia,serif;margin:0}
 .rq-page .rq-h1{font-size:34px;color:var(--rq-gold);line-height:1.15}
@@ -1277,21 +1258,38 @@ input[type="checkbox"]{accent-color:var(--gold)}
 @media(max-width:768px){
   .rq-page{padding-bottom:150px}
 }
-/* Profile photo (small addition) */
 .profile-photo-btn{min-height:44px;padding:.55rem 1.1rem;font-size:.85rem}
 @media(max-width:520px){
   .profile-photo-btn{width:100%;justify-content:center}
 }
-/* ═══════ Messaging (additive) ═══════ */
-.msg-bubble-wrap{display:flex;flex-direction:column;margin-bottom:.85rem}
-.msg-bubble{max-width:75%;padding:.7rem 1rem;border-radius:14px;word-wrap:break-word;white-space:pre-wrap;line-height:1.45;font-size:.92rem}
-.msg-bubble.mine{background:var(--rori-gold);color:#16120a;align-self:flex-end}
-.msg-bubble.theirs{background:var(--bg-secondary);color:var(--text-primary);align-self:flex-start;border:1px solid var(--border-color)}
-.msg-meta{font-size:.7rem;color:var(--text-secondary);margin-top:.25rem}
-.msg-user-row{display:flex;justify-content:space-between;align-items:center;padding:.55rem .8rem;background:var(--bg-secondary);border-radius:10px;margin-bottom:.45rem;gap:.6rem;flex-wrap:wrap}
-.msg-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.4rem;vertical-align:middle}
-.msg-dot.on{background:#6fcf97;box-shadow:0 0 6px #6fcf97}
-.msg-dot.off{background:#555}
+/* ═══════ Messenger-style chat (used in messages_thread) ═══════ */
+.chat-shell{display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;background:var(--card-bg);border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.45);}
+.chat-head{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);background:var(--bg-secondary);}
+.chat-head-avatar{width:42px;height:42px;border-radius:50%;background:var(--gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Cormorant Garamond',Georgia,serif;font-size:1.15rem;overflow:hidden;flex-shrink:0;}
+.chat-head-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.chat-head-name{font-weight:700;font-size:1rem;color:var(--text-primary);line-height:1.15;}
+.chat-head-status{font-size:.74rem;color:var(--text-secondary);margin-top:.15rem;display:flex;align-items:center;gap:.35rem;}
+.chat-body{flex:1;overflow-y:auto;padding:1.1rem 1rem .75rem;display:flex;flex-direction:column;background:var(--app-bg);scroll-behavior:smooth;}
+.chat-body::-webkit-scrollbar{width:6px;}
+.chat-body::-webkit-scrollbar-thumb{background:rgba(197,160,89,.35);border-radius:4px;}
+.msg-row{display:flex;align-items:flex-end;gap:.5rem;margin-top:.55rem;}
+.msg-row.mine{justify-content:flex-end;}
+.msg-avatar{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0;}
+.msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.msg-bubble{max-width:74%;padding:.6rem .95rem;border-radius:20px;font-size:.94rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;word-break:break-word;background:#2a2a2a;color:var(--text-primary);border-bottom-left-radius:6px;}
+.msg-bubble.mine{background:var(--gold);color:#16120a;border-bottom-right-radius:6px;border-bottom-left-radius:20px;}
+.msg-time{font-size:.65rem;color:var(--text-muted);margin:.15rem 0 .4rem;padding-left:40px;}
+.msg-time.mine{text-align:right;padding-right:40px;padding-left:0;}
+.chat-input-wrap{display:flex;gap:.5rem;padding:.7rem .9rem;border-top:1px solid var(--border);background:var(--bg-secondary);align-items:flex-end;}
+.chat-input{flex:1;background:#0e0e0e;border:1.5px solid var(--border);color:var(--text-primary);border-radius:22px;padding:.7rem 1.05rem;font-size:.94rem;outline:none;resize:none;min-height:46px;max-height:120px;font-family:inherit;line-height:1.4;transition:border-color .15s;}
+.chat-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(197,160,89,.18);}
+.chat-send{width:46px;height:46px;border-radius:50%;background:var(--gold);color:#16120a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;transition:all .15s;}
+.chat-send:hover{background:#d4b06c;transform:scale(1.05);}
+.chat-send:active{transform:scale(.94);}
+@media(max-width:768px){
+  .chat-shell{height:calc(100vh - 175px);border-radius:14px;}
+  .msg-bubble{max-width:82%;font-size:.92rem;}
+}
 </style></head><body>
 <header class="header">
     <div class="header-left">
@@ -1537,7 +1535,6 @@ def login():
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
         flash("Incorrect username or password","danger")
-    # CHANGED: replace placeholder icon with the actual Rori Hotel logo (served at /logo.png)
     lh = """<div class="login-container">
 <div class="login-card">
 <div class="text-center mb-4">
@@ -1573,7 +1570,6 @@ def profile():
     if request.method == "POST":
         action = (request.form.get("action") or "update_info").strip()
 
-        # ── Upload / Change profile photo ──
         if action == "upload_photo":
             f = request.files.get("profile_photo")
             if not f or not f.filename:
@@ -1587,7 +1583,6 @@ def profile():
             if ext not in PROFILE_PHOTO_EXTENSIONS:
                 flash("Invalid file type. Allowed: JPG, JPEG, PNG, WEBP.", "danger")
                 return redirect(url_for("profile"))
-            # Size check (5 MB)
             try:
                 f.seek(0, os.SEEK_END); size = f.tell(); f.seek(0)
             except Exception:
@@ -1598,11 +1593,9 @@ def profile():
             if size > PROFILE_PHOTO_MAX_BYTES:
                 flash("File too large. Maximum size is 5 MB.", "danger")
                 return redirect(url_for("profile"))
-            # Magic-byte validation
             if not _is_valid_image_file(f):
                 flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger")
                 return redirect(url_for("profile"))
-            # Build a safe unique filename
             safe_name = secure_filename(
                 "user_" + str(u.id) + "_" +
                 datetime.now().strftime("%Y%m%d%H%M%S") + "_" +
@@ -1611,15 +1604,13 @@ def profile():
             if not safe_name:
                 flash("Could not generate a safe filename.", "danger")
                 return redirect(url_for("profile"))
-            # Delete previous photo (only this user's file)
             old = (u.profile_pic or "").strip()
             if old:
-                old_safe = os.path.basename(old)  # prevent path traversal
+                old_safe = os.path.basename(old)
                 old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
                 if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
                     try: os.remove(old_path)
                     except Exception as ex: print("Old photo remove warn: " + str(ex))
-            # Save new photo
             try:
                 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
                 f.save(os.path.join(PROFILE_PIC_FOLDER, safe_name))
@@ -1632,7 +1623,6 @@ def profile():
             flash("✅ Profile photo updated successfully", "success")
             return redirect(url_for("profile"))
 
-        # ── Remove profile photo ──
         if action == "remove_photo":
             old = (u.profile_pic or "").strip()
             if old:
@@ -1649,13 +1639,11 @@ def profile():
                 flash("No profile photo to remove.", "info")
             return redirect(url_for("profile"))
 
-        # ── Default: existing behavior — update email / phone / password ──
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
 
-    # ── GET: render profile page (with new Profile Photo section) ──
     has_photo = bool(u.profile_pic and str(u.profile_pic).strip())
 
     if has_photo:
@@ -1720,12 +1708,11 @@ def profile():
          '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
 
-# ══════════════════════════════════════════ MESSAGING (internal user-to-user, additive)
+# ══════════════════════════════════════════ MESSAGING
 @app.route("/messages")
 @login_required
 def messages_inbox():
     now = datetime.utcnow()
-    # Conversation summary: one row per other user
     all_msgs = Message.query.filter(
         db.or_(Message.sender_id == current_user.id, Message.recipient_id == current_user.id)
     ).order_by(Message.created_at.desc()).all()
@@ -1758,7 +1745,6 @@ def messages_inbox():
             url_for("messages_thread", user_id=other.id) + '">Open</a></td></tr>'
         )
 
-    # Recipient dropdown — all other active users
     all_users = User.query.filter(User.id != current_user.id, User.active == True).order_by(User.full_name).all()
     user_opts = ""
     for u in all_users:
@@ -1767,7 +1753,6 @@ def messages_inbox():
         user_opts += ('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) +
                       ' (' + str(u.role) + ')' + status + '</option>')
 
-    # Online-status directory
     users_rows = []
     for u in all_users:
         online = _user_is_online(u)
@@ -1819,6 +1804,7 @@ def messages_inbox():
 @app.route("/messages/thread/<int:user_id>")
 @login_required
 def messages_thread(user_id):
+    """Messenger-style chat thread with one user."""
     other = get_or_404(User, user_id)
     if other.id == current_user.id:
         flash("You cannot message yourself.", "warning")
@@ -1841,42 +1827,91 @@ def messages_thread(user_id):
     online = _user_is_online(other)
     dot = _online_dot(online)
     status_text = "Active now" if online else "Offline"
+    other_name = other.full_name or other.username
 
-    bubbles = []
+    def _av_inner(u):
+        pic = (u.profile_pic or "").strip()
+        if pic:
+            return '<img src="' + url_for("static", filename="profile_pics/" + os.path.basename(pic)) + '" alt="">'
+        return ((u.full_name or u.username or "U")[:1]).upper()
+
+    other_avatar_inner = _av_inner(other)
+    my_avatar_inner = _av_inner(current_user)
+
+    rows = []
     for m in msgs:
         mine = (m.sender_id == current_user.id)
-        cls = "msg-bubble mine" if mine else "msg-bubble theirs"
-        who = "You" if mine else (other.full_name or other.username)
-        when = m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else ""
-        align = "flex-end" if mine else "flex-start"
-        bubbles.append(
-            '<div class="msg-bubble-wrap" style="align-items:' + align + ';">'
-            '<div class="' + cls + '">' + str(m.body) + '</div>'
-            '<div class="msg-meta">' + str(who) + ' · ' + when + '</div>'
+        when = m.created_at.strftime("%b %d, %H:%M") if m.created_at else ""
+        safe_body = str(m.body).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if mine:
+            rows.append(
+                '<div class="msg-row mine">'
+                '<div class="msg-bubble mine">' + safe_body + '</div>'
+                '<div class="msg-avatar">' + my_avatar_inner + '</div>'
+                '</div>'
+                '<div class="msg-time mine">' + when + '</div>'
+            )
+        else:
+            rows.append(
+                '<div class="msg-row">'
+                '<div class="msg-avatar">' + other_avatar_inner + '</div>'
+                '<div class="msg-bubble">' + safe_body + '</div>'
+                '</div>'
+                '<div class="msg-time">' + when + '</div>'
+            )
+
+    if not rows:
+        rows.append(
+            '<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
+            '<i class="fas fa-comment-dots" style="font-size:2.2rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>'
+            'No messages yet. Say hi! 👋'
             '</div>'
         )
 
     content = (
-        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> ' +
-        str(other.full_name or other.username) + '</h1>'
-        '<p>' + dot + '<strong>' + status_text + '</strong> · ' + str(other.role) + '</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' +
-        url_for("messages_inbox") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
-
-        '<div class="card" style="max-height:520px;overflow-y:auto;">'
-        + ("".join(bubbles) if bubbles else
-           '<p style="text-align:center;color:var(--text-secondary);padding:2rem;">'
-           'No messages yet. Say hi below 👋</p>')
+        '<div class="page-header" style="margin-bottom:1rem;">'
+          '<div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1></div>'
+          '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" '
+          'href="' + url_for("messages_inbox") + '">'
+          '<i class="fas fa-arrow-left"></i> Back</a></div>'
+        + '<div class="chat-shell">'
+        +   '<div class="chat-head">'
+        +     '<div class="chat-head-avatar">' + other_avatar_inner + '</div>'
+        +     '<div style="flex:1;min-width:0;">'
+        +       '<div class="chat-head-name">' + str(other_name) + '</div>'
+        +       '<div class="chat-head-status">' + dot + '<span>' + status_text + ' · ' + str(other.role) + '</span></div>'
+        +     '</div>'
+        +   '</div>'
+        +   '<div class="chat-body" id="chatBody">' + "".join(rows) + '</div>'
+        +   '<form method="post" action="' + url_for("messages_send") + '" class="chat-input-wrap" id="chatForm">'
+        +     '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
+        +     '<textarea name="body" class="chat-input" id="chatInput" rows="1" '
+        +       'placeholder="Type a message…" required></textarea>'
+        +     '<button type="submit" class="chat-send" aria-label="Send"><i class="fas fa-paper-plane"></i></button>'
+        +   '</form>'
         + '</div>'
-
-        '<div class="card"><form method="post" action="' + url_for("messages_send") + '">'
-        '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
-        '<div class="mb-3"><label class="form-label">Message</label>'
-        '<textarea name="body" class="form-control" rows="3" required autofocus></textarea></div>'
-        '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button>'
-        '</form></div>'
+        + '<script>'
+          '(function(){'
+          'var b=document.getElementById("chatBody");'
+          'if(b){b.scrollTop=b.scrollHeight;}'
+          'var ta=document.getElementById("chatInput");'
+          'if(ta){'
+            'ta.addEventListener("input",function(){'
+              'this.style.height="auto";'
+              'this.style.height=Math.min(this.scrollHeight,120)+"px";'
+            '});'
+            'ta.addEventListener("keydown",function(e){'
+              'if(e.key==="Enter"&&!e.shiftKey){'
+                'e.preventDefault();'
+                'if(this.value.trim()){document.getElementById("chatForm").submit();}'
+              '}'
+            '});'
+            'ta.focus();'
+          '}'
+          '})();'
+        '</script>'
     )
-    return page("Messages", content)
+    return page("Chat with " + str(other_name), content)
 
 @app.route("/messages/send", methods=["POST"])
 @login_required
@@ -4471,6 +4506,7 @@ with app.app_context():
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
     print("✅ Profile Photo upload added to /profile (all users — upload/change/remove, 5 MB max, JPG/PNG/WEBP only)")
     print("✅ Internal user-to-user messaging available at /messages")
+    print("✅ Messenger-style chat thread at /messages/thread/<user_id>")
     print("✅ Active/online status via request-driven last_seen (no background processes)")
     print("="*60)
 
