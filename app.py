@@ -954,6 +954,20 @@ a:hover{color:var(--gold-bright)}
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(197,160,89,0.32);background:#d4b06c;color:#16120a}
 .btn-primary:active{transform:translateY(0)}
 .btn-primary i{font-size:.85rem}
+/* ═══ FIX: dark-background btn-primary should have LIGHT text (was invisible on black) ═══ */
+.btn-primary[style*="bg-card"]{
+  color:#f4f1ea !important;
+  border-color:var(--border-color) !important;
+  box-shadow:none !important;
+}
+.btn-primary[style*="bg-card"]:hover{
+  color:var(--gold) !important;
+  border-color:var(--gold-line) !important;
+  background:var(--bg-card-hover) !important;
+  box-shadow:none !important;
+  transform:none !important;
+}
+.btn-primary[style*="bg-card"] i{color:inherit !important}
 .btn-danger,.btn-outline-danger{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(255,107,94,0.28)}
 .card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.35);padding:1.35rem 1.4rem;margin-bottom:1.25rem}
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem;flex-wrap:wrap;gap:.6rem}
@@ -1804,13 +1818,11 @@ def messages_inbox():
 @app.route("/messages/thread/<int:user_id>")
 @login_required
 def messages_thread(user_id):
-    """Messenger-style chat thread with one user."""
     other = get_or_404(User, user_id)
     if other.id == current_user.id:
         flash("You cannot message yourself.", "warning")
         return redirect(url_for("messages_inbox"))
 
-    # Mark incoming messages as read
     unread = Message.query.filter_by(sender_id=other.id, recipient_id=current_user.id, is_read=False).all()
     if unread:
         for m in unread: m.is_read = True
@@ -3001,7 +3013,12 @@ def _render_detailed_report_block(p, seq=None):
     + '<div class="report-section"><div class="report-section-title">Photos / Attachments</div>' + photos_html + '</div>')
 
 def _detailed_report_header(title, filters, kpis):
+    # ═══ CHANGED: now includes the Rori Hotel logo image at the top of every report ═══
     return ('<div class="report-head">'
+        '<div style="text-align:center;margin-bottom:.65rem;">'
+        '<img src="/logo.png" alt="Rori Hotel" '
+        'style="max-height:90px;max-width:260px;width:auto;object-fit:contain;display:inline-block;">'
+        '</div>'
         '<div class="brand">RORI HOTEL</div>'
         '<div class="dept">Engineering &amp; Maintenance Department</div>'
         '<div class="doctype">' + str(title) + '</div>'
@@ -4508,6 +4525,8 @@ with app.app_context():
     print("✅ Internal user-to-user messaging available at /messages")
     print("✅ Messenger-style chat thread at /messages/thread/<user_id>")
     print("✅ Active/online status via request-driven last_seen (no background processes)")
+    print("✅ Reports (WO/Request/Detailed) now show the Rori logo at the top")
+    print("✅ Fixed: buttons with dark background now show readable text")
     print("="*60)
 
 if __name__ == "__main__":
