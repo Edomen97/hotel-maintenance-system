@@ -53,9 +53,15 @@ PRIORITIES = {"URGENT": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 72}
 ALLOWED_EXTENSIONS = {"png","jpg","jpeg","gif","pdf","doc","docx","xls","xlsx","csv"}
 STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
-# ── Profile Photo configuration (NEW) ──
+# ── Profile Photo configuration ──
 PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# ── Online / Active status configuration ──
+# A user is considered ONLINE if their last_seen timestamp is within this window.
+# Request-driven only (no background processes) → safe on Render.
+ONLINE_WINDOW_SECONDS = 120   # 2 minutes
+LAST_SEEN_THROTTLE_SECONDS = 60  # write at most once per minute per user
 
 RORI_ROOM_STRUCTURE = {2: list(range(201, 226)), 3: list(range(301, 326)),
                         4: list(range(401, 426)), 5: list(range(501, 526))}
@@ -201,10 +207,23 @@ class User(UserMixin, db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     profile_pic = db.Column(db.String(255), nullable=True)
     active = db.Column(db.Boolean, default=True)
+    last_seen = db.Column(db.DateTime, nullable=True)   # NEW — for online/active status
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     department = db.relationship("Department", foreign_keys=[department_id])
     def set_password(self, p): self.password_hash = generate_password_hash(p)
     def check_password(self, p): return check_password_hash(self.password_hash, p)
+
+# NEW — internal user-to-user messaging (additive table; no existing tables altered)
+class Message(db.Model):
+    __tablename__ = "messages"
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sender = db.relationship("User", foreign_keys=[sender_id])
+    recipient = db.relationship("User", foreign_keys=[recipient_id])
 
 class Department(db.Model):
     __tablename__ = "departments"
@@ -504,6 +523,40 @@ class ChecklistTemplate(db.Model):
 @login_manager.user_loader
 def load_user(user_id): return db.session.get(User, int(user_id))
 
+# ══════════════════════════════════════════ ACTIVE STATUS (request-driven, no background jobs)
+@app.before_request
+def _rori_track_activity():
+    """Update last_seen for the current user. Throttled to once per minute.
+    No background processes / schedulers → safe on Render / free dynos."""
+    try:
+        if current_user.is_authenticated:
+            now = datetime.utcnow()
+            ls = getattr(current_user, "last_seen", None)
+            if ls is None or (now - ls).total_seconds() > LAST_SEEN_THROTTLE_SECONDS:
+                current_user.last_seen = now
+                db.session.commit()
+    except Exception as e:
+        try: db.session.rollback()
+        except Exception: pass
+
+def _user_is_online(u):
+    """Return True if the given user is currently active (seen within window)."""
+    if not u: return False
+    ls = getattr(u, "last_seen", None)
+    if not ls: return False
+    try:
+        return (datetime.utcnow() - ls).total_seconds() < ONLINE_WINDOW_SECONDS
+    except Exception:
+        return False
+
+def _online_dot(is_online):
+    if is_online:
+        return ('<span title="Active now" style="display:inline-block;width:10px;height:10px;'
+                'border-radius:50%;background:#6fcf97;box-shadow:0 0 6px #6fcf97;'
+                'margin-right:.4rem;vertical-align:middle;"></span>')
+    return ('<span title="Offline" style="display:inline-block;width:10px;height:10px;'
+            'border-radius:50%;background:#555;margin-right:.4rem;vertical-align:middle;"></span>')
+
 # ══════════════════════════════════════════ HELPERS
 def role_required(*roles):
     def dec(fn):
@@ -580,7 +633,7 @@ def work_order_no_generator():
 def allowed_file(fn):
     return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── NEW: image content validation helper (JPG/JPEG/PNG/WEBP) ──
+# ── image content validation helper (JPG/JPEG/PNG/WEBP) ──
 def _is_valid_image_file(f):
     """Verify the file's magic bytes match an allowed image format.
     Guards against renamed executables / arbitrary files."""
@@ -669,6 +722,8 @@ def ensure_database_schema():
             ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("users","profile_pic","ALTER TABLE users ADD COLUMN profile_pic VARCHAR(255)")
+            # NEW — last_seen for online/active status (nullable; existing rows unaffected)
+            add_column_if_missing("users","last_seen","ALTER TABLE users ADD COLUMN last_seen " + dt)
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
             add_column_if_missing("work_orders","verified_date","ALTER TABLE work_orders ADD COLUMN verified_date " + dt)
@@ -702,24 +757,41 @@ def ensure_database_schema():
 
 def page(title, content):
     nav = []
+    _msg_entry = None
+    if current_user.is_authenticated:
+        # Build the Messages nav entry with an unread badge (additive feature)
+        try:
+            _msg_unread = Message.query.filter_by(recipient_id=current_user.id, is_read=False).count()
+        except Exception:
+            _msg_unread = 0
+        _msg_label = '<i class="fas fa-comments"></i> Messages'
+        if _msg_unread > 0:
+            _msg_label += (' <span style="display:inline-block;background:#ff6b5e;color:#0e0e0e;'
+                           'font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;'
+                           'margin-left:.25rem;line-height:1.2;">' + str(_msg_unread) + '</span>')
+        _msg_entry = (_msg_label, url_for('messages_inbox'))
+
     if current_user.is_authenticated:
         r = current_user.role
         if r == "DEPARTMENT":
             nav = [('<i class="fas fa-home"></i> Dashboard', url_for('department_dashboard')),
                    ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   _msg_entry,
                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         elif r == "EMPLOYEE":
             nav = [('<i class="fas fa-home"></i> My Dashboard', url_for('employee_dashboard')),
                    ('<i class="fas fa-plus-circle"></i> New', url_for('request_create')),
                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   _msg_entry,
                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         elif r in STAFF_ROLES:
             nav = [('<i class="fas fa-tools"></i> My Tasks', url_for('workorders_list')),
                    ('<i class="fas fa-boxes"></i> Inventory', url_for('inventory_list')),
                    ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                   _msg_entry,
                    ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                    ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
         else:
@@ -746,6 +818,7 @@ def page(title, content):
         if r not in ("DEPARTMENT", "EMPLOYEE"):
             nav += [('<i class="fas fa-chart-bar"></i> Reports', url_for('reports')),
                     ('<i class="fas fa-bell"></i> Notifications', url_for('notifications')),
+                    _msg_entry,
                     ('<i class="fas fa-user-circle"></i> Profile', url_for('profile')),
                     ('<i class="fas fa-sign-out-alt"></i> Logout', url_for('logout'))]
     else:
@@ -784,8 +857,15 @@ def page(title, content):
         _display_name = current_user.full_name or current_user.username or "User"
         _avatar_letter = _display_name[0].upper() if _display_name else "U"
         _display_role = current_user.role or ""
+        # CHANGED: show real profile photo if available, else fallback initial.
+        _pic = (current_user.profile_pic or "").strip()
+        if _pic:
+            _pic_src = url_for("static", filename="profile_pics/" + os.path.basename(_pic))
+            _avatar_inner = '<img src="' + _pic_src + '" alt="Profile Photo">'
+        else:
+            _avatar_inner = _avatar_letter
         user_profile_html = ('<a class="user-profile" href="' + url_for('profile') + '">'
-                             '<div class="user-avatar">' + _avatar_letter + '</div>'
+                             '<div class="user-avatar">' + _avatar_inner + '</div>'
                              '<div class="user-info">'
                              '<div class="user-name">' + str(_display_name) + '</div>'
                              '<div class="user-role">' + str(_display_role) + '</div>'
@@ -859,7 +939,8 @@ a:hover{color:var(--gold-bright)}
 .notif-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#0e0e0e;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;min-width:18px;text-align:center;line-height:1.3}
 .user-profile{display:flex;align-items:center;gap:.65rem;padding:.3rem .5rem .3rem .3rem;border-radius:12px;text-decoration:none;transition:all .2s ease;border:1px solid transparent}
 .user-profile:hover{background:rgba(255,255,255,0.04);border-color:var(--border)}
-.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--gold);color:#16120a;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--gold);color:#16120a;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
+.user-avatar img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
 .user-info{display:flex;flex-direction:column;line-height:1.15}
 .user-name{font-weight:600;font-size:.82rem;color:var(--text-primary)}
 .user-role{font-size:.68rem;color:var(--text-secondary);letter-spacing:.04em;text-transform:uppercase}
@@ -1201,6 +1282,16 @@ input[type="checkbox"]{accent-color:var(--gold)}
 @media(max-width:520px){
   .profile-photo-btn{width:100%;justify-content:center}
 }
+/* ═══════ Messaging (additive) ═══════ */
+.msg-bubble-wrap{display:flex;flex-direction:column;margin-bottom:.85rem}
+.msg-bubble{max-width:75%;padding:.7rem 1rem;border-radius:14px;word-wrap:break-word;white-space:pre-wrap;line-height:1.45;font-size:.92rem}
+.msg-bubble.mine{background:var(--rori-gold);color:#16120a;align-self:flex-end}
+.msg-bubble.theirs{background:var(--bg-secondary);color:var(--text-primary);align-self:flex-start;border:1px solid var(--border-color)}
+.msg-meta{font-size:.7rem;color:var(--text-secondary);margin-top:.25rem}
+.msg-user-row{display:flex;justify-content:space-between;align-items:center;padding:.55rem .8rem;background:var(--bg-secondary);border-radius:10px;margin-bottom:.45rem;gap:.6rem;flex-wrap:wrap}
+.msg-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.4rem;vertical-align:middle}
+.msg-dot.on{background:#6fcf97;box-shadow:0 0 6px #6fcf97}
+.msg-dot.off{background:#555}
 </style></head><body>
 <header class="header">
     <div class="header-left">
@@ -1446,10 +1537,11 @@ def login():
         if u and u.check_password(request.form.get("password","")) and u.active:
             login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
         flash("Incorrect username or password","danger")
+    # CHANGED: replace placeholder icon with the actual Rori Hotel logo (served at /logo.png)
     lh = """<div class="login-container">
 <div class="login-card">
 <div class="text-center mb-4">
-<i class="fas fa-hotel" style="font-size:3rem;color:var(--rori-gold);margin-bottom:1rem;"></i>
+<img src="/logo.png" alt="Rori Hotel Logo" style="max-height:110px;max-width:100%;width:auto;display:block;margin:0 auto 1rem;object-fit:contain;">
 <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--rori-gold);letter-spacing:.18em;font-weight:700;">RORI HOTEL</h3>
 <p style="color:var(--text-secondary);font-size:.9rem;">Maintenance Management System</p>
 </div>
@@ -1627,6 +1719,191 @@ def profile():
          '<div class="mb-3"><label class="form-label">New Password</label><input type="password" class="form-control" name="new_password" placeholder="Leave blank to keep current"></div>'
          '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
+
+# ══════════════════════════════════════════ MESSAGING (internal user-to-user, additive)
+@app.route("/messages")
+@login_required
+def messages_inbox():
+    now = datetime.utcnow()
+    # Conversation summary: one row per other user
+    all_msgs = Message.query.filter(
+        db.or_(Message.sender_id == current_user.id, Message.recipient_id == current_user.id)
+    ).order_by(Message.created_at.desc()).all()
+    conv_map = {}
+    for m in all_msgs:
+        other_id = m.recipient_id if m.sender_id == current_user.id else m.sender_id
+        if other_id not in conv_map:
+            conv_map[other_id] = {"last": m, "unread": 0, "total": 0}
+        conv_map[other_id]["total"] += 1
+        if m.recipient_id == current_user.id and not m.is_read:
+            conv_map[other_id]["unread"] += 1
+    conv_rows = []
+    for other_id, info in conv_map.items():
+        other = db.session.get(User, other_id)
+        if not other: continue
+        online = _user_is_online(other)
+        dot = _online_dot(online)
+        unread_badge = (' <span style="display:inline-block;background:#ff6b5e;color:#0e0e0e;'
+                        'font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;'
+                        'margin-left:.35rem;">' + str(info["unread"]) + '</span>') if info["unread"] > 0 else ""
+        last = info["last"]
+        preview = (last.body[:90] + "…") if len(last.body) > 90 else last.body
+        conv_rows.append(
+            '<tr><td>' + dot + '<strong>' + str(other.full_name or other.username) + '</strong>' + unread_badge +
+            '<br><small style="color:var(--text-secondary);">' + str(other.role) + '</small></td>'
+            '<td style="color:var(--text-secondary);">' + str(preview) + '</td>'
+            '<td style="white-space:nowrap;color:var(--text-secondary);font-size:.8rem;">' +
+            (last.created_at.strftime("%Y-%m-%d %H:%M") if last.created_at else "") + '</td>'
+            '<td><a class="btn-primary" style="padding:.4rem .8rem;font-size:.75rem;" href="' +
+            url_for("messages_thread", user_id=other.id) + '">Open</a></td></tr>'
+        )
+
+    # Recipient dropdown — all other active users
+    all_users = User.query.filter(User.id != current_user.id, User.active == True).order_by(User.full_name).all()
+    user_opts = ""
+    for u in all_users:
+        online = _user_is_online(u)
+        status = " 🟢" if online else " ⚪"
+        user_opts += ('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) +
+                      ' (' + str(u.role) + ')' + status + '</option>')
+
+    # Online-status directory
+    users_rows = []
+    for u in all_users:
+        online = _user_is_online(u)
+        dot = _online_dot(online)
+        status_text = "Active" if online else "Offline"
+        status_color = "#6fcf97" if online else "var(--text-secondary)"
+        users_rows.append(
+            '<div class="msg-user-row">'
+            '<div>' + dot + '<strong>' + str(u.full_name or u.username) + '</strong> '
+            '<span style="color:var(--text-secondary);font-size:.78rem;">(' + str(u.role) + ')</span></div>'
+            '<div><span style="color:' + status_color + ';font-size:.78rem;font-weight:600;">' + status_text + '</span>'
+            ' <a class="btn-primary" style="padding:.3rem .7rem;font-size:.72rem;margin-left:.5rem;" href="' +
+            url_for("messages_thread", user_id=u.id) + '">Message</a></div>'
+            '</div>'
+        )
+
+    unread_total = Message.query.filter_by(recipient_id=current_user.id, is_read=False).count()
+    header_extra = (' · <span style="color:var(--danger);font-weight:700;">' + str(unread_total) + ' unread</span>') if unread_total else ""
+
+    content = (
+        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1>'
+        '<p>Internal user-to-user messaging' + header_extra + '</p></div></div>'
+
+        '<div class="card"><div class="card-title"><i class="fas fa-paper-plane"></i> New Message</div>'
+        '<form method="post" action="' + url_for("messages_send") + '">'
+        '<div class="mb-3"><label class="form-label">To *</label>'
+        '<select name="recipient_id" class="form-select" required>'
+        '<option value="">-- Select User --</option>' + user_opts + '</select></div>'
+        '<div class="mb-3"><label class="form-label">Message *</label>'
+        '<textarea name="body" class="form-control" rows="3" required></textarea></div>'
+        '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button>'
+        '</form></div>'
+
+        '<div class="card"><div class="card-title"><i class="fas fa-inbox"></i> Conversations</div>'
+        '<div style="overflow-x:auto;"><table class="table">'
+        '<thead><tr><th>User</th><th>Last Message</th><th>When</th><th></th></tr></thead><tbody>'
+        + ("".join(conv_rows) if conv_rows else
+           '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
+           'No conversations yet. Start one above!</td></tr>')
+        + '</tbody></table></div></div>'
+
+        '<div class="card"><div class="card-title"><i class="fas fa-users"></i> Users & Active Status</div>'
+        + ("".join(users_rows) if users_rows else
+           '<p style="text-align:center;color:var(--text-secondary);">No other users available.</p>')
+        + '</div>'
+    )
+    return page("Messages", content)
+
+@app.route("/messages/thread/<int:user_id>")
+@login_required
+def messages_thread(user_id):
+    other = get_or_404(User, user_id)
+    if other.id == current_user.id:
+        flash("You cannot message yourself.", "warning")
+        return redirect(url_for("messages_inbox"))
+
+    # Mark incoming messages as read
+    unread = Message.query.filter_by(sender_id=other.id, recipient_id=current_user.id, is_read=False).all()
+    if unread:
+        for m in unread: m.is_read = True
+        try: db.session.commit()
+        except Exception: db.session.rollback()
+
+    msgs = Message.query.filter(
+        db.or_(
+            db.and_(Message.sender_id == current_user.id, Message.recipient_id == other.id),
+            db.and_(Message.sender_id == other.id, Message.recipient_id == current_user.id)
+        )
+    ).order_by(Message.created_at.asc()).all()
+
+    online = _user_is_online(other)
+    dot = _online_dot(online)
+    status_text = "Active now" if online else "Offline"
+
+    bubbles = []
+    for m in msgs:
+        mine = (m.sender_id == current_user.id)
+        cls = "msg-bubble mine" if mine else "msg-bubble theirs"
+        who = "You" if mine else (other.full_name or other.username)
+        when = m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else ""
+        align = "flex-end" if mine else "flex-start"
+        bubbles.append(
+            '<div class="msg-bubble-wrap" style="align-items:' + align + ';">'
+            '<div class="' + cls + '">' + str(m.body) + '</div>'
+            '<div class="msg-meta">' + str(who) + ' · ' + when + '</div>'
+            '</div>'
+        )
+
+    content = (
+        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> ' +
+        str(other.full_name or other.username) + '</h1>'
+        '<p>' + dot + '<strong>' + status_text + '</strong> · ' + str(other.role) + '</p></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' +
+        url_for("messages_inbox") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+
+        '<div class="card" style="max-height:520px;overflow-y:auto;">'
+        + ("".join(bubbles) if bubbles else
+           '<p style="text-align:center;color:var(--text-secondary);padding:2rem;">'
+           'No messages yet. Say hi below 👋</p>')
+        + '</div>'
+
+        '<div class="card"><form method="post" action="' + url_for("messages_send") + '">'
+        '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
+        '<div class="mb-3"><label class="form-label">Message</label>'
+        '<textarea name="body" class="form-control" rows="3" required autofocus></textarea></div>'
+        '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button>'
+        '</form></div>'
+    )
+    return page("Messages", content)
+
+@app.route("/messages/send", methods=["POST"])
+@login_required
+def messages_send():
+    recipient_id = request.form.get("recipient_id", type=int)
+    body = (request.form.get("body") or "").strip()
+    if not recipient_id or not body:
+        flash("Recipient and message are required.", "danger")
+        return redirect(url_for("messages_inbox"))
+    if recipient_id == current_user.id:
+        flash("You cannot message yourself.", "warning")
+        return redirect(url_for("messages_inbox"))
+    recipient = db.session.get(User, recipient_id)
+    if not recipient:
+        flash("Recipient not found.", "danger")
+        return redirect(url_for("messages_inbox"))
+    try:
+        m = Message(sender_id=current_user.id, recipient_id=recipient_id, body=body)
+        db.session.add(m)
+        log_audit("Message Sent", "Message", None, new_value=("to " + str(recipient.username)))
+        db.session.commit()
+        flash("✅ Message sent", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("Error: " + str(e), "danger")
+        return redirect(url_for("messages_inbox"))
+    return redirect(url_for("messages_thread", user_id=recipient_id))
 
 # ══════════════════════════════════════════ ITEMS MANAGEMENT
 @app.route("/items")
@@ -2984,6 +3261,7 @@ a{color:var(--gold);text-decoration:none}
 .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .rori-section-title{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--gold);font-weight:700;margin:0;letter-spacing:.02em}
 .rori-section-sub{color:var(--text-secondary);font-size:.88rem;margin:.25rem 0 0}
+.dash-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle;margin-right:6px;border:1.5px solid var(--gold)}
 @media(max-width:768px){
   .nav-link{padding:.5rem .8rem!important;font-size:.82rem}
   .metric-value{font-size:1.7rem}
@@ -3020,8 +3298,9 @@ a{color:var(--gold);text-decoration:none}
 {% endif %}
 <a class="nav-link" href="{{ url_for('management_reports') }}"><i class="fas fa-chart-line"></i> Mgmt Reports</a>
 <a class="nav-link" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> Reports</a>
+<a class="nav-link" href="{{ url_for('messages_inbox') }}"><i class="fas fa-comments"></i> Messages</a>
 <a class="nav-link" href="{{ url_for('notifications') }}"><i class="fas fa-bell"></i> Notifications</a>
-<a class="nav-link" href="{{ url_for('profile') }}"><i class="fas fa-user-circle"></i> {{ current_user.full_name or current_user.username }}</a>
+<a class="nav-link" href="{{ url_for('profile') }}">{% if current_user.profile_pic %}<img src="{{ url_for('static', filename='profile_pics/' + current_user.profile_pic) }}" alt="Profile" class="dash-avatar">{% else %}<i class="fas fa-user-circle"></i>{% endif %} {{ current_user.full_name or current_user.username }}</a>
 <a class="nav-link" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div></div></div></nav>
 <div class="container mt-4">
@@ -3097,7 +3376,7 @@ a{color:var(--gold);text-decoration:none}
 <div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Low Stock</span><span class="ct" style="color:#ffd24a">{{ inventory.low_stock }}</span></div></div>
 <div class="prog-row"><div class="prog-top"><span class="nm">Out of Stock</span><span class="ct" style="color:#ff6b5e">{{ inventory.out_of_stock }}</span></div></div>
-<div class="prog-row"><div class="prog-top"><span class="nm">Total Value</span><span class="ct">${{ inventory.total_value }}</span></div></div></div></div></div></div></div>
+</div></div></div></div></div>
 <div class="rori-footer"><div>Rori Hotel — Maintenance Management System</div><div style="margin-top:.35rem;">Developer: <span class="dev-name">Edom Adinew</span></div></div>
 </div>
 <script>
@@ -4135,6 +4414,7 @@ def debug():
         "work_orders_verified": WorkOrder.query.filter_by(status="Verified").count(),
         "work_order_parts_total": WorkOrderPart.query.count(),
         "notifications": Notification.query.count(),
+        "messages": Message.query.count(),
         "rooms_total": Room.query.count(),
         "areas_total": Area.query.count(),
         "working_items_total": WorkingItem.query.count(),
@@ -4190,6 +4470,8 @@ with app.app_context():
     print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
     print("✅ Profile Photo upload added to /profile (all users — upload/change/remove, 5 MB max, JPG/PNG/WEBP only)")
+    print("✅ Internal user-to-user messaging available at /messages")
+    print("✅ Active/online status via request-driven last_seen (no background processes)")
     print("="*60)
 
 if __name__ == "__main__":
