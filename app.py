@@ -17,9 +17,11 @@ from werkzeug.utils import secure_filename
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "maintenance")
 PROFILE_PIC_FOLDER = os.path.join(BASE_DIR, "static", "profile_pics")
+MESSAGE_UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "messages")
 BACKUP_FOLDER = os.path.join(BASE_DIR, "backups")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
+os.makedirs(MESSAGE_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
@@ -55,6 +57,11 @@ STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
 PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+
+MESSAGE_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+MESSAGE_VOICE_EXTENSIONS = {"webm", "ogg", "mp3", "m4a", "wav"}
+MESSAGE_IMAGE_MAX_BYTES = 8 * 1024 * 1024   # 8 MB
+MESSAGE_VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
 ONLINE_WINDOW_SECONDS = 120
 LAST_SEEN_THROTTLE_SECONDS = 60
@@ -101,32 +108,24 @@ NEW_ITEMS_BY_DEPT = {
         "🏢 IT Office / Server Room Maintenance", "🧹 Cleaning / Preventive Maintenance",
         "🌡️ Server Room Cooling / Temperature", "🛠️ General Civil / Plumbing Maintenance"],
     "Finance": [
-        # 🔌 Electrical
         "🔌 LED Bulb", "🔌 Light Fixture", "🔌 Light Switch", "🔌 Power Socket",
         "🔌 Extension Socket", "🔌 Power Strip", "🔌 Circuit Breaker", "🔌 Electrical Wiring",
         "🔌 Emergency Light", "🔌 Exit Light",
-        # ❄️ AC & Ventilation
         "❄️ Air Conditioner", "❄️ AC Filter", "❄️ AC Remote", "❄️ AC Drain Pipe",
         "❄️ Ventilation Fan", "❄️ Exhaust Fan",
-        # 🚰 Plumbing
         "🚰 Water Tap", "🚰 Faucet", "🚰 Sink", "🚰 Water Pipe", "🚰 Pipe Leakage",
         "🚰 Drain", "🚰 Drain Pipe", "🚰 Toilet", "🚰 Toilet Flush", "🚰 Water Leakage",
-        # 🚪 Doors & Windows
         "🚪 Office Door", "🚪 Door Handle", "🚪 Door Lock", "🚪 Door Hinge",
         "🚪 Door Closer", "🚪 Door Stopper",
         "🪟 Window", "🪟 Window Lock", "🪟 Window Handle", "🪟 Window Glass", "🪟 Broken Glass",
-        # 🪑 Furniture
         "🪑 Office Desk", "🪑 Office Chair", "🪑 Visitor Chair", "🪑 Filing Cabinet",
         "🪑 Drawer Cabinet", "🪑 Storage Cabinet", "🪑 Bookshelf", "🪑 Table",
         "🪑 Cabinet Lock", "🪑 Desk Drawer",
-        # 🧱 Building & Interior
         "🧱 Wall Damage", "🧱 Ceiling Damage", "🧱 Floor Damage", "🧱 Ceiling Tile",
         "🧱 Wall Paint", "🧱 Floor Tile", "🧱 Partition", "🧱 Curtain",
         "🧱 Window Blind", "🧱 Curtain Rail",
-        # 🧯 Safety
         "🧯 Fire Extinguisher", "🧯 Fire Extinguisher Bracket", "🧯 Smoke Detector",
         "🧯 Fire Alarm", "🧯 Emergency Light", "🧯 Exit Sign", "🧯 First Aid Cabinet",
-        # 🔧 General Maintenance
         "🔧 Pest Control Issue", "🔧 Water Leakage", "🔧 Electrical Fault",
         "🔧 Furniture Damage", "🔧 Wall Repair", "🔧 Painting",
         "🔧 Minor Carpentry", "🔧 Minor Metal Work", "🔧 General Fixture Repair",
@@ -245,7 +244,10 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    body = db.Column(db.Text, nullable=False)
+    body = db.Column(db.Text, nullable=True)
+    attachment = db.Column(db.String(255), nullable=True)
+    attachment_type = db.Column(db.String(20), nullable=True)  # "image" | "voice"
+    duration = db.Column(db.Float, default=0)  # seconds for voice
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     sender = db.relationship("User", foreign_keys=[sender_id])
@@ -549,7 +551,7 @@ class ChecklistTemplate(db.Model):
 @login_manager.user_loader
 def load_user(user_id): return db.session.get(User, int(user_id))
 
-# ══════════════════════════════════════════ ACTIVE STATUS (request-driven, no background jobs)
+# ══════════════════════════════════════════ ACTIVE STATUS
 @app.before_request
 def _rori_track_activity():
     try:
@@ -669,6 +671,29 @@ def _is_valid_image_file(f):
             return True
         if len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WEBP':
             return True
+        if header[:6] in (b'GIF87a', b'GIF89a'):
+            return True
+        return False
+    except Exception:
+        return False
+
+def _is_valid_voice_file(f):
+    try:
+        f.seek(0)
+        header = f.read(16)
+        f.seek(0)
+        if not header: return False
+        # WebM/Matroska: 1A 45 DF A3
+        if header[:4] == b'\x1a\x45\xdf\xa3': return True
+        # OGG: OggS
+        if header[:4] == b'OggS': return True
+        # MP3: ID3 or FF FB / FF F3 / FF F2
+        if header[:3] == b'ID3': return True
+        if len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0: return True
+        # WAV: RIFF....WAVE
+        if header[:4] == b'RIFF' and len(header) >= 12 and header[8:12] == b'WAVE': return True
+        # M4A/MP4: ftyp
+        if len(header) >= 8 and header[4:8] == b'ftyp': return True
         return False
     except Exception:
         return False
@@ -761,6 +786,10 @@ def ensure_database_schema():
             add_column_if_missing("working_items","area_id","ALTER TABLE working_items ADD COLUMN area_id INTEGER")
             add_column_if_missing("working_items","is_active","ALTER TABLE working_items ADD COLUMN is_active BOOLEAN " + bd_t)
             add_column_if_missing("areas","is_active","ALTER TABLE areas ADD COLUMN is_active BOOLEAN " + bd_t)
+            # ─── Message attachment columns (for image / voice support) ───
+            add_column_if_missing("messages","attachment","ALTER TABLE messages ADD COLUMN attachment VARCHAR(255)")
+            add_column_if_missing("messages","attachment_type","ALTER TABLE messages ADD COLUMN attachment_type VARCHAR(20)")
+            add_column_if_missing("messages","duration","ALTER TABLE messages ADD COLUMN duration FLOAT DEFAULT 0")
             try:
                 with db.engine.begin() as conn:
                     t = "TRUE" if pg else "1"
@@ -895,45 +924,19 @@ def page(title, content):
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --rori-gold:#C5A059;
-  --rori-gold-dark:#A8873F;
-  --bg-primary:#0e0e0e;
-  --bg-secondary:#080808;
-  --bg-card:#1b1b1b;
-  --bg-card-hover:#232323;
-  --border-color:#2f2c26;
-  --text-primary:#f4f1ea;
-  --text-secondary:#b4afa5;
-  --success:#6fcf97;
-  --warning:#ffd24a;
-  --danger:#ff6b5e;
-  --info:#4aa3ff;
-  --app-bg:#0e0e0e;
-  --app-bg-2:#080808;
-  --card-bg:#1b1b1b;
-  --card-bg-hover:#232323;
-  --gold:#C5A059;
-  --gold-bright:#D4B06C;
-  --gold-deep:#A8873F;
-  --gold-soft:rgba(197,160,89,0.12);
-  --gold-line:rgba(197,160,89,0.45);
-  --border:#2f2c26;
-  --border-strong:rgba(197,160,89,0.28);
-  --text-muted:#7d7873;
-  --success-bg:rgba(111,207,151,0.12);
-  --warn-bg:rgba(255,210,74,0.12);
-  --info-bg:rgba(74,163,255,0.12);
-  --danger-bg:rgba(255,107,94,0.12);
-  --purple-bg:rgba(167,139,250,0.12);
-  --purple-fg:#A78BFA;
-  --radius:16px;
-  --radius-sm:12px;
-  --radius-xs:10px;
-  --shadow-sm:0 6px 20px rgba(0,0,0,0.35);
-  --shadow-md:0 10px 30px rgba(0,0,0,0.45);
-  --shadow-lg:0 20px 50px rgba(0,0,0,0.55);
-  --header-h:64px;
-  --sidebar-w:264px;
+  --rori-gold:#C5A059;--rori-gold-dark:#A8873F;
+  --bg-primary:#0e0e0e;--bg-secondary:#080808;--bg-card:#1b1b1b;--bg-card-hover:#232323;
+  --border-color:#2f2c26;--text-primary:#f4f1ea;--text-secondary:#b4afa5;
+  --success:#6fcf97;--warning:#ffd24a;--danger:#ff6b5e;--info:#4aa3ff;
+  --app-bg:#0e0e0e;--app-bg-2:#080808;--card-bg:#1b1b1b;--card-bg-hover:#232323;
+  --gold:#C5A059;--gold-bright:#D4B06C;--gold-deep:#A8873F;
+  --gold-soft:rgba(197,160,89,0.12);--gold-line:rgba(197,160,89,0.45);
+  --border:#2f2c26;--border-strong:rgba(197,160,89,0.28);--text-muted:#7d7873;
+  --success-bg:rgba(111,207,151,0.12);--warn-bg:rgba(255,210,74,0.12);
+  --info-bg:rgba(74,163,255,0.12);--danger-bg:rgba(255,107,94,0.12);
+  --purple-bg:rgba(167,139,250,0.12);--purple-fg:#A78BFA;
+  --radius:16px;--radius-sm:12px;--radius-xs:10px;
+  --header-h:64px;--sidebar-w:264px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%}
@@ -985,18 +988,8 @@ a:hover{color:var(--gold-bright)}
 .btn-primary:hover{transform:translateY(-2px);box-shadow:0 5px 0 var(--gold-deep), 0 12px 28px rgba(197,160,89,0.42);background:#d4b06c;color:#16120a}
 .btn-primary:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-deep), 0 3px 8px rgba(197,160,89,0.3)}
 .btn-primary i{font-size:.85rem}
-.btn-primary[style*="bg-card"]{
-  color:#f4f1ea !important;
-  border-color:var(--border-color) !important;
-  box-shadow:0 3px 0 #080808, 0 6px 14px rgba(0,0,0,0.5) !important;
-}
-.btn-primary[style*="bg-card"]:hover{
-  color:var(--gold) !important;
-  border-color:var(--gold-line) !important;
-  background:var(--bg-card-hover) !important;
-  transform:translateY(-2px);
-  box-shadow:0 5px 0 #080808, 0 12px 24px rgba(0,0,0,0.6) !important;
-}
+.btn-primary[style*="bg-card"]{color:#f4f1ea !important;border-color:var(--border-color) !important;box-shadow:0 3px 0 #080808, 0 6px 14px rgba(0,0,0,0.5) !important;}
+.btn-primary[style*="bg-card"]:hover{color:var(--gold) !important;border-color:var(--gold-line) !important;background:var(--bg-card-hover) !important;transform:translateY(-2px);box-shadow:0 5px 0 #080808, 0 12px 24px rgba(0,0,0,0.6) !important;}
 .btn-primary[style*="bg-card"]:active{transform:translateY(2px);box-shadow:0 1px 0 #080808 !important;}
 .btn-primary[style*="bg-card"] i{color:inherit !important}
 .btn-danger,.btn-outline-danger{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(255,107,94,0.28)}
@@ -1066,7 +1059,6 @@ select.form-select option{background:var(--card-bg);color:var(--text-primary)}
 textarea.form-control{min-height:auto}
 input[type="file"].form-control{padding:.5rem}
 input[type="checkbox"]{accent-color:var(--gold)}
-.rpro-section{margin-bottom:1.4rem}
 .rpro-card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:1.25rem 1.35rem;margin-bottom:1rem;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);transition:transform .25s, box-shadow .25s, border-color .25s}
 .rpro-card:hover{transform:translateY(-2px);border-color:rgba(197,160,89,.3);box-shadow:0 2px 4px rgba(0,0,0,.2), 0 14px 32px rgba(0,0,0,.45), 0 18px 50px rgba(197,160,89,.1)}
 .rpro-card .table{background:transparent!important}
@@ -1165,15 +1157,87 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .report-photo{border:2px solid #C5A059;border-radius:10px;padding:.5rem;background:#fafafa;display:inline-block;max-width:100%}
 .report-photo img{max-width:340px;max-height:240px;display:block;border-radius:6px}
 .report-footer{margin-top:1.5rem;padding-top:.75rem;border-top:1px solid #ddd;font-size:.72rem;color:#666;text-align:center}
+
+/* ══════════ Telegram-style messaging ══════════ */
+.tg-inbox{display:flex;flex-direction:column;gap:0}
+.tg-row{display:flex;align-items:center;gap:.9rem;padding:.85rem .9rem;border-bottom:1px solid rgba(197,160,89,.10);text-decoration:none;color:inherit;transition:background .15s ease, transform .15s ease;cursor:pointer;position:relative}
+.tg-row:last-child{border-bottom:none}
+.tg-row:hover{background:rgba(197,160,89,.08);transform:translateX(2px)}
+.tg-row:active{transform:scale(.995);background:rgba(197,160,89,.12)}
+.tg-avatar{position:relative;flex-shrink:0}
+.tg-avatar-inner{width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#C5A059,#8B6F26);color:#16120a;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.35rem;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 3px 10px rgba(197,160,89,.35), inset 0 -2px 4px rgba(0,0,0,.18), inset 0 2px 4px rgba(255,255,255,.2)}
+.tg-avatar-inner img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.tg-online{position:absolute;bottom:0;right:0;width:14px;height:14px;border-radius:50%;background:#6fcf97;border:3px solid var(--card-bg);box-shadow:0 0 8px rgba(111,207,151,.8)}
+.tg-offline{position:absolute;bottom:0;right:0;width:14px;height:14px;border-radius:50%;background:#555;border:3px solid var(--card-bg)}
+.tg-meta{flex:1;min-width:0}
+.tg-name{font-weight:600;color:var(--text-primary);font-size:.95rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.15rem}
+.tg-name .tg-time{font-size:.7rem;color:var(--text-muted);font-weight:500;flex-shrink:0;white-space:nowrap}
+.tg-role{font-size:.68rem;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:.2rem}
+.tg-preview{font-size:.84rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.tg-preview .tg-unread-badge{background:var(--danger);color:#0e0e0e;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;margin-left:.5rem;box-shadow:0 2px 8px rgba(255,107,94,.5)}
+.tg-preview.unread{color:var(--text-primary);font-weight:600}
+.tg-chevron{color:var(--text-muted);font-size:.85rem;flex-shrink:0}
+
+/* Chat shell (thread) */
+.chat-shell{display:flex;flex-direction:column;height:calc(100vh - 190px);min-height:460px;background:var(--card-bg);border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04)}
+.chat-head{display:flex;align-items:center;gap:.75rem;padding:.7rem .9rem;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--bg-secondary),var(--card-bg))}
+.chat-head-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#C5A059,#8B6F26);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Cormorant Garamond',Georgia,serif;font-size:1.2rem;overflow:hidden;flex-shrink:0;box-shadow:0 3px 10px rgba(197,160,89,.35)}
+.chat-head-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.chat-head-name{font-weight:700;font-size:1rem;color:var(--text-primary);line-height:1.15}
+.chat-head-status{font-size:.72rem;color:var(--text-secondary);margin-top:.15rem;display:flex;align-items:center;gap:.35rem}
+.chat-body{flex:1;overflow-y:auto;padding:1.1rem 1rem .75rem;display:flex;flex-direction:column;background:radial-gradient(circle at 20% 10%, rgba(197,160,89,.04), transparent 40%), radial-gradient(circle at 80% 80%, rgba(197,160,89,.03), transparent 40%), var(--app-bg);scroll-behavior:smooth}
+.chat-body::-webkit-scrollbar{width:6px}
+.chat-body::-webkit-scrollbar-thumb{background:rgba(197,160,89,.35);border-radius:4px}
+.msg-row{display:flex;align-items:flex-end;gap:.5rem;margin-top:.55rem}
+.msg-row.mine{justify-content:flex-end}
+.msg-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#C5A059,#8B6F26);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.msg-bubble{max-width:76%;padding:.55rem .9rem;border-radius:18px;font-size:.94rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;word-break:break-word;background:#2a2a2a;color:var(--text-primary);border-bottom-left-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.4);position:relative}
+.msg-bubble.mine{background:linear-gradient(135deg,#C5A059,#B8914A);color:#16120a;border-bottom-right-radius:6px;border-bottom-left-radius:18px;box-shadow:0 2px 8px rgba(197,160,89,.4)}
+.msg-bubble img.msg-image{max-width:260px;max-height:320px;border-radius:12px;display:block;cursor:pointer;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.msg-bubble .msg-caption{margin-top:.35rem;font-size:.9rem}
+.msg-voice{display:flex;align-items:center;gap:.6rem;padding:.35rem .1rem;min-width:180px}
+.msg-voice-btn{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.25);color:#16120a;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:.9rem;transition:all .15s}
+.msg-bubble.mine .msg-voice-btn{background:rgba(0,0,0,.2)}
+.msg-bubble:not(.mine) .msg-voice-btn{background:rgba(197,160,89,.3);color:var(--gold)}
+.msg-voice-btn:hover{transform:scale(1.08)}
+.msg-wave{flex:1;display:flex;align-items:center;gap:2px;height:24px}
+.msg-wave span{width:2px;background:currentColor;opacity:.35;border-radius:1px;display:block}
+.msg-voice-dur{font-size:.72rem;font-weight:600;opacity:.75;min-width:36px;text-align:right}
+.msg-time{font-size:.65rem;color:var(--text-muted);margin:.15rem 0 .4rem;padding-left:40px}
+.msg-time.mine{text-align:right;padding-right:40px;padding-left:0}
+.chat-input-wrap{display:flex;gap:.5rem;padding:.7rem .8rem;border-top:1px solid var(--border);background:var(--bg-secondary);align-items:flex-end}
+.chat-input{flex:1;background:#0e0e0e;border:1.5px solid var(--border);color:var(--text-primary);border-radius:22px;padding:.7rem 1.05rem;font-size:.94rem;outline:none;resize:none;min-height:46px;max-height:120px;font-family:inherit;line-height:1.4;transition:border-color .15s, box-shadow .15s}
+.chat-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(197,160,89,.18)}
+.chat-attach-btn{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.05);border:1.5px solid var(--border);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;flex-shrink:0;transition:all .15s}
+.chat-attach-btn:hover{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
+.chat-send{width:46px;height:46px;border-radius:50%;background:var(--gold);color:#16120a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;transition:all .15s;box-shadow:0 3px 0 var(--gold-deep), 0 6px 14px rgba(197,160,89,.35)}
+.chat-send:hover{background:#d4b06c;transform:translateY(-2px);box-shadow:0 5px 0 var(--gold-deep), 0 10px 22px rgba(197,160,89,.45)}
+.chat-send:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-deep)}
+.chat-mic{background:var(--danger);box-shadow:0 3px 0 #a8332a, 0 6px 14px rgba(255,107,94,.35)}
+.chat-mic:hover{background:#ff8577;box-shadow:0 5px 0 #a8332a, 0 10px 22px rgba(255,107,94,.45)}
+.recording-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.recording-overlay.show{display:flex}
+.recording-box{background:var(--card-bg);border:1px solid var(--gold-line);border-radius:20px;padding:1.6rem 2rem;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6);max-width:320px}
+.recording-pulse{width:80px;height:80px;border-radius:50%;background:var(--danger);margin:0 auto 1rem;display:flex;align-items:center;justify-content:center;color:#fff;font-size:2rem;animation:pulseRec 1.2s ease-in-out infinite}
+@keyframes pulseRec{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,107,94,.6)}50%{transform:scale(1.06);box-shadow:0 0 0 22px rgba(255,107,94,0)}}
+.recording-time{font-family:'JetBrains Mono','Courier New',monospace;font-size:1.6rem;font-weight:700;color:var(--gold);margin-bottom:.35rem}
+.recording-hint{font-size:.82rem;color:var(--text-secondary);margin-bottom:1.1rem}
+.recording-actions{display:flex;gap:.55rem;justify-content:center}
+.recording-actions button{padding:.6rem 1.1rem;border-radius:12px;border:1.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-weight:600;cursor:pointer;font-size:.88rem}
+.recording-actions .send-rec{background:var(--gold);color:#16120a;border-color:var(--gold)}
+.recording-actions .cancel-rec{background:var(--danger-bg);color:var(--danger);border-color:rgba(255,107,94,.4)}
+.attach-menu{position:absolute;bottom:60px;left:.8rem;background:var(--card-bg);border:1px solid var(--gold-line);border-radius:14px;padding:.5rem;box-shadow:0 10px 30px rgba(0,0,0,.6);display:none;z-index:50;min-width:180px}
+.attach-menu.show{display:block;animation:fadeIn .15s}
+.attach-menu button{display:flex;align-items:center;gap:.65rem;width:100%;padding:.6rem .8rem;border:none;background:transparent;color:var(--text-primary);font-weight:600;font-size:.88rem;border-radius:10px;cursor:pointer;text-align:left;transition:background .15s}
+.attach-menu button:hover{background:var(--gold-soft)}
+.attach-menu button i{color:var(--gold);width:20px;text-align:center}
+
 @media(max-width:1024px){
-  .sidebar{transform:translateX(-100%);box-shadow:0 0 40px rgba(0,0,0,0.6)}
-  .sidebar.active{transform:translateX(0)}
-  .main-content{margin-left:0;padding:1.25rem 1.1rem 3.5rem}
-  .menu-toggle{display:inline-flex}
   .card:hover,.kpi-card:hover,.kpi-mini-card:hover,.rpro-card:hover,.area-card:hover,.rpro-room-card:hover,.btn-primary:hover{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35) !important}
   .form-control:focus,.form-select:focus{transform:none}
-  .sidebar-nav .nav-link:hover{transform:none}
-  .header-icon:hover,.user-profile:hover{transform:none}
+  .sidebar-nav .nav-link:hover,.header-icon:hover,.user-profile:hover{transform:none}
+  .tg-row:hover,.tg-row:active{transform:none}
 }
 @media(max-width:768px){
   body{font-size:14px}
@@ -1203,6 +1267,9 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .btn-primary.inline{width:auto}
   .rpro-toolbar,.area-toolbar{padding:.8rem}
   .rpro-toolbar .form-control,.rpro-toolbar .form-select,.area-toolbar .form-control,.area-toolbar .form-select{min-width:100%}
+  .chat-shell{height:calc(100vh - 150px);border-radius:14px}
+  .msg-bubble{max-width:82%;font-size:.92rem}
+  .msg-bubble img.msg-image{max-width:220px}
 }
 @media(max-width:420px){
   .main-content{padding:1rem .85rem 3rem}
@@ -1213,6 +1280,7 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .header-icon,.menu-toggle{width:38px;height:38px}
   .card{padding:1rem .9rem}
   .rpro-card{padding:.95rem .9rem}
+  .tg-avatar-inner{width:48px;height:48px;font-size:1.2rem}
 }
 @media(max-width:360px){
   .kpi-grid{grid-template-columns:1fr}
@@ -1312,36 +1380,8 @@ input[type="checkbox"]{accent-color:var(--gold)}
   .rq-page{padding-bottom:150px}
 }
 .profile-photo-btn{min-height:44px;padding:.55rem 1.1rem;font-size:.85rem}
-@media(max-width:520px){
-  .profile-photo-btn{width:100%;justify-content:center}
-}
-.chat-shell{display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;background:var(--card-bg);border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04)}
-.chat-head{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
-.chat-head-avatar{width:42px;height:42px;border-radius:50%;background:var(--gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Cormorant Garamond',Georgia,serif;font-size:1.15rem;overflow:hidden;flex-shrink:0;box-shadow:0 3px 10px rgba(197,160,89,.35)}
-.chat-head-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
-.chat-head-name{font-weight:700;font-size:1rem;color:var(--text-primary);line-height:1.15}
-.chat-head-status{font-size:.74rem;color:var(--text-secondary);margin-top:.15rem;display:flex;align-items:center;gap:.35rem}
-.chat-body{flex:1;overflow-y:auto;padding:1.1rem 1rem .75rem;display:flex;flex-direction:column;background:var(--app-bg);scroll-behavior:smooth}
-.chat-body::-webkit-scrollbar{width:6px}
-.chat-body::-webkit-scrollbar-thumb{background:rgba(197,160,89,.35);border-radius:4px}
-.msg-row{display:flex;align-items:flex-end;gap:.5rem;margin-top:.55rem}
-.msg-row.mine{justify-content:flex-end}
-.msg-avatar{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0}
-.msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
-.msg-bubble{max-width:74%;padding:.6rem .95rem;border-radius:20px;font-size:.94rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;word-break:break-word;background:#2a2a2a;color:var(--text-primary);border-bottom-left-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.4)}
-.msg-bubble.mine{background:var(--gold);color:#16120a;border-bottom-right-radius:6px;border-bottom-left-radius:20px;box-shadow:0 2px 8px rgba(197,160,89,.4)}
-.msg-time{font-size:.65rem;color:var(--text-muted);margin:.15rem 0 .4rem;padding-left:40px}
-.msg-time.mine{text-align:right;padding-right:40px;padding-left:0}
-.chat-input-wrap{display:flex;gap:.5rem;padding:.7rem .9rem;border-top:1px solid var(--border);background:var(--bg-secondary);align-items:flex-end}
-.chat-input{flex:1;background:#0e0e0e;border:1.5px solid var(--border);color:var(--text-primary);border-radius:22px;padding:.7rem 1.05rem;font-size:.94rem;outline:none;resize:none;min-height:46px;max-height:120px;font-family:inherit;line-height:1.4;transition:border-color .15s, box-shadow .15s}
-.chat-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(197,160,89,.18)}
-.chat-send{width:46px;height:46px;border-radius:50%;background:var(--gold);color:#16120a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;transition:all .15s;box-shadow:0 3px 0 var(--gold-deep), 0 6px 14px rgba(197,160,89,.35)}
-.chat-send:hover{background:#d4b06c;transform:translateY(-2px);box-shadow:0 5px 0 var(--gold-deep), 0 10px 22px rgba(197,160,89,.45)}
-.chat-send:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-deep)}
-@media(max-width:768px){
-  .chat-shell{height:calc(100vh - 175px);border-radius:14px}
-  .msg-bubble{max-width:82%;font-size:.92rem}
-}
+@media(max-width:520px){.profile-photo-btn{width:100%;justify-content:center}}
+.msg-user-row{display:flex;justify-content:space-between;align-items:center;padding:.55rem .8rem;background:var(--bg-secondary);border-radius:10px;margin-bottom:.45rem;gap:.6rem;flex-wrap:wrap}
 </style></head><body>
 <header class="header">
     <div class="header-left">
@@ -1397,6 +1437,22 @@ window.roriTestSound=function(){roriSoundEnabled=true;localStorage.setItem('rori
 function roriNotify(title,body,priority){roriShowBanner(title,body);if(roriBrowserNotif){try{const n=new Notification(title,{body:body,icon:'/logo.png',tag:'rori-'+Date.now()});setTimeout(()=>n.close(),7000);}catch(e){}}}
 function pollNotifications(){fetch('/api/notifications/unread',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(!d||!d.latest_id)return;if(roriAlertedRequests.includes(d.latest_id))return;const t=(d.latest_title||'').toUpperCase();if(!t.includes('REQUEST'))return;let prio='MEDIUM';if(t.includes('URGENT'))prio='URGENT';else if(t.includes('HIGH'))prio='HIGH';roriPlayAlert(prio);roriNotify(d.latest_title||'New Maintenance Request',d.latest_message||'A new request has been submitted.',prio);roriAlertedRequests.push(d.latest_id);sessionStorage.setItem('rori_alerted_requests',JSON.stringify(roriAlertedRequests));const badge=document.querySelector('.notif-badge');if(badge){badge.classList.add('pulse');setTimeout(()=>badge.classList.remove('pulse'),2500);}}).catch(()=>{});}
 if(document.querySelector('.header-icon')){pollNotifications();setInterval(pollNotifications,10000);}
+
+/* Lightbox for image viewing */
+window.openLightbox=function(src){
+  var lb=document.getElementById('roriLightbox');
+  if(!lb){
+    lb=document.createElement('div');
+    lb.id='roriLightbox';
+    lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem;cursor:zoom-out;backdrop-filter:blur(6px)';
+    lb.onclick=function(){lb.remove();};
+    var img=document.createElement('img');
+    img.src=src;
+    img.style.cssText='max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.8)';
+    lb.appendChild(img);
+    document.body.appendChild(lb);
+  }
+};
 </script>
 </body></html>"""
 
@@ -1614,52 +1670,38 @@ def login():
 def logout():
     log_audit("Logout","User",current_user.id); db.session.commit(); logout_user(); return redirect(url_for("login"))
 
-# ══════════════════════════════════════════ PROFILE (with Profile Photo)
+# ══════════════════════════════════════════ PROFILE
 @app.route("/profile", methods=["GET","POST"])
 @login_required
 def profile():
     u = current_user
     if request.method == "POST":
         action = (request.form.get("action") or "update_info").strip()
-
         if action == "upload_photo":
             f = request.files.get("profile_photo")
             if not f or not f.filename:
-                flash("Please choose a photo to upload.", "danger")
-                return redirect(url_for("profile"))
+                flash("Please choose a photo to upload.", "danger"); return redirect(url_for("profile"))
             raw_name = f.filename
             if "." not in raw_name:
-                flash("Invalid file. Allowed formats: JPG, JPEG, PNG, WEBP.", "danger")
-                return redirect(url_for("profile"))
+                flash("Invalid file. Allowed formats: JPG, JPEG, PNG, WEBP.", "danger"); return redirect(url_for("profile"))
             ext = raw_name.rsplit(".", 1)[-1].lower()
             if ext not in PROFILE_PHOTO_EXTENSIONS:
-                flash("Invalid file type. Allowed: JPG, JPEG, PNG, WEBP.", "danger")
-                return redirect(url_for("profile"))
+                flash("Invalid file type. Allowed: JPG, JPEG, PNG, WEBP.", "danger"); return redirect(url_for("profile"))
             try:
                 f.seek(0, os.SEEK_END); size = f.tell(); f.seek(0)
-            except Exception:
-                size = 0
+            except Exception: size = 0
             if size <= 0:
-                flash("Uploaded file is empty.", "danger")
-                return redirect(url_for("profile"))
+                flash("Uploaded file is empty.", "danger"); return redirect(url_for("profile"))
             if size > PROFILE_PHOTO_MAX_BYTES:
-                flash("File too large. Maximum size is 5 MB.", "danger")
-                return redirect(url_for("profile"))
+                flash("File too large. Maximum size is 5 MB.", "danger"); return redirect(url_for("profile"))
             if not _is_valid_image_file(f):
-                flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger")
-                return redirect(url_for("profile"))
-            safe_name = secure_filename(
-                "user_" + str(u.id) + "_" +
-                datetime.now().strftime("%Y%m%d%H%M%S") + "_" +
-                uuid.uuid4().hex[:8] + "." + ext
-            )
+                flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger"); return redirect(url_for("profile"))
+            safe_name = secure_filename("user_" + str(u.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "." + ext)
             if not safe_name:
-                flash("Could not generate a safe filename.", "danger")
-                return redirect(url_for("profile"))
+                flash("Could not generate a safe filename.", "danger"); return redirect(url_for("profile"))
             old = (u.profile_pic or "").strip()
             if old:
-                old_safe = os.path.basename(old)
-                old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
+                old_safe = os.path.basename(old); old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
                 if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
                     try: os.remove(old_path)
                     except Exception as ex: print("Old photo remove warn: " + str(ex))
@@ -1667,87 +1709,52 @@ def profile():
                 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
                 f.save(os.path.join(PROFILE_PIC_FOLDER, safe_name))
             except Exception as ex:
-                flash("Could not save photo: " + str(ex), "danger")
-                return redirect(url_for("profile"))
+                flash("Could not save photo: " + str(ex), "danger"); return redirect(url_for("profile"))
             u.profile_pic = safe_name
             log_audit("Profile Photo Uploaded", "User", u.id, new_value=safe_name)
-            db.session.commit()
-            flash("✅ Profile photo updated successfully", "success")
-            return redirect(url_for("profile"))
-
+            db.session.commit(); flash("✅ Profile photo updated successfully", "success"); return redirect(url_for("profile"))
         if action == "remove_photo":
             old = (u.profile_pic or "").strip()
             if old:
-                old_safe = os.path.basename(old)
-                old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
+                old_safe = os.path.basename(old); old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
                 if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
                     try: os.remove(old_path)
                     except Exception as ex: print("Remove photo warn: " + str(ex))
                 u.profile_pic = None
                 log_audit("Profile Photo Removed", "User", u.id, old_value=old_safe)
-                db.session.commit()
-                flash("Profile photo removed.", "success")
+                db.session.commit(); flash("Profile photo removed.", "success")
             else:
                 flash("No profile photo to remove.", "info")
             return redirect(url_for("profile"))
-
         u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
 
     has_photo = bool(u.profile_pic and str(u.profile_pic).strip())
-
     if has_photo:
         avatar_src = url_for("static", filename="profile_pics/" + os.path.basename(u.profile_pic))
-        avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" '
-                       'style="width:150px;height:150px;border-radius:50%;object-fit:cover;'
-                       'border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3);display:block;">')
-        primary_label = "Change Photo"
-        primary_icon = "fa-camera"
+        avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3);display:block;">')
+        primary_label = "Change Photo"; primary_icon = "fa-camera"
     else:
         letter = ((u.full_name or u.username or "U")[:1]).upper()
-        avatar_html = ('<div style="width:150px;height:150px;border-radius:50%;'
-                       'background:var(--rori-gold);color:#16120a;display:flex;align-items:center;'
-                       'justify-content:center;font-family:\'Cormorant Garamond\',Georgia,serif;'
-                       'font-size:4.25rem;font-weight:700;border:3px solid var(--rori-gold);'
-                       'box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3), inset 0 -4px 8px rgba(0,0,0,.2), inset 0 4px 8px rgba(255,255,255,.2);">' + letter + '</div>')
-        primary_label = "Upload Photo"
-        primary_icon = "fa-upload"
-
+        avatar_html = ('<div style="width:150px;height:150px;border-radius:50%;background:var(--rori-gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:4.25rem;font-weight:700;border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3), inset 0 -4px 8px rgba(0,0,0,.2), inset 0 4px 8px rgba(255,255,255,.2);">' + letter + '</div>')
+        primary_label = "Upload Photo"; primary_icon = "fa-upload"
     remove_btn_html = ""
     if has_photo:
-        remove_btn_html = (
-            '<form method="post" style="display:inline;margin:0;">'
-            '<input type="hidden" name="action" value="remove_photo">'
-            '<button type="submit" class="btn-primary profile-photo-btn" '
-            'style="background:var(--danger-bg);border:1.5px solid rgba(255,107,94,0.5);color:var(--danger);" '
-            'onclick="return confirm(\'Remove your profile photo? This cannot be undone.\');">'
-            '<i class="fas fa-trash"></i> Remove Photo</button></form>'
-        )
-
-    photo_section = (
-        '<div class="card" style="text-align:center;">'
-        '<div class="card-title" style="justify-content:center;margin-bottom:1.25rem;font-size:1.25rem;">'
-        '<i class="fas fa-camera"></i> Profile Photo</div>'
+        remove_btn_html = ('<form method="post" style="display:inline;margin:0;"><input type="hidden" name="action" value="remove_photo">'
+            '<button type="submit" class="btn-primary profile-photo-btn" style="background:var(--danger-bg);border:1.5px solid rgba(255,107,94,0.5);color:var(--danger);" '
+            'onclick="return confirm(\'Remove your profile photo? This cannot be undone.\');"><i class="fas fa-trash"></i> Remove Photo</button></form>')
+    photo_section = ('<div class="card" style="text-align:center;">'
+        '<div class="card-title" style="justify-content:center;margin-bottom:1.25rem;font-size:1.25rem;"><i class="fas fa-camera"></i> Profile Photo</div>'
         '<div style="display:flex;justify-content:center;margin-bottom:1.25rem;">' + avatar_html + '</div>'
-        '<form method="post" enctype="multipart/form-data" style="display:inline;margin:0;">'
-        '<input type="hidden" name="action" value="upload_photo">'
-        '<input type="file" name="profile_photo" id="roriProfilePhotoInput" '
-        'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" '
-        'style="display:none;" onchange="this.form.submit();">'
-        '<button type="button" class="btn-primary profile-photo-btn" '
-        'onclick="document.getElementById(\'roriProfilePhotoInput\').click();">'
-        '<i class="fas ' + primary_icon + '"></i> ' + primary_label + '</button>'
-        '</form>'
+        '<form method="post" enctype="multipart/form-data" style="display:inline;margin:0;"><input type="hidden" name="action" value="upload_photo">'
+        '<input type="file" name="profile_photo" id="roriProfilePhotoInput" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none;" onchange="this.form.submit();">'
+        '<button type="button" class="btn-primary profile-photo-btn" onclick="document.getElementById(\'roriProfilePhotoInput\').click();">'
+        '<i class="fas ' + primary_icon + '"></i> ' + primary_label + '</button></form>'
         + (' ' + remove_btn_html if remove_btn_html else '') +
-        '<p style="color:var(--text-secondary);font-size:.8rem;margin-top:1rem;margin-bottom:0;">'
-        '<i class="fas fa-info-circle"></i> JPG, JPEG, PNG or WEBP · Maximum 5 MB</p>'
-        '</div>'
-    )
-
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1>'
-         '<p>Manage your account information and profile photo</p></div></div>'
+        '<p style="color:var(--text-secondary);font-size:.8rem;margin-top:1rem;margin-bottom:0;"><i class="fas fa-info-circle"></i> JPG, JPEG, PNG or WEBP · Maximum 5 MB</p></div>')
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1><p>Manage your account information and profile photo</p></div></div>'
          + photo_section +
          '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name or u.username) + '</h4>'
          '<p>@' + str(u.username) + ' · <span class="badge badge-warning">' + str(u.role) + '</span></p>'
@@ -1760,11 +1767,10 @@ def profile():
          '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
 
-# ══════════════════════════════════════════ MESSAGING
+# ══════════════════════════════════════════ MESSAGING — Telegram-style
 @app.route("/messages")
 @login_required
 def messages_inbox():
-    now = datetime.utcnow()
     all_msgs = Message.query.filter(
         db.or_(Message.sender_id == current_user.id, Message.recipient_id == current_user.id)
     ).order_by(Message.created_at.desc()).all()
@@ -1776,25 +1782,41 @@ def messages_inbox():
         conv_map[other_id]["total"] += 1
         if m.recipient_id == current_user.id and not m.is_read:
             conv_map[other_id]["unread"] += 1
+
+    def _preview(m):
+        if m.attachment_type == "image":
+            return "📷 Photo" + ((" — " + m.body) if m.body else "")
+        if m.attachment_type == "voice":
+            return "🎤 Voice message" + ((" (" + str(round(m.duration or 0, 1)) + "s)") if m.duration else "")
+        return m.body or ""
+
     conv_rows = []
     for other_id, info in conv_map.items():
         other = db.session.get(User, other_id)
         if not other: continue
         online = _user_is_online(other)
-        dot = _online_dot(online)
-        unread_badge = (' <span style="display:inline-block;background:#ff6b5e;color:#0e0e0e;'
-                        'font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;'
-                        'margin-left:.35rem;">' + str(info["unread"]) + '</span>') if info["unread"] > 0 else ""
+        pic = (other.profile_pic or "").strip()
+        if pic:
+            av_inner = '<img src="' + url_for("static", filename="profile_pics/" + os.path.basename(pic)) + '" alt="">'
+        else:
+            av_inner = ((other.full_name or other.username or "U")[:1]).upper()
+        status_dot = '<span class="' + ("tg-online" if online else "tg-offline") + '"></span>'
         last = info["last"]
-        preview = (last.body[:90] + "…") if len(last.body) > 90 else last.body
+        preview_text = _preview(last)
+        if len(preview_text) > 60: preview_text = preview_text[:60] + "…"
+        is_unread = info["unread"] > 0
+        badge_html = ('<span class="tg-unread-badge">' + str(info["unread"]) + '</span>') if is_unread else ""
+        when = last.created_at.strftime("%H:%M") if last.created_at and last.created_at.date() == datetime.utcnow().date() else (last.created_at.strftime("%b %d") if last.created_at else "")
         conv_rows.append(
-            '<tr><td>' + dot + '<strong>' + str(other.full_name or other.username) + '</strong>' + unread_badge +
-            '<br><small style="color:var(--text-secondary);">' + str(other.role) + '</small></td>'
-            '<td style="color:var(--text-secondary);">' + str(preview) + '</td>'
-            '<td style="white-space:nowrap;color:var(--text-secondary);font-size:.8rem;">' +
-            (last.created_at.strftime("%Y-%m-%d %H:%M") if last.created_at else "") + '</td>'
-            '<td><a class="btn-primary" style="padding:.4rem .8rem;font-size:.75rem;" href="' +
-            url_for("messages_thread", user_id=other.id) + '">Open</a></td></tr>'
+            '<a class="tg-row" href="' + url_for("messages_thread", user_id=other.id) + '">'
+            '<div class="tg-avatar"><div class="tg-avatar-inner">' + av_inner + '</div>' + status_dot + '</div>'
+            '<div class="tg-meta">'
+            '<div class="tg-name"><span>' + str(other.full_name or other.username) + '</span><span class="tg-time">' + when + '</span></div>'
+            '<div class="tg-role">' + str(other.role) + '</div>'
+            '<div class="tg-preview' + (' unread' if is_unread else '') + '">' + preview_text + badge_html + '</div>'
+            '</div>'
+            '<i class="fas fa-chevron-right tg-chevron"></i>'
+            '</a>'
         )
 
     all_users = User.query.filter(User.id != current_user.id, User.active == True).order_by(User.full_name).all()
@@ -1802,8 +1824,7 @@ def messages_inbox():
     for u in all_users:
         online = _user_is_online(u)
         status = " 🟢" if online else " ⚪"
-        user_opts += ('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) +
-                      ' (' + str(u.role) + ')' + status + '</option>')
+        user_opts += ('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) + ' (' + str(u.role) + ')' + status + '</option>')
 
     users_rows = []
     for u in all_users:
@@ -1812,43 +1833,42 @@ def messages_inbox():
         status_text = "Active" if online else "Offline"
         status_color = "#6fcf97" if online else "var(--text-secondary)"
         users_rows.append(
-            '<div class="msg-user-row">'
-            '<div>' + dot + '<strong>' + str(u.full_name or u.username) + '</strong> '
+            '<div class="msg-user-row"><div>' + dot + '<strong>' + str(u.full_name or u.username) + '</strong> '
             '<span style="color:var(--text-secondary);font-size:.78rem;">(' + str(u.role) + ')</span></div>'
             '<div><span style="color:' + status_color + ';font-size:.78rem;font-weight:600;">' + status_text + '</span>'
             ' <a class="btn-primary" style="padding:.3rem .7rem;font-size:.72rem;margin-left:.5rem;" href="' +
-            url_for("messages_thread", user_id=u.id) + '">Message</a></div>'
-            '</div>'
-        )
+            url_for("messages_thread", user_id=u.id) + '">Message</a></div></div>')
 
     unread_total = Message.query.filter_by(recipient_id=current_user.id, is_read=False).count()
     header_extra = (' · <span style="color:var(--danger);font-weight:700;">' + str(unread_total) + ' unread</span>') if unread_total else ""
 
+    inbox_html = ("".join(conv_rows) if conv_rows else
+        '<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
+        '<i class="fas fa-comment-dots" style="font-size:2.4rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>'
+        'No conversations yet. Start one below!</div>')
+
     content = (
         '<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1>'
         '<p>Internal user-to-user messaging' + header_extra + '</p></div></div>'
-
+        '<div class="card" style="padding:0;overflow:hidden;">'
+        '<div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-secondary);">'
+        '<div style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:1.2rem;font-weight:700;color:var(--gold);"><i class="fas fa-inbox"></i> Conversations</div>'
+        '<span style="font-size:.78rem;color:var(--text-secondary);">' + str(len(conv_map)) + ' chat' + ('s' if len(conv_map) != 1 else '') + '</span>'
+        '</div>'
+        '<div class="tg-inbox">' + inbox_html + '</div>'
+        '</div>'
         '<div class="card"><div class="card-title"><i class="fas fa-paper-plane"></i> New Message</div>'
-        '<form method="post" action="' + url_for("messages_send") + '">'
+        '<form method="post" action="' + url_for("messages_send") + '" enctype="multipart/form-data">'
         '<div class="mb-3"><label class="form-label">To *</label>'
-        '<select name="recipient_id" class="form-select" required>'
-        '<option value="">-- Select User --</option>' + user_opts + '</select></div>'
-        '<div class="mb-3"><label class="form-label">Message *</label>'
-        '<textarea name="body" class="form-control" rows="3" required></textarea></div>'
+        '<select name="recipient_id" class="form-select" required><option value="">-- Select User --</option>' + user_opts + '</select></div>'
+        '<div class="mb-3"><label class="form-label">Message</label>'
+        '<textarea name="body" class="form-control" rows="3" placeholder="Type a message or attach a file below…"></textarea></div>'
+        '<div class="mb-3"><label class="form-label">Attach image (optional)</label>'
+        '<input type="file" name="image" accept="image/*" class="form-control"></div>'
         '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button>'
         '</form></div>'
-
-        '<div class="card"><div class="card-title"><i class="fas fa-inbox"></i> Conversations</div>'
-        '<div style="overflow-x:auto;"><table class="table">'
-        '<thead><tr><th>User</th><th>Last Message</th><th>When</th><th></th></tr></thead><tbody>'
-        + ("".join(conv_rows) if conv_rows else
-           '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
-           'No conversations yet. Start one above!</td></tr>')
-        + '</tbody></table></div></div>'
-
         '<div class="card"><div class="card-title"><i class="fas fa-users"></i> Users & Active Status</div>'
-        + ("".join(users_rows) if users_rows else
-           '<p style="text-align:center;color:var(--text-secondary);">No other users available.</p>')
+        + ("".join(users_rows) if users_rows else '<p style="text-align:center;color:var(--text-secondary);">No other users available.</p>')
         + '</div>'
     )
     return page("Messages", content)
@@ -1858,8 +1878,7 @@ def messages_inbox():
 def messages_thread(user_id):
     other = get_or_404(User, user_id)
     if other.id == current_user.id:
-        flash("You cannot message yourself.", "warning")
-        return redirect(url_for("messages_inbox"))
+        flash("You cannot message yourself.", "warning"); return redirect(url_for("messages_inbox"))
 
     unread = Message.query.filter_by(sender_id=other.id, recipient_id=current_user.id, is_read=False).all()
     if unread:
@@ -1892,72 +1911,164 @@ def messages_thread(user_id):
     for m in msgs:
         mine = (m.sender_id == current_user.id)
         when = m.created_at.strftime("%b %d, %H:%M") if m.created_at else ""
-        safe_body = str(m.body).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        if mine:
-            rows.append(
-                '<div class="msg-row mine">'
-                '<div class="msg-bubble mine">' + safe_body + '</div>'
-                '<div class="msg-avatar">' + my_avatar_inner + '</div>'
-                '</div>'
-                '<div class="msg-time mine">' + when + '</div>'
-            )
+        bubble_inner = ""
+        if m.attachment_type == "image" and m.attachment:
+            img_url = url_for("static", filename="uploads/messages/" + m.attachment)
+            bubble_inner += ('<img class="msg-image" src="' + img_url + '" alt="Image" onclick="openLightbox(\'' + img_url + '\')">')
+            if m.body:
+                safe_body = str(m.body).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                bubble_inner += '<div class="msg-caption">' + safe_body + '</div>'
+        elif m.attachment_type == "voice" and m.attachment:
+            audio_url = url_for("static", filename="uploads/messages/" + m.attachment)
+            dur = round(m.duration or 0, 1)
+            wave = "".join('<span style="height:' + str(6 + ((i * 7 + 5) % 18)) + 'px"></span>' for i in range(24))
+            bubble_inner += ('<div class="msg-voice">'
+                '<button type="button" class="msg-voice-btn" onclick="playVoice(this,\'' + audio_url + '\')"><i class="fas fa-play"></i></button>'
+                '<div class="msg-wave">' + wave + '</div>'
+                '<span class="msg-voice-dur">' + str(dur) + 's</span>'
+                '</div>')
+            if m.body:
+                safe_body = str(m.body).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                bubble_inner += '<div class="msg-caption">' + safe_body + '</div>'
         else:
-            rows.append(
-                '<div class="msg-row">'
-                '<div class="msg-avatar">' + other_avatar_inner + '</div>'
-                '<div class="msg-bubble">' + safe_body + '</div>'
-                '</div>'
-                '<div class="msg-time">' + when + '</div>'
-            )
+            bubble_inner = str(m.body or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+
+        if mine:
+            rows.append('<div class="msg-row mine"><div class="msg-bubble mine">' + bubble_inner + '</div><div class="msg-avatar">' + my_avatar_inner + '</div></div>'
+                        '<div class="msg-time mine">' + when + '</div>')
+        else:
+            rows.append('<div class="msg-row"><div class="msg-avatar">' + other_avatar_inner + '</div><div class="msg-bubble">' + bubble_inner + '</div></div>'
+                        '<div class="msg-time">' + when + '</div>')
 
     if not rows:
-        rows.append(
-            '<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
+        rows.append('<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
             '<i class="fas fa-comment-dots" style="font-size:2.2rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>'
-            'No messages yet. Say hi! 👋'
-            '</div>'
-        )
+            'No messages yet. Say hi! 👋</div>')
 
     content = (
         '<div class="page-header" style="margin-bottom:1rem;">'
-          '<div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1></div>'
-          '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" '
-          'href="' + url_for("messages_inbox") + '">'
-          '<i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("messages_inbox") + '">'
+        '<i class="fas fa-arrow-left"></i> Back</a></div>'
         + '<div class="chat-shell">'
-        +   '<div class="chat-head">'
-        +     '<div class="chat-head-avatar">' + other_avatar_inner + '</div>'
-        +     '<div style="flex:1;min-width:0;">'
-        +       '<div class="chat-head-name">' + str(other_name) + '</div>'
-        +       '<div class="chat-head-status">' + dot + '<span>' + status_text + ' · ' + str(other.role) + '</span></div>'
+        + '<div class="chat-head">'
+        +   '<div class="chat-head-avatar">' + other_avatar_inner + '</div>'
+        +   '<div style="flex:1;min-width:0;">'
+        +     '<div class="chat-head-name">' + str(other_name) + '</div>'
+        +     '<div class="chat-head-status">' + dot + '<span>' + status_text + ' · ' + str(other.role) + '</span></div>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="chat-body" id="chatBody">' + "".join(rows) + '</div>'
+        + '<form method="post" action="' + url_for("messages_send") + '" class="chat-input-wrap" id="chatForm" enctype="multipart/form-data" style="position:relative;">'
+        +   '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
+        +   '<input type="hidden" name="voice_duration" id="voiceDuration" value="0">'
+        +   '<input type="file" name="image" id="imageInput" accept="image/*" style="display:none;">'
+        +   '<div class="attach-menu" id="attachMenu">'
+        +     '<button type="button" onclick="document.getElementById(\'imageInput\').click();document.getElementById(\'attachMenu\').classList.remove(\'show\');"><i class="fas fa-image"></i> Photo</button>'
+        +     '<button type="button" onclick="startRecording();document.getElementById(\'attachMenu\').classList.remove(\'show\');"><i class="fas fa-microphone"></i> Voice Message</button>'
+        +   '</div>'
+        +   '<button type="button" class="chat-attach-btn" id="attachBtn" title="Attach"><i class="fas fa-paperclip"></i></button>'
+        +   '<textarea name="body" class="chat-input" id="chatInput" rows="1" placeholder="Type a message…"></textarea>'
+        +   '<button type="submit" class="chat-send" id="sendBtn" aria-label="Send"><i class="fas fa-paper-plane"></i></button>'
+        + '</form>'
+        + '</div>'
+        + '<div class="recording-overlay" id="recOverlay">'
+        +   '<div class="recording-box">'
+        +     '<div class="recording-pulse"><i class="fas fa-microphone"></i></div>'
+        +     '<div class="recording-time" id="recTime">0:00</div>'
+        +     '<div class="recording-hint">Recording voice message…</div>'
+        +     '<div class="recording-actions">'
+        +       '<button type="button" class="cancel-rec" onclick="cancelRecording()">Cancel</button>'
+        +       '<button type="button" class="send-rec" onclick="stopAndSend()">Send</button>'
         +     '</div>'
         +   '</div>'
-        +   '<div class="chat-body" id="chatBody">' + "".join(rows) + '</div>'
-        +   '<form method="post" action="' + url_for("messages_send") + '" class="chat-input-wrap" id="chatForm">'
-        +     '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
-        +     '<textarea name="body" class="chat-input" id="chatInput" rows="1" '
-        +       'placeholder="Type a message…" required></textarea>'
-        +     '<button type="submit" class="chat-send" aria-label="Send"><i class="fas fa-paper-plane"></i></button>'
-        +   '</form>'
         + '</div>'
         + '<script>'
           '(function(){'
-          'var b=document.getElementById("chatBody");'
-          'if(b){b.scrollTop=b.scrollHeight;}'
+          'var b=document.getElementById("chatBody");if(b){b.scrollTop=b.scrollHeight;}'
           'var ta=document.getElementById("chatInput");'
-          'if(ta){'
-            'ta.addEventListener("input",function(){'
-              'this.style.height="auto";'
-              'this.style.height=Math.min(this.scrollHeight,120)+"px";'
-            '});'
-            'ta.addEventListener("keydown",function(e){'
-              'if(e.key==="Enter"&&!e.shiftKey){'
-                'e.preventDefault();'
-                'if(this.value.trim()){document.getElementById("chatForm").submit();}'
-              '}'
-            '});'
-            'ta.focus();'
+          'var sendBtn=document.getElementById("sendBtn");'
+          'var attachBtn=document.getElementById("attachBtn");'
+          'var attachMenu=document.getElementById("attachMenu");'
+          'function updateSendBtn(){'
+            'var hasText=ta.value.trim().length>0;'
+            'sendBtn.style.display=hasText?"flex":"none";'
+            'attachBtn.style.display=hasText?"none":"flex";'
           '}'
+          'if(ta){'
+            'ta.addEventListener("input",function(){this.style.height="auto";this.style.height=Math.min(this.scrollHeight,120)+"px";updateSendBtn();});'
+            'ta.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(this.value.trim()){document.getElementById("chatForm").submit();}}});'
+            'updateSendBtn();'
+          '}'
+          'attachBtn.addEventListener("click",function(e){e.stopPropagation();attachMenu.classList.toggle("show");});'
+          'document.addEventListener("click",function(e){if(!attachMenu.contains(e.target)&&e.target!==attachBtn){attachMenu.classList.remove("show");}});'
+          'var imageInput=document.getElementById("imageInput");'
+          'imageInput.addEventListener("change",function(){if(this.files.length){document.getElementById("chatForm").submit();}});'
+          '/* Voice recording */'
+          'var mediaRec=null,chunks=[],recStart=0,recTimer=null;'
+          'window.startRecording=function(){'
+            'if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("Voice recording not supported on this browser.");return;}'
+            'navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){'
+              'chunks=[];'
+              'var opts={};'
+              'if(window.MediaRecorder&&MediaRecorder.isTypeSupported){'
+                'if(MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))opts={mimeType:"audio/webm;codecs=opus"};'
+                'else if(MediaRecorder.isTypeSupported("audio/webm"))opts={mimeType:"audio/webm"};'
+                'else if(MediaRecorder.isTypeSupported("audio/mp4"))opts={mimeType:"audio/mp4"};'
+              '}'
+              'try{mediaRec=new MediaRecorder(stream,opts);}catch(e){mediaRec=new MediaRecorder(stream);}'
+              'mediaRec.ondataavailable=function(e){if(e.data&&e.data.size>0)chunks.push(e.data);};'
+              'mediaRec.start();'
+              'recStart=Date.now();'
+              'document.getElementById("recOverlay").classList.add("show");'
+              'recTimer=setInterval(function(){'
+                'var s=Math.floor((Date.now()-recStart)/1000);'
+                'document.getElementById("recTime").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0");'
+              '},200);'
+            '}).catch(function(err){alert("Cannot access microphone: "+err.message);});'
+          '};'
+          'window.cancelRecording=function(){'
+            'if(mediaRec&&mediaRec.state!=="inactive"){try{mediaRec.stop();}catch(e){}}'
+            'if(mediaRec&&mediaRec.stream){mediaRec.stream.getTracks().forEach(function(t){t.stop();});}'
+            'if(recTimer)clearInterval(recTimer);'
+            'document.getElementById("recOverlay").classList.remove("show");'
+            'mediaRec=null;chunks=[];'
+          '};'
+          'window.stopAndSend=function(){'
+            'if(!mediaRec){cancelRecording();return;}'
+            'mediaRec.onstop=function(){'
+              'var dur=(Date.now()-recStart)/1000;'
+              'var blob=new Blob(chunks,{type:chunks[0]?chunks[0].type:"audio/webm"});'
+              'var fd=new FormData();'
+              'fd.append("recipient_id",' + str(other.id) + ');'
+              'fd.append("body","");'
+              'fd.append("voice_duration",String(Math.round(dur*10)/10));'
+              'var ext="webm";'
+              'if(blob.type.indexOf("mp4")>=0)ext="m4a";'
+              'else if(blob.type.indexOf("ogg")>=0)ext="ogg";'
+              'fd.append("voice",blob,"voice_"+Date.now()+"."+ext);'
+              'fetch("' + url_for("messages_send") + '",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){'
+                'if(r.redirected){window.location.href=r.url;}else{window.location.reload();}'
+              '}).catch(function(){window.location.reload();});'
+              'mediaRec.stream.getTracks().forEach(function(t){t.stop();});'
+              'document.getElementById("recOverlay").classList.remove("show");'
+              'if(recTimer)clearInterval(recTimer);'
+            '};'
+            'try{mediaRec.stop();}catch(e){cancelRecording();}'
+          '};'
+          'var currentAudio=null;'
+          'window.playVoice=function(btn,src){'
+            'if(currentAudio){currentAudio.pause();currentAudio=null;}'
+            'var a=new Audio(src);'
+            'currentAudio=a;'
+            'var icon=btn.querySelector("i");'
+            'icon.className="fas fa-pause";'
+            'a.play();'
+            'a.onended=function(){icon.className="fas fa-play";currentAudio=null;};'
+            'btn.onclick=function(){'
+              'if(a.paused){a.play();icon.className="fas fa-pause";}else{a.pause();icon.className="fas fa-play";}'
+            '};'
+          '};'
           '})();'
         '</script>'
     )
@@ -1968,26 +2079,78 @@ def messages_thread(user_id):
 def messages_send():
     recipient_id = request.form.get("recipient_id", type=int)
     body = (request.form.get("body") or "").strip()
-    if not recipient_id or not body:
-        flash("Recipient and message are required.", "danger")
-        return redirect(url_for("messages_inbox"))
+    if not recipient_id:
+        flash("Recipient is required.", "danger"); return redirect(url_for("messages_inbox"))
     if recipient_id == current_user.id:
-        flash("You cannot message yourself.", "warning")
-        return redirect(url_for("messages_inbox"))
+        flash("You cannot message yourself.", "warning"); return redirect(url_for("messages_inbox"))
     recipient = db.session.get(User, recipient_id)
     if not recipient:
-        flash("Recipient not found.", "danger")
-        return redirect(url_for("messages_inbox"))
+        flash("Recipient not found.", "danger"); return redirect(url_for("messages_inbox"))
+
+    attachment_filename = None
+    attachment_type = None
+    duration = 0.0
     try:
-        m = Message(sender_id=current_user.id, recipient_id=recipient_id, body=body)
+        # ── Image ──
+        img = request.files.get("image")
+        if img and img.filename:
+            if "." not in img.filename:
+                flash("Invalid image file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            ext = img.filename.rsplit(".", 1)[-1].lower()
+            if ext not in MESSAGE_IMAGE_EXTENSIONS:
+                flash("Invalid image type. Allowed: JPG, JPEG, PNG, WEBP, GIF.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            try:
+                img.seek(0, os.SEEK_END); size = img.tell(); img.seek(0)
+            except Exception: size = 0
+            if size <= 0:
+                flash("Image is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size > MESSAGE_IMAGE_MAX_BYTES:
+                flash("Image too large. Maximum 8 MB.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if not _is_valid_image_file(img):
+                flash("Not a valid image file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            fname = secure_filename("img_" + str(current_user.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:6] + "." + ext)
+            os.makedirs(MESSAGE_UPLOAD_FOLDER, exist_ok=True)
+            img.save(os.path.join(MESSAGE_UPLOAD_FOLDER, fname))
+            attachment_filename = fname
+            attachment_type = "image"
+
+        # ── Voice ──
+        voice = request.files.get("voice")
+        if voice and voice.filename and not attachment_filename:
+            fname_in = voice.filename
+            ext = (fname_in.rsplit(".", 1)[-1].lower() if "." in fname_in else "webm")
+            if ext not in MESSAGE_VOICE_EXTENSIONS:
+                ext = "webm"
+            try:
+                voice.seek(0, os.SEEK_END); size = voice.tell(); voice.seek(0)
+            except Exception: size = 0
+            if size <= 0:
+                flash("Voice file is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size > MESSAGE_VOICE_MAX_BYTES:
+                flash("Voice message too large.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if not _is_valid_voice_file(voice):
+                flash("Invalid voice file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            try: duration = float(request.form.get("voice_duration", 0) or 0)
+            except Exception: duration = 0.0
+            fname = secure_filename("voice_" + str(current_user.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:6] + "." + ext)
+            os.makedirs(MESSAGE_UPLOAD_FOLDER, exist_ok=True)
+            voice.save(os.path.join(MESSAGE_UPLOAD_FOLDER, fname))
+            attachment_filename = fname
+            attachment_type = "voice"
+
+        if not body and not attachment_filename:
+            flash("Message cannot be empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+
+        m = Message(sender_id=current_user.id, recipient_id=recipient_id, body=body or None,
+                    attachment=attachment_filename, attachment_type=attachment_type, duration=duration or 0)
         db.session.add(m)
-        log_audit("Message Sent", "Message", None, new_value=("to " + str(recipient.username)))
+        log_audit("Message Sent", "Message", None, new_value=("to " + str(recipient.username) + (" [" + str(attachment_type) + "]" if attachment_type else "")))
         db.session.commit()
-        flash("✅ Message sent", "success")
+        if not attachment_filename:
+            flash("✅ Message sent", "success")
     except Exception as e:
-        db.session.rollback()
-        flash("Error: " + str(e), "danger")
-        return redirect(url_for("messages_inbox"))
+        db.session.rollback(); flash("Error: " + str(e), "danger")
+        return redirect(url_for("messages_thread", user_id=recipient_id))
     return redirect(url_for("messages_thread", user_id=recipient_id))
 
 # ══════════════════════════════════════════ ITEMS MANAGEMENT
@@ -2015,12 +2178,12 @@ def items_list():
         rows.append('<tr><td>' + str(it.id) + '</td><td>' + str(it.name) + '</td><td>' + str(dname) + '</td><td>' + str(aname) + '</td><td>' + status_badge + '</td><td>' + actions + '</td></tr>')
     dept_opts = '<option value="">All Departments</option>' + "".join('<option value="' + str(d.id) + '"' + (' selected' if dept_f==d.id else '') + '>' + d.name + '</option>' for d in depts)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-th-list"></i> <span>Maintenance</span> Items</h1><p>Add, edit or deactivate items per department</p></div>'
-        '<a href="' + url_for("items_add") + '" class="btn-primary"><i class="fas fa-plus"></i> Add Item</a></div>'
+        '<a href="' + url_for("items_add") + '" class="btn-primary" style="width:auto;"><i class="fas fa-plus"></i> Add Item</a></div>'
         '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Search item name..." value="' + str(q) + '">'
         '<select class="form-select" name="dept">' + dept_opts + '</select>'
         '<label style="display:flex;align-items:center;gap:.4rem;color:var(--text-secondary);font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
-        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Filter</button>'
-        '<a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;"><i class="fas fa-undo"></i> Reset</a></form>'
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;width:auto;"><i class="fas fa-search"></i> Filter</button>'
+        '<a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;width:auto;"><i class="fas fa-undo"></i> Reset</a></form>'
         '<div class="card"><div style="overflow-x:auto;"><table class="table">'
         '<thead><tr><th>ID</th><th>Item</th><th>Department</th><th>Area (optional)</th><th>Status</th><th>Actions</th></tr></thead>'
         '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:2rem;">No items found.</td></tr>') + '</tbody></table></div></div>')
@@ -2048,14 +2211,14 @@ def items_add():
     dept_opts = '<option value="">-- Select Department --</option>' + "".join('<option value="' + str(d.id) + '">' + d.name + '</option>' for d in depts)
     area_opts = '<option value="">-- No specific area (available for all areas) --</option>' + "".join('<option value="' + str(a.id) + '">' + a.name + '</option>' for a in areas)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-plus-circle"></i> <span>Add</span> Maintenance Item</h1><p>Create a new maintenance item and assign it to a department</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="name" required autofocus></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required>' + dept_opts + '</select></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Area (optional)</label><select class="form-select" name="area_id">' + area_opts + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="2"></textarea></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Item</button></div></div></form></div>')
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;">Cancel</a>'
+        '<button type="submit" class="btn-primary" style="width:auto;"><i class="fas fa-save"></i> Save Item</button></div></div></form></div>')
     return page("Add Item", content)
 
 @app.route("/items/<int:item_id>/edit", methods=["GET","POST"])
@@ -2081,14 +2244,14 @@ def items_edit(item_id):
     dept_opts = '<option value="">-- Select Department --</option>' + "".join('<option value="' + str(d.id) + '"' + (' selected' if it.department_id==d.id else '') + '>' + d.name + '</option>' for d in depts)
     area_opts = '<option value="">-- No specific area (available for all areas) --</option>' + "".join('<option value="' + str(a.id) + '"' + (' selected' if it.area_id==a.id else '') + '>' + a.name + '</option>' for a in areas)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-edit"></i> <span>Edit</span> Item</h1><p>' + str(it.name) + '</p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("items_list") + '"><i class="fas fa-arrow-left"></i> Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Item Name *</label><input type="text" class="form-control" name="name" value="' + str(it.name) + '" required></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department *</label><select class="form-select" name="department_id" required>' + dept_opts + '</select></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Area (optional)</label><select class="form-select" name="area_id">' + area_opts + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description (optional)</label><textarea class="form-control" name="description" rows="2">' + str(it.description or "") + '</textarea></div>'
-        '<div class="col-12 d-flex gap-2"><a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a>'
-        '<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
+        '<div class="col-12 d-flex gap-2"><a href="' + url_for("items_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;">Cancel</a>'
+        '<button type="submit" class="btn-primary" style="width:auto;"><i class="fas fa-save"></i> Save Changes</button></div></div></form></div>')
     return page("Edit Item", content)
 
 @app.route("/items/<int:item_id>/deactivate", methods=["POST"])
@@ -2137,7 +2300,7 @@ def requests_list():
             del_html = ('<form method="post" action="' + url_for("request_delete", req_id=r.id) + '" style="display:inline" onsubmit="return confirm(\'Archive?\');"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-icon" style="width:32px;height:32px;"><i class="fas fa-archive"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-secondary">' + str(r.priority) + '</span></td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td>' + ('<td>' + del_html + '</td>' if is_mgr else '') + '</tr>')
     header = '<thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Created</th>' + ('<th></th>' if is_mgr else '') + '</tr></thead>'
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New Request</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-clipboard-list"></i> <span>Maintenance</span> Requests</h1></div><a href="' + url_for("request_create") + '" class="btn-primary" style="width:auto;"><i class="fas fa-plus"></i> New Request</a></div>'
          '<div class="card"><div style="overflow-x:auto;"><table class="table">' + header + '<tbody>' + ("".join(rows) if rows else '<tr><td colspan="' + ('8' if is_mgr else '7') + '" style="text-align:center;color:var(--text-secondary);">No requests found</td></tr>') + '</tbody></table></div></div>')
     return page("Requests", c)
 
@@ -2217,15 +2380,10 @@ def request_create():
 
     is_hk_user = (user_dept_id == hk_dept_id) if hk_dept_id else False
     user_cats = hk_cats if is_hk_user else other_cats
-
     user_items = []
     if user_dept_id:
-        user_items = WorkingItem.query.filter_by(department_id=user_dept_id).filter(
-            (WorkingItem.is_active == True) | (WorkingItem.is_active == None)
-        ).order_by(WorkingItem.name).all()
-
+        user_items = WorkingItem.query.filter_by(department_id=user_dept_id).filter((WorkingItem.is_active == True) | (WorkingItem.is_active == None)).order_by(WorkingItem.name).all()
     items_json = [{"id": w.id, "name": w.name} for w in user_items]
-
     hk_items_by_cat_json = {}
     if is_hk_user and hk_dept_id:
         for cat_name, item_names in HOUSEKEEPING_CATEGORIES.items():
@@ -2236,43 +2394,28 @@ def request_create():
                 w = WorkingItem.query.filter_by(name=iname, department_id=hk_dept_id).first()
                 if w: ids.append(w.id)
             hk_items_by_cat_json[cat.id] = ids
-
-    cat_opts = '<option value="">Select category</option>' + "".join(
-        '<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in user_cats
-    )
-
+    cat_opts = '<option value="">Select category</option>' + "".join('<option value="' + str(c.id) + '">' + str(c.name) + '</option>' for c in user_cats)
     rooms_by_floor = {}
-    for r in rooms:
-        rooms_by_floor.setdefault(r.floor, []).append(r)
+    for r in rooms: rooms_by_floor.setdefault(r.floor, []).append(r)
     room_opts = '<option value="">Select room</option>'
     for f in sorted(rooms_by_floor.keys()):
         room_opts += '<optgroup label="Floor ' + str(f) + '">'
         for r in sorted(rooms_by_floor[f], key=lambda x: int(x.room_number)):
             room_opts += '<option value="' + str(r.id) + '">Room ' + str(r.room_number) + '</option>'
         room_opts += '</optgroup>'
-
     floor_opts = '<option value="">Select floor (optional)</option>'
-    for f in sorted(floors):
-        floor_opts += '<option value="' + str(f) + '">Floor ' + str(f) + '</option>'
+    for f in sorted(floors): floor_opts += '<option value="' + str(f) + '">Floor ' + str(f) + '</option>'
     floor_opts += '<option value="0">Ground / General Area</option>'
-
-    area_opts = '<option value="">Select area</option>' + "".join(
-        '<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas
-    )
-
+    area_opts = '<option value="">Select area</option>' + "".join('<option value="' + str(a.id) + '">' + str(a.name) + '</option>' for a in areas)
     sig_authorized_name = sig_profile.authorized_name if sig_profile else (current_user.full_name or current_user.username)
     sig_dept_display = user_dept_name or "Not assigned"
     sig_block_required = current_user.role in ["DEPARTMENT", "EMPLOYEE"]
     sig_warning = "" if (sig_profile or not sig_block_required) else '<div class="rq-alert"><i class="fas fa-exclamation-triangle"></i> No authorized signature configured for your department. Contact admin.</div>'
-
     dept_display = user_dept_name or "Not assigned"
     user_display_name = current_user.full_name or current_user.username or "User"
     user_dept_id_str = str(user_dept_id or 0)
-    hk_dept_id_str = str(hk_dept_id or 0)
-
     c = (
-        '<div class="rq-page">'
-        + sig_warning +
+        '<div class="rq-page">' + sig_warning +
         '<h1 class="rq-h1">Maintenance Request</h1>'
         '<p class="rq-sub">Report a maintenance issue to the Engineering Department</p>'
         '<form method="post" id="requestForm" enctype="multipart/form-data" novalidate>'
@@ -2281,121 +2424,60 @@ def request_create():
         '<input type="hidden" name="priority" id="rq-priority" value="MEDIUM">'
         '<input type="hidden" name="signature_name" value="' + str(sig_authorized_name) + '">'
         '<input type="hidden" name="signature_data" id="rq-sigData" value="">'
-
-        '<div class="rq-grid">'
-        '<div class="rq-main">'
-
+        '<div class="rq-grid"><div class="rq-main">'
         '<section class="rq-card"><h2 class="rq-card-title">Where is the problem?</h2>'
         '<label>Request Type <i>*</i></label>'
-        '<div class="rq-seg" id="rq-type">'
-        '<button type="button" class="on" data-v="Room">🛏 Room</button>'
-        '<button type="button" data-v="Area">📍 Area / Location</button>'
-        '</div>'
-        '<div id="rq-roomF">'
-        '<div id="rq-rm"><label>Room Number <i>*</i></label>'
+        '<div class="rq-seg" id="rq-type"><button type="button" class="on" data-v="Room">🛏 Room</button><button type="button" data-v="Area">📍 Area / Location</button></div>'
+        '<div id="rq-roomF"><div id="rq-rm"><label>Room Number <i>*</i></label>'
         '<select name="room_id" id="rq-room" class="rq-input">' + room_opts + '</select>'
-        '<div class="rq-msg">Choose a room number.</div></div>'
-        '</div>'
-        '<div id="rq-areaF" class="rq-hide">'
-        '<div id="rq-fl2"><label>Floor (optional)</label>'
+        '<div class="rq-msg">Choose a room number.</div></div></div>'
+        '<div id="rq-areaF" class="rq-hide"><div id="rq-fl2"><label>Floor (optional)</label>'
         '<select name="floor" id="rq-floorA" class="rq-input">' + floor_opts + '</select></div>'
         '<div id="rq-ar"><label>Area / Location <i>*</i></label>'
         '<select name="area_id" id="rq-area" class="rq-input">' + area_opts + '</select>'
-        '<div class="rq-msg">Choose an area.</div></div>'
-        '</div>'
-        '</section>'
-
+        '<div class="rq-msg">Choose an area.</div></div></div></section>'
         '<section class="rq-card"><h2 class="rq-card-title">What needs attention?</h2>'
         '<div id="rq-cg"><label>Category <i>*</i></label>'
-        '<select name="category_id" id="rq-cat" class="rq-input">' + cat_opts + '</select>'
-        '<div class="rq-msg">Choose a category.</div></div>'
+        '<select name="category_id" id="rq-cat" class="rq-input">' + cat_opts + '</select><div class="rq-msg">Choose a category.</div></div>'
         '<div id="rq-ig"><label>Item / Equipment <i>*</i></label>'
         '<select name="working_item_id" id="rq-item" class="rq-input"><option value="">Select item</option></select>'
         '<div class="rq-msg">Tell us which item is affected.</div></div>'
         '<div id="rq-dg"><label>Description <i>*</i></label>'
         '<textarea name="description" id="rq-desc" class="rq-input" placeholder="Describe the problem clearly…" required></textarea>'
-        '<div class="rq-msg">Describe the problem so technicians know what to bring.</div></div>'
-        '</section>'
-
+        '<div class="rq-msg">Describe the problem so technicians know what to bring.</div></div></section>'
         '<section class="rq-card" id="rq-pg"><h2 class="rq-card-title">Priority <span class="rq-req">Required</span></h2>'
-        '<div class="rq-pri" id="rq-pri">'
-        '<button type="button" data-v="LOW"><span class="rq-dot" style="background:#4aa3ff"></span>Low</button>'
+        '<div class="rq-pri" id="rq-pri"><button type="button" data-v="LOW"><span class="rq-dot" style="background:#4aa3ff"></span>Low</button>'
         '<button type="button" data-v="MEDIUM" class="on"><span class="rq-dot" style="background:#ffd24a"></span>Medium</button>'
         '<button type="button" data-v="HIGH"><span class="rq-dot" style="background:#ff9a3d"></span>High</button>'
-        '<button type="button" data-v="URGENT"><span class="rq-dot" style="background:#ff4d4d"></span>Urgent</button>'
-        '</div>'
-        '<div class="rq-msg">Choose how urgent this is.</div>'
-        '</section>'
-
+        '<button type="button" data-v="URGENT"><span class="rq-dot" style="background:#ff4d4d"></span>Urgent</button></div>'
+        '<div class="rq-msg">Choose how urgent this is.</div></section>'
         '<section class="rq-card"><h2 class="rq-card-title">Add Photo or Evidence <span class="rq-req" id="rq-cnt">0 / 5</span></h2>'
-        '<div class="rq-up">'
-        '<div style="font-size:32px;line-height:1">📷 ⬆️</div>'
-        '<div class="rq-up-row">'
-        '<button type="button" class="rq-btn" id="rq-pick">📷 Take Photo</button>'
-        '<button type="button" class="rq-btn" id="rq-pick2">⬆️ Choose from Device</button>'
-        '</div>'
+        '<div class="rq-up"><div style="font-size:32px;line-height:1">📷 ⬆️</div>'
+        '<div class="rq-up-row"><button type="button" class="rq-btn" id="rq-pick">📷 Take Photo</button><button type="button" class="rq-btn" id="rq-pick2">⬆️ Choose from Device</button></div>'
         '<small style="color:#b4afa5">Maximum 5 photos (jpg, png, gif)</small>'
-        '<div class="rq-thumbs" id="rq-thumbs"></div>'
-        '</div>'
-        '<input type="file" name="photo" id="rq-file" accept="image/*" multiple hidden>'
-        '</section>'
-
+        '<div class="rq-thumbs" id="rq-thumbs"></div></div>'
+        '<input type="file" name="photo" id="rq-file" accept="image/*" multiple hidden></section>'
         '<section class="rq-card"><h2 class="rq-card-title">Authorized Digital Signature ' + ('<span class="rq-req">Required</span>' if sig_block_required else '<span class="rq-req">Optional</span>') + '</h2>'
-        '<div class="rq-sigmeta">'
-        '<div class="rq-sigbox"><div class="rq-k">Signed By</div><div class="rq-v">' + str(sig_authorized_name) + '</div></div>'
+        '<div class="rq-sigmeta"><div class="rq-sigbox"><div class="rq-k">Signed By</div><div class="rq-v">' + str(sig_authorized_name) + '</div></div>'
         '<div class="rq-sigbox"><div class="rq-k">Department</div><div class="rq-v">' + str(sig_dept_display) + '</div></div>'
-        '<div class="rq-sigbox"><div class="rq-k">Requester</div><div class="rq-v">' + str(user_display_name) + '</div></div>'
-        '</div>'
+        '<div class="rq-sigbox"><div class="rq-k">Requester</div><div class="rq-v">' + str(user_display_name) + '</div></div></div>'
         '<label style="margin-top:14px">✒ Draw your signature below</label>'
         '<div class="rq-canvas-wrap"><canvas id="signature-pad" width="400" height="150"></canvas></div>'
-        '<div class="rq-sigrow">'
-        '<button type="button" class="rq-btn" id="rq-sigClear">🧹 Clear</button>'
-        '<span class="rq-sigstatus" id="rq-sigStatus">Awaiting signature</span>'
-        '</div>'
-        '</section>'
-
+        '<div class="rq-sigrow"><button type="button" class="rq-btn" id="rq-sigClear">🧹 Clear</button>'
+        '<span class="rq-sigstatus" id="rq-sigStatus">Awaiting signature</span></div></section>'
         '<section class="rq-card"><h2 class="rq-card-title">Request Information</h2>'
-        '<label>Department <i>*</i></label>'
-        '<input type="text" value="' + str(dept_display) + '" disabled>'
-        '<label>Requested By <i>*</i></label>'
-        '<input type="text" value="' + str(user_display_name) + '" disabled>'
-        '<label>Contact / Extension</label>'
-        '<input type="tel" name="contact" inputmode="tel" placeholder="Optional">'
-        '</section>'
-
-        '</div>'
-        '<aside class="rq-aside">'
+        '<label>Department <i>*</i></label><input type="text" value="' + str(dept_display) + '" disabled>'
+        '<label>Requested By <i>*</i></label><input type="text" value="' + str(user_display_name) + '" disabled>'
+        '<label>Contact / Extension</label><input type="tel" name="contact" inputmode="tel" placeholder="Optional"></section>'
+        '</div><aside class="rq-aside">'
         '<section class="rq-card"><h2 class="rq-card-title">Request Summary</h2>'
-        '<dl class="rq-sum">'
-        '<dt>Location</dt><dd id="rq-sL">–</dd>'
-        '<dt>Category</dt><dd id="rq-sC">–</dd>'
-        '<dt>Priority</dt><dd id="rq-sP">Medium</dd>'
-        '</dl>'
-        '</section>'
+        '<dl class="rq-sum"><dt>Location</dt><dd id="rq-sL">–</dd><dt>Category</dt><dd id="rq-sC">–</dd><dt>Priority</dt><dd id="rq-sP">Medium</dd></dl></section>'
         '<section class="rq-card"><h2 class="rq-card-title">Approval Workflow</h2>'
-        '<ol class="rq-flow">'
-        '<li class="cur">Department Request</li>'
-        '<li>Maintenance Manager Approval</li>'
-        '<li>Technical Staff Assignment</li>'
-        '<li>Work In Progress</li>'
-        '<li>Completed</li>'
-        '<li>Manager Verification</li>'
-        '<li>Closed</li>'
-        '</ol>'
-        '</section>'
-        '</aside>'
-        '</div>'
-
-        '<div class="rq-bar">'
-        '<div class="rq-bar-row">'
-        '<button type="submit" class="rq-btn rq-btn-p" id="rq-submit">Submit Maintenance Request</button>'
-        '</div>'
-        '<p>After submission, your request will be reviewed by the Engineering Department.</p>'
-        '</div>'
-
-        '</form>'
-        '</div>'
-
+        '<ol class="rq-flow"><li class="cur">Department Request</li><li>Maintenance Manager Approval</li><li>Technical Staff Assignment</li><li>Work In Progress</li><li>Completed</li><li>Manager Verification</li><li>Closed</li></ol></section>'
+        '</aside></div>'
+        '<div class="rq-bar"><div class="rq-bar-row"><button type="submit" class="rq-btn rq-btn-p" id="rq-submit">Submit Maintenance Request</button></div>'
+        '<p>After submission, your request will be reviewed by the Engineering Department.</p></div>'
+        '</form></div>'
         '<script>'
         'window.RORI_IS_HK=' + ('true' if is_hk_user else 'false') + ';'
         'window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_cat_json.items()}) + ';'
@@ -2431,13 +2513,10 @@ def request_create():
         'if(curType==="Room"){roomF.classList.remove("rq-hide");areaF.classList.add("rq-hide");}'
         'else{roomF.classList.add("rq-hide");areaF.classList.remove("rq-hide");}'
         'updateSum();});});'
-        'function renderItems(){'
-        'var cid=catSel.value;'
-        'var allowed=null;'
+        'function renderItems(){var cid=catSel.value;var allowed=null;'
         'if(IS_HK&&cid&&HK_BY_CAT[cid]){allowed=HK_BY_CAT[cid];}'
         'itemSel.innerHTML=\'<option value="">Select item</option>\';'
-        'ALL_ITEMS.forEach(function(it){'
-        'if(allowed&&allowed.indexOf(it.id)<0)return;'
+        'ALL_ITEMS.forEach(function(it){if(allowed&&allowed.indexOf(it.id)<0)return;'
         'var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
         'catSel.addEventListener("change",function(){renderItems();updateSum();});'
         'renderItems();'
@@ -2453,27 +2532,23 @@ def request_create():
         'fileInp.files=acc.files;renderThumbs();});'
         'function renderThumbs(){thumbs.innerHTML="";'
         'for(var i=0;i<acc.files.length;i++){(function(idx){'
-        'var f=acc.files[idx];'
-        'var d=document.createElement("div");d.className="rq-th";'
+        'var f=acc.files[idx];var d=document.createElement("div");d.className="rq-th";'
         'd.style.backgroundImage="url("+URL.createObjectURL(f)+")";'
         'var btn=document.createElement("button");btn.type="button";btn.textContent="✕";btn.setAttribute("aria-label","Remove");'
-        'btn.addEventListener("click",function(){'
-        'var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}'
+        'btn.addEventListener("click",function(){var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}'
         'acc=nd;fileInp.files=acc.files;renderThumbs();});'
         'd.appendChild(btn);thumbs.appendChild(d);})(i);}'
         'cnt.textContent=acc.files.length+" / 5";}'
         'var canvas=document.getElementById("signature-pad");'
         'var sigPad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});'
         'function resizeCanvas(){var r=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*r;canvas.height=canvas.offsetHeight*r;canvas.getContext("2d").scale(r,r);sigPad.clear();updateSig();}'
-        'window.addEventListener("resize",resizeCanvas);'
-        'setTimeout(resizeCanvas,60);'
+        'window.addEventListener("resize",resizeCanvas);setTimeout(resizeCanvas,60);'
         'document.getElementById("rq-sigClear").addEventListener("click",function(){sigPad.clear();updateSig();});'
         'sigPad.addEventListener("endStroke",updateSig);'
         'function updateSig(){if(sigPad.isEmpty()){sigStatus.textContent="Awaiting signature";sigStatus.className="rq-sigstatus";}'
         'else{sigStatus.textContent="✓ Signature captured";sigStatus.className="rq-sigstatus rq-ok";}}'
         'updateSig();'
-        'function updateSum(){'
-        'var loc="";'
+        'function updateSum(){var loc="";'
         'if(curType==="Room"){var rs=document.getElementById("rq-room");var ro=rs.options[rs.selectedIndex];if(rs.value&&ro)loc=ro.textContent;}'
         'else{var as=document.getElementById("rq-area");var ao=as.options[as.selectedIndex];if(as.value&&ao)loc=ao.textContent;'
         'var fs=document.getElementById("rq-floorA");if(fs&&fs.value&&fs.value!=="0"&&loc)loc+=", Floor "+fs.value;}'
@@ -2506,8 +2581,7 @@ def request_create():
         'if(!sigPad.isEmpty()){sigData.value=sigPad.toDataURL("image/png");}'
         'submitBtn.disabled=true;submitBtn.innerHTML=\'<span class="rq-spin"></span>Submitting…\';'
         '});'
-        '})();</script>'
-    )
+        '})();</script>')
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -2535,38 +2609,31 @@ def request_detail(req_id):
     actions = []
     if current_user.role in ["ADMIN","MANAGER"]:
         if req.status in ["Pending","Approved","Assigned"] and req.assigned_to_id is None:
-            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary"><i class="fas fa-user-plus"></i> Assign Staff</a>')
+            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary" style="width:auto;"><i class="fas fa-user-plus"></i> Assign Staff</a>')
         elif req.status in ["Approved","Assigned"]:
-            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary"><i class="fas fa-user-edit"></i> Reassign</a>')
+            actions.append('<a href="' + url_for("workorder_create", request_id=req.id) + '" class="btn-primary" style="width:auto;"><i class="fas fa-user-edit"></i> Reassign</a>')
         if req.status == "Pending":
-            actions.append('<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);"><i class="fas fa-check"></i> Approve</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_approve", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);width:auto;"><i class="fas fa-check"></i> Approve</button></form>')
         if req.status == "Completed":
-            actions.append('<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--info);"><i class="fas fa-check-double"></i> Verify</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_verify", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--info);width:auto;"><i class="fas fa-check-double"></i> Verify</button></form>')
         if req.status == "Verified":
-            actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-lock"></i> Close</button></form>')
+            actions.append('<form method="post" action="' + url_for("request_close", req_id=req.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-lock"></i> Close</button></form>')
         if not req.is_deleted:
-            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);"><i class="fas fa-archive"></i> Archive</button></form>')
-    actions.append('<a href="' + url_for("detailed_report_request", req_id=req.id) + '" class="btn-primary" style="background:var(--info);"><i class="fas fa-file-alt"></i> Detailed Report</a>')
+            actions.append('<form method="post" action="' + url_for("request_delete", req_id=req.id) + '" style="display:inline" onsubmit="return confirm(\'Archive this request?\')"><input type="hidden" name="reason" value="Archived by manager"><button type="submit" class="btn-primary" style="background:var(--danger);width:auto;"><i class="fas fa-archive"></i> Archive</button></form>')
+    actions.append('<a href="' + url_for("detailed_report_request", req_id=req.id) + '" class="btn-primary" style="background:var(--info);width:auto;"><i class="fas fa-file-alt"></i> Detailed Report</a>')
     actions_html = " ".join(actions)
-    info_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div>'
-        '<div class="rpro-kv">'
-        + kv("Request ID", req.request_no, mono=True)
-        + kv("Status", '<span class="badge badge-' + badge(req.status) + '">' + str(req.status) + '</span>')
+    info_card = ('<div class="rpro-card"><div class="rpro-card-title"><i class="fas fa-info-circle"></i> Request Information</div><div class="rpro-kv">'
+        + kv("Request ID", req.request_no, mono=True) + kv("Status", '<span class="badge badge-' + badge(req.status) + '">' + str(req.status) + '</span>')
         + kv("Priority", '<span class="badge badge-' + ("danger" if req.priority=="URGENT" else "warning" if req.priority=="HIGH" else "info" if req.priority=="MEDIUM" else "secondary") + '">' + str(req.priority or "MEDIUM") + '</span>')
-        + kv("Created", req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else None)
-        + kv("Department", req.department.name if req.department else "Not Assigned")
-        + kv("Location Type", req.location_type)
-        + kv("Location", req.location_name)
-        + kv("Floor", req.floor if req.floor else None)
-        + kv("Working Item", req.working_item.name if req.working_item else None)
-        + kv("Category", req.category.name if req.category else None)
+        + kv("Created", req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at else None) + kv("Department", req.department.name if req.department else "Not Assigned")
+        + kv("Location Type", req.location_type) + kv("Location", req.location_name) + kv("Floor", req.floor if req.floor else None)
+        + kv("Working Item", req.working_item.name if req.working_item else None) + kv("Category", req.category.name if req.category else None)
         + kv("Requested By", (req.requested_by.full_name or req.requested_by.username) if req.requested_by else None)
         + kv("Assigned To", (req.assigned_to.full_name or req.assigned_to.username) if req.assigned_to else "Not Assigned")
         + kv("Assigned Date", assigned_dt.strftime("%Y-%m-%d %H:%M") if assigned_dt else None)
         + kv("Started Date", started_dt.strftime("%Y-%m-%d %H:%M") if started_dt else None)
         + kv("Due Date", req.due_date.strftime("%Y-%m-%d %H:%M") if req.due_date else None)
-        + kv("Completed", req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else None)
-        + '</div>'
+        + kv("Completed", req.completed_date.strftime("%Y-%m-%d %H:%M") if req.completed_date else None) + '</div>'
         + ('<div style="margin-top:1.25rem;"><div class="rpro-kv-label">Description</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:var(--bg-secondary);border-radius:10px;border-left:3px solid var(--rori-gold);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.description or "No description provided.") + '</div></div>')
         + ('<div style="margin-top:1rem;"><div class="rpro-kv-label">Completion Note</div><div style="margin-top:.4rem;padding:.85rem 1rem;background:rgba(111,207,151,.08);border-radius:10px;border-left:3px solid var(--success);color:var(--text-primary);font-size:.9rem;line-height:1.5;white-space:pre-wrap;">' + str(req.completion_note or "—") + '</div></div>' if req.completion_note else "")
         + '</div>')
@@ -2684,7 +2751,7 @@ def deleted_requests():
     ds = MaintenanceRequest.query.filter_by(is_deleted=True).order_by(MaintenanceRequest.deleted_at.desc()).all()
     rows = []
     for r in ds:
-        rows.append('<tr><td>' + str(r.request_no) + '</td><td>' + str(r.location_name) + '</td><td>' + str(r.status) + '</td><td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td><td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td><td>' + str(r.deletion_reason or "—") + '</td><td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn-primary" style="background:var(--success);padding:0.4rem 0.8rem;font-size:0.8rem;"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
+        rows.append('<tr><td>' + str(r.request_no) + '</td><td>' + str(r.location_name) + '</td><td>' + str(r.status) + '</td><td>' + (r.deleted_at.strftime("%Y-%m-%d %H:%M") if r.deleted_at else "") + '</td><td>' + str(r.deleted_by.full_name if r.deleted_by else "—") + '</td><td>' + str(r.deletion_reason or "—") + '</td><td><form method="post" action="' + url_for("request_restore", req_id=r.id) + '"><button type="submit" class="btn-primary" style="background:var(--success);padding:0.4rem 0.8rem;font-size:0.8rem;width:auto;"><i class="fas fa-undo"></i> Restore</button></form></td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-archive"></i> <span>Archived</span> Requests</h1><p>Soft-deleted only — no data destroyed</p></div></div>'
          '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Status</th><th>Archived At</th><th>Archived By</th><th>Reason</th><th></th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No archived requests</td></tr>') + '</tbody></table></div></div>')
     return page("Archived", c)
@@ -2750,9 +2817,7 @@ def _avg_sec(reqs):
 
 def get_kpis(args):
     reqs = build_filtered_query(args).all()
-    total = len(reqs)
-    pending = sum(1 for r in reqs if r.status in PENDING_STATES)
-    completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
+    total = len(reqs); pending = sum(1 for r in reqs if r.status in PENDING_STATES); completed = sum(1 for r in reqs if r.status in COMPLETED_STATES)
     avg = _avg_sec([r for r in reqs if r.status in COMPLETED_STATES])
     rate = (completed / total * 100) if total else 0.0
     return {"total": total, "pending": pending, "completed": completed, "completion_rate": round(rate,1), "avg_resolution": format_duration(avg)}
@@ -2764,8 +2829,7 @@ def get_trends(args):
     else:
         dates = [r.created_at for r in reqs if r.created_at]
         if not dates: return {"labels":[],"total":[],"completed":[],"pending":[],"in_progress":[]}
-        start = min(dates).replace(hour=0,minute=0,second=0,microsecond=0)
-        end = max(dates).replace(hour=0,minute=0,second=0,microsecond=0)
+        start = min(dates).replace(hour=0,minute=0,second=0,microsecond=0); end = max(dates).replace(hour=0,minute=0,second=0,microsecond=0)
     span = (end-start).days + 1
     gran = "day" if span <= 31 else "week" if span <= 180 else "month"
     keys, labels = [], []
@@ -2792,27 +2856,22 @@ def get_trends(args):
     return {"labels": labels, "total": [counts[k]["total"] for k in keys], "completed": [counts[k]["completed"] for k in keys], "pending": [counts[k]["pending"] for k in keys], "in_progress": [counts[k]["in_progress"] for k in keys], "granularity": gran}
 
 def get_status_stats(args):
-    reqs = build_filtered_query(args).all()
-    counts = defaultdict(int)
+    reqs = build_filtered_query(args).all(); counts = defaultdict(int)
     for r in reqs: counts[r.status] += 1
     order = ["Pending","Approved","Assigned","In Progress","Completed","Verified","Closed","Rejected","Overdue"]
-    total = sum(counts.values())
-    items = [(s, counts[s]) for s in order if counts.get(s,0) > 0]
+    total = sum(counts.values()); items = [(s, counts[s]) for s in order if counts.get(s,0) > 0]
     for s, c in counts.items():
         if s not in order and c > 0: items.append((s, c))
     return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
 
 def get_dept_stats(args):
-    reqs = build_filtered_query(args).all()
-    counts = defaultdict(int)
+    reqs = build_filtered_query(args).all(); counts = defaultdict(int)
     for r in reqs: counts[r.department.name if r.department else "Unspecified"] += 1
-    items = sorted(counts.items(), key=lambda x: -x[1])
-    total = sum(counts.values())
+    items = sorted(counts.items(), key=lambda x: -x[1]); total = sum(counts.values())
     return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items], "total": total}
 
 def get_dept_completion(args):
-    reqs = build_filtered_query(args).all()
-    depts = {}
+    reqs = build_filtered_query(args).all(); depts = {}
     for r in reqs:
         name = r.department.name if r.department else "Unspecified"
         if name not in depts: depts[name] = {"total": 0, "completed": 0}
@@ -2822,25 +2881,20 @@ def get_dept_completion(args):
     return {"labels": [k for k,_ in items], "totals": [v["total"] for _,v in items], "completed": [v["completed"] for _,v in items], "percentages": [round(v["completed"]/v["total"]*100,1) if v["total"] else 0 for _,v in items]}
 
 def get_priority_stats(args):
-    reqs = build_filtered_query(args).all()
-    counts = defaultdict(int)
+    reqs = build_filtered_query(args).all(); counts = defaultdict(int)
     for r in reqs: counts[r.priority or "MEDIUM"] += 1
-    order = ["URGENT","HIGH","MEDIUM","LOW"]
-    total = sum(counts.values())
+    order = ["URGENT","HIGH","MEDIUM","LOW"]; total = sum(counts.values())
     items = [(p, counts[p]) for p in order if counts.get(p,0) > 0]
     return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_category_stats(args):
-    reqs = build_filtered_query(args).all()
-    counts = defaultdict(int)
+    reqs = build_filtered_query(args).all(); counts = defaultdict(int)
     for r in reqs: counts[r.category.name if r.category else "Uncategorized"] += 1
-    items = sorted(counts.items(), key=lambda x: -x[1])
-    total = sum(counts.values())
+    items = sorted(counts.items(), key=lambda x: -x[1]); total = sum(counts.values())
     return {"labels": [k for k,_ in items], "values": [v for _,v in items], "percentages": [round(v/total*100,1) if total else 0 for _,v in items]}
 
 def get_floor_stats(args):
-    reqs = build_filtered_query(args).all()
-    counts = defaultdict(int)
+    reqs = build_filtered_query(args).all(); counts = defaultdict(int)
     for r in reqs:
         if r.floor: counts[r.floor] += 1
     items = sorted(counts.items())
@@ -2848,8 +2902,7 @@ def get_floor_stats(args):
 
 def get_technician_workload(args):
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
-    d_from = _parse_date(args.get("date_from")); d_to = _parse_date(args.get("date_to"))
-    result = []
+    d_from = _parse_date(args.get("date_from")); d_to = _parse_date(args.get("date_to")); result = []
     for s in staff:
         q = WorkOrder.query.filter_by(assigned_to_id=s.id)
         if d_from: q = q.filter(WorkOrder.created_at >= d_from)
@@ -2859,8 +2912,7 @@ def get_technician_workload(args):
         avg = None
         if comp: avg = sum((w.completed_date - w.created_at).total_seconds() for w in comp) / len(comp)
         result.append({"name": s.full_name or s.username, "role": s.role, "assigned": len(wos), "in_progress": sum(1 for w in wos if w.status == "In Progress"), "completed": sum(1 for w in wos if w.status in COMPLETED_STATES), "avg_resolution": format_duration(avg)})
-    result.sort(key=lambda x: -x["assigned"])
-    return result[:15]
+    result.sort(key=lambda x: -x["assigned"]); return result[:15]
 
 def get_recent_activity(limit=10):
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(limit).all()
@@ -2868,8 +2920,7 @@ def get_recent_activity(limit=10):
 
 def get_inventory_summary():
     parts = InventoryPart.query.filter_by(status="Active").all()
-    total = len(parts)
-    low = sum(1 for p in parts if 0 < (p.quantity or 0) <= (p.minimum_stock or 0))
+    total = len(parts); low = sum(1 for p in parts if 0 < (p.quantity or 0) <= (p.minimum_stock or 0))
     out = sum(1 for p in parts if (p.quantity or 0) <= 0)
     val = sum((p.quantity or 0) * (p.unit_cost or 0) for p in parts)
     return {"total_parts": total, "low_stock": low, "out_of_stock": out, "total_value": round(val,2)}
@@ -2902,8 +2953,7 @@ def _build_detailed_report_pack(req):
     parts_used = []; total_cost = 0.0
     if wo:
         for wp in WorkOrderPart.query.filter_by(work_order_id=wo.id).all():
-            cat = wp.part.category if wp.part else "—"
-            unit = wp.part.unit if wp.part else "pcs"
+            cat = wp.part.category if wp.part else "—"; unit = wp.part.unit if wp.part else "pcs"
             lt = (wp.quantity or 0) * (wp.unit_cost or 0); total_cost += lt
             parts_used.append({"name": wp.part.part_name if wp.part else ("Part #" + str(wp.part_id)), "category": cat, "quantity": wp.quantity, "unit": unit, "unit_cost": wp.unit_cost or 0, "line_total": lt, "notes": wp.notes or ""})
     photos = []
@@ -2912,33 +2962,22 @@ def _build_detailed_report_pack(req):
         for p in objs: photos.append({"filename": p.filename, "type": p.photo_type, "created": p.created_at})
     except Exception: pass
     if wo and wo.completion_photo: photos.append({"filename": wo.completion_photo, "type": "Completion", "created": wo.completed_date})
-    return {
-        "req": req, "wo": wo, "history": hist,
-        "accepted_dt": accepted_dt, "assigned_dt": assigned_dt, "started_dt": started_dt,
-        "completed_dt": completed_dt, "verified_dt": verified_dt, "closed_dt": closed_dt,
-        "assigned_by": assigned_by, "verifier": verifier, "closer": closer,
-        "parts_used": parts_used, "total_cost": total_cost,
-        "technician": wo.assigned_to if wo and wo.assigned_to else req.assigned_to,
-        "labor_hours": (wo.labor_hours if wo else 0) or 0,
-        "work_performed": (wo.work_performed if wo else None),
-        "root_cause": (wo.root_cause if wo else None),
-        "recommendation": (wo.recommendation if wo else None),
-        "completion_notes": (wo.completion_notes if wo else req.completion_note),
-        "photos": photos,
-    }
+    return {"req": req, "wo": wo, "history": hist, "accepted_dt": accepted_dt, "assigned_dt": assigned_dt, "started_dt": started_dt,
+        "completed_dt": completed_dt, "verified_dt": verified_dt, "closed_dt": closed_dt, "assigned_by": assigned_by, "verifier": verifier, "closer": closer,
+        "parts_used": parts_used, "total_cost": total_cost, "technician": wo.assigned_to if wo and wo.assigned_to else req.assigned_to,
+        "labor_hours": (wo.labor_hours if wo else 0) or 0, "work_performed": (wo.work_performed if wo else None),
+        "root_cause": (wo.root_cause if wo else None), "recommendation": (wo.recommendation if wo else None),
+        "completion_notes": (wo.completion_notes if wo else req.completion_note), "photos": photos}
 
 def _render_detailed_report_block(p, seq=None):
     req = p["req"]; wo = p["wo"]
     def fmt(dt): return dt.strftime("%Y-%m-%d %H:%M") if dt else "—"
     def dt_date(dt): return dt.strftime("%Y-%m-%d") if dt else "—"
     def dt_time(dt): return dt.strftime("%H:%M") if dt else "—"
-    tech = p["technician"]
-    status_cls = "stamp-" + str(req.status or "Pending").replace(" ", "")
+    tech = p["technician"]; status_cls = "stamp-" + str(req.status or "Pending").replace(" ", "")
     loc_type = req.location_type or "—"
     if loc_type == "Room" and req.room:
-        loc_line = "Room " + str(req.room.room_number)
-        floor_line = "Floor " + str(req.floor) if req.floor else "—"
-        room_line = str(req.room.room_number)
+        loc_line = "Room " + str(req.room.room_number); floor_line = "Floor " + str(req.floor) if req.floor else "—"; room_line = str(req.room.room_number)
     elif loc_type == "Area" and req.area:
         loc_line = req.area.name; floor_line = req.floor if req.floor else "—"; room_line = "N/A (Area based)"
     else:
@@ -2983,19 +3022,16 @@ def _render_detailed_report_block(p, seq=None):
     + '<div class="row"><span class="lbl">Requester Name</span><span class="val">' + ((req.requested_by.full_name or req.requested_by.username) if req.requested_by else "—") + '</span></div>'
     + '<div class="row"><span class="lbl">Requester Role</span><span class="val">' + (req.requested_by.role if req.requested_by else "—") + '</span></div>'
     + '<div class="row"><span class="lbl">Priority</span><span class="val">' + str(req.priority or "MEDIUM") + '</span></div>'
-    + '<div class="row"><span class="lbl">Current Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div>'
-    + '</div></div>'
+    + '<div class="row"><span class="lbl">Current Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div></div></div>'
     + '<div class="report-section"><div class="report-section-title">2. Location Information</div><div class="report-kv">'
     + '<div class="row"><span class="lbl">Location Type</span><span class="val">' + str(loc_type) + '</span></div>'
     + '<div class="row"><span class="lbl">Floor</span><span class="val">' + str(floor_line) + '</span></div>'
     + '<div class="row"><span class="lbl">Room Number</span><span class="val">' + str(room_line) + '</span></div>'
     + '<div class="row"><span class="lbl">Area / Location</span><span class="val">' + str(req.area.name if req.area else "—") + '</span></div>'
-    + '<div class="row" style="grid-column:1/-1;"><span class="lbl">Full Location</span><span class="val">' + str(loc_line) + '</span></div>'
-    + '</div></div>'
+    + '<div class="row" style="grid-column:1/-1;"><span class="lbl">Full Location</span><span class="val">' + str(loc_line) + '</span></div></div></div>'
     + '<div class="report-section"><div class="report-section-title">3. Maintenance Problem</div><div class="report-kv">'
     + '<div class="row"><span class="lbl">Maintenance Item</span><span class="val">' + str(req.working_item.name if req.working_item else "—") + '</span></div>'
-    + '<div class="row"><span class="lbl">Category</span><span class="val">' + str(req.category.name if req.category else "—") + '</span></div>'
-    + '</div>'
+    + '<div class="row"><span class="lbl">Category</span><span class="val">' + str(req.category.name if req.category else "—") + '</span></div></div>'
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Problem / Fault Description (Full)</div>'
     + '<div class="report-longtext">' + (str(req.description) if req.description else "No description provided.") + '</div></div>'
     + ('<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Work Instructions / Notes</div>'
@@ -3008,15 +3044,13 @@ def _render_detailed_report_block(p, seq=None):
     + '<div class="row"><span class="lbl">Assignment Date</span><span class="val">' + dt_date(p["assigned_dt"]) + '</span></div>'
     + '<div class="row"><span class="lbl">Assignment Time</span><span class="val">' + dt_time(p["assigned_dt"]) + '</span></div>'
     + '<div class="row"><span class="lbl">Due Date</span><span class="val">' + dt_date(req.due_date) + '</span></div>'
-    + '<div class="row"><span class="lbl">Due Time</span><span class="val">' + dt_time(req.due_date) + '</span></div>'
-    + '</div></div>'
+    + '<div class="row"><span class="lbl">Due Time</span><span class="val">' + dt_time(req.due_date) + '</span></div></div></div>'
     + '<div class="report-section"><div class="report-section-title">5. Work Progress</div><div class="report-kv">'
     + '<div class="row"><span class="lbl">Work Accepted Date/Time</span><span class="val">' + fmt(p["accepted_dt"]) + '</span></div>'
     + '<div class="row"><span class="lbl">Work Started Date/Time</span><span class="val">' + fmt(p["started_dt"]) + '</span></div>'
     + '<div class="row"><span class="lbl">Work Completed Date/Time</span><span class="val">' + fmt(p["completed_dt"] or req.completed_date) + '</span></div>'
     + '<div class="row"><span class="lbl">Labor Hours</span><span class="val">' + str(p["labor_hours"]) + ' hrs</span></div>'
-    + '<div class="row"><span class="lbl">Final Work Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div>'
-    + '</div>'
+    + '<div class="row"><span class="lbl">Final Work Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div></div>'
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Work Performed / Action Taken</div>'
     + '<div class="report-longtext">' + (str(p["work_performed"]) if p["work_performed"] else "—") + '</div></div>'
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Completion Note</div>'
@@ -3024,8 +3058,7 @@ def _render_detailed_report_block(p, seq=None):
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Root Cause</div>'
     + '<div class="report-longtext">' + (str(p["root_cause"]) if p["root_cause"] else "—") + '</div></div>'
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Recommendation</div>'
-    + '<div class="report-longtext">' + (str(p["recommendation"]) if p["recommendation"] else "—") + '</div></div>'
-    + '</div>'
+    + '<div class="report-longtext">' + (str(p["recommendation"]) if p["recommendation"] else "—") + '</div></div></div>'
     + '<div class="report-section"><div class="report-section-title">6. Materials / Spare Parts Used</div>'
     + '<table class="report-table"><thead><tr><th>#</th><th>Item</th><th>Category</th><th>Qty</th><th>Unit</th><th>Unit Cost</th><th>Total</th><th>Notes</th></tr></thead><tbody>'
     + parts_rows + '</tbody></table></div>'
@@ -3033,17 +3066,14 @@ def _render_detailed_report_block(p, seq=None):
     + '<div class="row"><span class="lbl">Verified By</span><span class="val">' + ((p["verifier"].full_name or p["verifier"].username) if p["verifier"] else "—") + '</span></div>'
     + '<div class="row"><span class="lbl">Verification Date</span><span class="val">' + dt_date(p["verified_dt"] or (wo.verified_date if wo else None)) + '</span></div>'
     + '<div class="row"><span class="lbl">Verification Time</span><span class="val">' + dt_time(p["verified_dt"] or (wo.verified_date if wo else None)) + '</span></div>'
-    + '<div class="row"><span class="lbl">Verification Status</span><span class="val">' + ("✔ Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending Verification") + '</span></div>'
-    + '</div>'
+    + '<div class="row"><span class="lbl">Verification Status</span><span class="val">' + ("✔ Verified" if (req.status in ("Verified","Closed") or (wo and wo.verified_by_id)) else "Pending Verification") + '</span></div></div>'
     + '<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Verification Note</div>'
-    + '<div class="report-longtext">' + (str(p["completion_notes"]) if p["completion_notes"] else "—") + '</div></div>'
-    + '</div>'
+    + '<div class="report-longtext">' + (str(p["completion_notes"]) if p["completion_notes"] else "—") + '</div></div></div>'
     + '<div class="report-section"><div class="report-section-title">8. Closure</div><div class="report-kv">'
     + '<div class="row"><span class="lbl">Closed By</span><span class="val">' + ((p["closer"].full_name or p["closer"].username) if p["closer"] and req.status == "Closed" else "—") + '</span></div>'
     + '<div class="row"><span class="lbl">Closed Date</span><span class="val">' + dt_date(p["closed_dt"]) + '</span></div>'
     + '<div class="row"><span class="lbl">Closed Time</span><span class="val">' + dt_time(p["closed_dt"]) + '</span></div>'
-    + '<div class="row"><span class="lbl">Final Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div>'
-    + '</div>'
+    + '<div class="row"><span class="lbl">Final Status</span><span class="val"><span class="report-stamp ' + status_cls + '">' + str(req.status) + '</span></span></div></div>'
     + ('<div style="margin-top:.6rem;"><div class="lbl" style="font-size:.7rem;color:#666;text-transform:uppercase;font-weight:700;">Closure Note / Completion Note</div>'
        + '<div class="report-longtext">' + (str(req.completion_note) if req.completion_note else "—") + '</div></div>' if req.completion_note else "")
     + '</div>'
@@ -3053,21 +3083,18 @@ def _render_detailed_report_block(p, seq=None):
 def _detailed_report_header(title, filters, kpis):
     return ('<div class="report-head">'
         '<div style="text-align:center;margin-bottom:.65rem;">'
-        '<img src="/logo.png" alt="Rori Hotel" '
-        'style="max-height:90px;max-width:260px;width:auto;object-fit:contain;display:inline-block;">'
+        '<img src="/logo.png" alt="Rori Hotel" style="max-height:90px;max-width:260px;width:auto;object-fit:contain;display:inline-block;">'
         '</div>'
         '<div class="brand">RORI HOTEL</div>'
         '<div class="dept">Engineering &amp; Maintenance Department</div>'
-        '<div class="doctype">' + str(title) + '</div>'
-        '</div>'
+        '<div class="doctype">' + str(title) + '</div></div>'
         '<div class="report-meta">'
         '<div><b>Report Generated:</b> ' + datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC") + '</div>'
         '<div><b>Generated By:</b> ' + ((current_user.full_name or current_user.username) if current_user.is_authenticated else "—") + '</div>'
         '<div><b>Report Period From:</b> ' + (str(filters.get("date_from") or "All time")) + '</div>'
         '<div><b>Report Period To:</b> ' + (str(filters.get("date_to") or "All time")) + '</div>'
         '<div><b>Department Filter:</b> ' + (str(filters.get("department_name") or "All Departments")) + '</div>'
-        '<div><b>Status Filter:</b> ' + (str(filters.get("status") or "All")) + '</div>'
-        '</div>'
+        '<div><b>Status Filter:</b> ' + (str(filters.get("status") or "All")) + '</div></div>'
         '<div class="report-section"><div class="report-section-title">Report Summary</div>'
         '<div class="report-kv">'
         '<div class="row"><span class="lbl">Total Requests</span><span class="val">' + str(kpis["total"]) + '</span></div>'
@@ -3075,18 +3102,13 @@ def _detailed_report_header(title, filters, kpis):
         '<div class="row"><span class="lbl">In Progress</span><span class="val">' + str(kpis["in_progress"]) + '</span></div>'
         '<div class="row"><span class="lbl">Pending</span><span class="val">' + str(kpis["pending"]) + '</span></div>'
         '<div class="row"><span class="lbl">Verified</span><span class="val">' + str(kpis["verified"]) + '</span></div>'
-        '<div class="row"><span class="lbl">Closed</span><span class="val">' + str(kpis["closed"]) + '</span></div>'
-        '</div></div>')
+        '<div class="row"><span class="lbl">Closed</span><span class="val">' + str(kpis["closed"]) + '</span></div></div></div>')
 
 def _compute_report_kpis(reqs):
-    return {
-        "total": len(reqs),
-        "completed": sum(1 for r in reqs if r.status == "Completed"),
+    return {"total": len(reqs), "completed": sum(1 for r in reqs if r.status == "Completed"),
         "in_progress": sum(1 for r in reqs if r.status in ("Assigned","In Progress")),
         "pending": sum(1 for r in reqs if r.status in ("Pending","Approved")),
-        "verified": sum(1 for r in reqs if r.status == "Verified"),
-        "closed": sum(1 for r in reqs if r.status == "Closed"),
-    }
+        "verified": sum(1 for r in reqs if r.status == "Verified"), "closed": sum(1 for r in reqs if r.status == "Closed")}
 
 # ══════════════════════════════════════════ DETAILED REPORT ROUTES
 @app.route("/reports/detailed")
@@ -3125,11 +3147,11 @@ def detailed_report():
         '<div class="col-md-3"><label class="form-label">Location Type</label><select class="form-select" name="location_type">' + lt_opts + '</select></div>'
         '<div class="col-md-3"><button type="submit" class="btn-primary"><i class="fas fa-filter"></i> Apply Filters</button></div>'
         '<div class="col-md-6 d-flex gap-2 justify-content-end">'
-        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button>'
-        '<a href="' + url_for("detailed_report_export", **{k: v for k, v in args.items() if k != "department_name"}) + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download CSV</a>'
-        '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-undo"></i> Reset</a></div></form></div>')
+        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-print"></i> Print / Save as PDF</button>'
+        '<a href="' + url_for("detailed_report_export", **{k: v for k, v in args.items() if k != "department_name"}) + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-excel"></i> Download CSV</a>'
+        '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-undo"></i> Reset</a></div></form></div>')
     content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Maintenance Report</h1><p>Full workflow — all historical records from live database</p></div>'
-        '<div style="display:flex;gap:.6rem;"><a href="' + url_for("management_reports") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-chart-line"></i> Management Reports</a></div></div>'
+        '<div style="display:flex;gap:.6rem;"><a href="' + url_for("management_reports") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-chart-line"></i> Management Reports</a></div></div>'
         + filter_form + '<div class="report-doc">' + body + '</div>')
     return page("Detailed Report", content)
 
@@ -3178,9 +3200,9 @@ def detailed_report_single_wo(wo_id):
     body += _render_detailed_report_block(pack)
     body += '<div class="report-footer">Rori Hotel — Engineering &amp; Maintenance Department · Work Order Report · Generated on ' + datetime.utcnow().strftime("%Y-%m-%d %H:%M") + '<br>Developer: Edom Adinew</div>'
     content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Work Order Report</h1><p>' + str(wo.work_order_no) + ' · ' + str(req.request_no) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
-        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button>'
-        '<a href="' + url_for("detailed_report_single_wo_export", wo_id=wo.id) + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download CSV</a></div></div>'
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-arrow-left"></i> Back</a>'
+        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-print"></i> Print / Save as PDF</button>'
+        '<a href="' + url_for("detailed_report_single_wo_export", wo_id=wo.id) + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-excel"></i> Download CSV</a></div></div>'
         + '<div class="report-doc">' + body + '</div>')
     return page("WO Report", content)
 
@@ -3245,8 +3267,8 @@ def detailed_report_request(req_id):
     body += _render_detailed_report_block(pack)
     body += '<div class="report-footer">Rori Hotel — Engineering &amp; Maintenance Department · Request Report<br>Developer: Edom Adinew</div>'
     content = ('<div class="page-header no-print"><div class="page-title"><h1><i class="fas fa-file-alt"></i> <span>Detailed</span> Request Report</h1><p>' + str(req.request_no) + '</p></div>'
-        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("request_detail", req_id=req.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a>'
-        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / Save as PDF</button></div></div>'
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("request_detail", req_id=req.id) + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-arrow-left"></i> Back</a>'
+        '<button type="button" onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-print"></i> Print / Save as PDF</button></div></div>'
         '<div class="report-doc">' + body + '</div>')
     return page("Request Report", content)
 
@@ -3284,15 +3306,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-:root{
-  --app-bg:#0e0e0e;--app-bg-2:#080808;--card-bg:#1b1b1b;--card-bg-hover:#232323;
-  --gold:#C5A059;--gold-bright:#D4B06C;--gold-deep:#A8873F;
-  --text-primary:#f4f1ea;--text-secondary:#b4afa5;--text-muted:#7d7873;
-  --border:#2f2c26;--border-strong:rgba(197,160,89,0.28);
-  --success:#6fcf97;--warning:#ffd24a;--danger:#ff6b5e;--info:#4aa3ff;
-  --success-bg:rgba(111,207,151,0.12);--warn-bg:rgba(255,210,74,0.12);
-  --info-bg:rgba(74,163,255,0.12);--danger-bg:rgba(255,107,94,0.12);
-}
+:root{--app-bg:#0e0e0e;--app-bg-2:#080808;--card-bg:#1b1b1b;--card-bg-hover:#232323;--gold:#C5A059;--gold-bright:#D4B06C;--gold-deep:#A8873F;--text-primary:#f4f1ea;--text-secondary:#b4afa5;--text-muted:#7d7873;--border:#2f2c26;--border-strong:rgba(197,160,89,0.28);--success:#6fcf97;--warning:#ffd24a;--danger:#ff6b5e;--info:#4aa3ff;--success-bg:rgba(111,207,151,0.12);--warn-bg:rgba(255,210,74,0.12);--info-bg:rgba(74,163,255,0.12);--danger-bg:rgba(255,107,94,0.12);}
 body{font-family:'Figtree','Inter',system-ui,-apple-system,sans-serif;background:var(--app-bg);color:var(--text-primary);min-height:100vh;padding-top:64px;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:var(--gold);text-decoration:none}
 .navbar{background:rgba(14,14,14,0.94)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border);padding:.6rem 1.25rem;min-height:64px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
@@ -3567,12 +3581,12 @@ def management_reports():
             '<td>' + str(r.working_item.name if r.working_item else "—") + '</td>'
             '<td>' + str(tech) + '</td>'
             '<td><span class="badge badge-' + ({"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger"}.get(r.status,"secondary")) + '">' + str(r.status) + '</span></td>'
-            '<td style="white-space:nowrap;"><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.35rem .7rem;font-size:.75rem;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
+            '<td style="white-space:nowrap;"><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.35rem .7rem;font-size:.75rem;width:auto;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-chart-line"></i> <span>Management</span> Reports</h1><p>Detailed analytics and performance metrics</p></div>'
          '<div style="display:flex;gap:1rem;flex-wrap:wrap;" class="no-print">'
-         '<a href="' + url_for("detailed_report") + '" class="btn-primary"><i class="fas fa-file-alt"></i> Full Detailed Report</a>'
-         '<a href="' + url_for("management_reports_export", period=period, department=dept_filter) + '" class="btn-primary"><i class="fas fa-file-excel"></i> Download Summary CSV</a>'
-         '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-print"></i> Print / PDF</button></div></div>'
+         '<a href="' + url_for("detailed_report") + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-alt"></i> Full Detailed Report</a>'
+         '<a href="' + url_for("management_reports_export", period=period, department=dept_filter) + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-excel"></i> Download Summary CSV</a>'
+         '<button onclick="window.print()" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-print"></i> Print / PDF</button></div></div>'
          '<div class="card" style="margin-bottom:2rem;"><form method="get" class="row g-3 align-items-end">'
          '<div class="col-md-3"><label class="form-label">Period</label><select name="period" class="form-select"><option value="daily" ' + ('selected' if period=="daily" else '') + '>Daily</option><option value="weekly" ' + ('selected' if period=="weekly" else '') + '>Weekly</option><option value="monthly" ' + ('selected' if period=="monthly" else '') + '>Monthly</option><option value="custom" ' + ('selected' if period=="custom" else '') + '>Custom (Last 30 Days)</option></select></div>'
          '<div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">All Departments</option>' + "".join('<option value="' + d.name + '"' + (' selected' if dept_filter==d.name else '') + '>' + d.name + '</option>' for d in Department.query.all()) + '</select></div>'
@@ -3586,7 +3600,7 @@ def management_reports():
          '<div class="col-md-6"><div class="card"><h5>Staff Performance</h5><div class="table-responsive"><table class="table"><thead><tr><th>Staff</th><th>Assigned</th><th>Completed</th><th>Hours</th></tr></thead><tbody>' + "".join('<tr><td>' + k + '</td><td><span class="badge badge-info">' + str(v["assigned"]) + '</span></td><td><span class="badge badge-success">' + str(v["completed"]) + '</span></td><td>' + str(round(v["hours"],1)) + ' hrs</td></tr>' for k, v in sorted(staff_work.items(), key=lambda x: -x[1]["hours"])) + '</tbody></table></div></div></div></div>')
     if period == "weekly" and daily_breakdown:
         c += '<div class="card mt-4"><h5>Daily Breakdown (This Week)</h5><div class="table-responsive"><table class="table"><thead><tr><th>Day</th><th>Date</th><th>Total Requests</th><th>Completed</th></tr></thead><tbody>' + "".join('<tr><td>' + d["day"] + '</td><td>' + d["date"] + '</td><td>' + str(d["total"]) + '</td><td>' + str(d["completed"]) + '</td></tr>' for d in daily_breakdown) + '</tbody></table></div></div>'
-    c += ('<div class="card mt-4"><div class="d-flex justify-content-between align-items-center mb-3"><h5 style="margin:0;color:var(--rori-gold);"><i class="fas fa-list"></i> Detailed Recent Records</h5><a href="' + url_for("detailed_report") + '" class="btn-primary" style="padding:.55rem 1.2rem;font-size:.85rem;"><i class="fas fa-external-link-alt"></i> Open Full Detailed Report</a></div><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request / WO</th><th>Created</th><th>Department</th><th>Location</th><th>Item</th><th>Technician</th><th>Status</th><th>Report</th></tr></thead><tbody>' + ("".join(detail_rows) if detail_rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No records found.</td></tr>') + '</tbody></table></div></div>')
+    c += ('<div class="card mt-4"><div class="d-flex justify-content-between align-items-center mb-3"><h5 style="margin:0;color:var(--rori-gold);"><i class="fas fa-list"></i> Detailed Recent Records</h5><a href="' + url_for("detailed_report") + '" class="btn-primary" style="padding:.55rem 1.2rem;font-size:.85rem;width:auto;"><i class="fas fa-external-link-alt"></i> Open Full Detailed Report</a></div><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request / WO</th><th>Created</th><th>Department</th><th>Location</th><th>Item</th><th>Technician</th><th>Status</th><th>Report</th></tr></thead><tbody>' + ("".join(detail_rows) if detail_rows else '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No records found.</td></tr>') + '</tbody></table></div></div>')
     if total == 0: c += '<div class="alert alert-warning mt-4"><i class="fas fa-info-circle"></i> No maintenance records found for the selected period.</div>'
     return page("Management Reports", c)
 
@@ -3633,23 +3647,15 @@ def central_maintenance():
     counts = {s: base.filter_by(status=s).count() for s in REQUEST_STATUSES}
     total = base.count()
     staff = User.query.filter(User.role.in_(STAFF_ROLES), User.active == True).all()
-    tech_rows = []
-    for u in staff:
-        wos = WorkOrder.query.filter_by(assigned_to_id=u.id).all()
-        tech_rows.append({"user": u, "assigned": len(wos), "in_progress": sum(1 for w in wos if w.status == "In Progress"), "completed": sum(1 for w in wos if w.status in ("Completed","Verified","Closed")), "pending": sum(1 for w in wos if w.status in ("Pending","Assigned"))})
-    tech_rows.sort(key=lambda x: -x["assigned"])
     rooms_total = Room.query.count()
-    room_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
     room_open = (MaintenanceRequest.query.filter(MaintenanceRequest.room_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
     areas_total = Area.query.filter_by(is_active=True).count()
-    area_reqs = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).count())
     area_open = (MaintenanceRequest.query.filter(MaintenanceRequest.area_id.isnot(None), MaintenanceRequest.is_deleted == False).filter(MaintenanceRequest.status.in_(["Pending","Approved","Assigned","In Progress","Overdue"])).count())
     recent = base.order_by(MaintenanceRequest.created_at.desc()).limit(10).all()
     recent_rows = []
     for r in recent:
         bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
-        recent_rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + str(r.priority) + '</td><td>' + ((r.assigned_to.full_name or r.assigned_to.username) if r.assigned_to else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i></a></td></tr>')
-    tech_rows_html = "".join('<tr><td><strong>' + ((t["user"].full_name or t["user"].username)) + '</strong><br><small style="color:var(--text-secondary)">' + str(t["user"].role) + '</small></td><td><span class="rpro-chip gold">' + str(t["assigned"]) + '</span></td><td><span class="rpro-chip orange">' + str(t["pending"]) + '</span></td><td><span class="rpro-chip blue">' + str(t["in_progress"]) + '</span></td><td><span class="rpro-chip green">' + str(t["completed"]) + '</span></td></tr>' for t in tech_rows)
+        recent_rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);font-weight:600;text-decoration:none;">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.department.name if r.department else "—") + '</td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + str(r.priority) + '</td><td>' + ((r.assigned_to.full_name or r.assigned_to.username) if r.assigned_to else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i></a></td></tr>')
     def status_tile(label, value, color):
         return ('<div class="kpi-card" style="padding:1rem .75rem;text-align:center;"><div class="kpi-value" style="font-size:1.7rem;color:' + color + ';">' + str(value) + '</div><div class="kpi-label" style="font-size:.68rem;">' + label + '</div></div>')
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-fire-extinguisher"></i> <span>Central</span> Maintenance</h1><p>Unified view</p></div></div>'
@@ -3678,9 +3684,9 @@ def department_dashboard():
     def bd(st): return {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(st,"secondary")
     rows = []
     for r in reqs[:30]:
-        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i></a></td></tr>')
+        rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_request", req_id=r.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i></a></td></tr>')
     dept_name = current_user.department.name if current_user.department else "My Department"
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-building"></i> <span>' + str(dept_name) + '</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary" style="width:auto;"><i class="fas fa-plus"></i> New</a></div>'
          '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-clipboard-list"></i></div><div class="kpi-value">' + str(total) + '</div><div class="kpi-label">Total</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--warning);"><i class="fas fa-clock"></i></div><div class="kpi-value">' + str(pending) + '</div><div class="kpi-label">Pending</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--info);"><i class="fas fa-spinner"></i></div><div class="kpi-value">' + str(in_progress) + '</div><div class="kpi-label">In Progress</div></div><div class="kpi-card"><div class="kpi-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(completed) + '</div><div class="kpi-label">Done</div></div></div>'
          '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Item</th><th>Priority</th><th>Status</th><th>Date</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;">No requests yet.</td></tr>') + '</tbody></table></div></div>')
     return page("Department Dashboard", c)
@@ -3694,7 +3700,7 @@ def employee_dashboard():
     rows = []
     for r in reqs[:30]:
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.location_name) + '</td><td>' + str(r.priority) + '</td><td><span class="badge badge-' + bd(r.status) + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d") if r.created_at else "—") + '</td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-home"></i> <span>My</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary"><i class="fas fa-plus"></i> New</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-home"></i> <span>My</span> Dashboard</h1></div><a href="' + url_for("request_create") + '" class="btn-primary" style="width:auto;"><i class="fas fa-plus"></i> New</a></div>'
          '<div class="card"><h5 style="color:var(--rori-gold);margin-bottom:1rem;"><i class="fas fa-tasks"></i> My Requests</h5><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Request #</th><th>Location</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;">No requests yet</td></tr>') + '</tbody></table></div></div>')
     return page("Employee Dashboard", c)
 
@@ -3710,7 +3716,7 @@ def workorders_list():
     for wo in wos:
         assigned = (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
-        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
+        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
          '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;">No work orders</td></tr>') + '</tbody></table></div></div>')
     return page("Work Orders", c)
@@ -3741,7 +3747,7 @@ def workorder_create():
          '<div class="mb-3"><label class="form-label">Location</label><input class="form-control" value="' + str(req.location_name if req else "") + '" disabled></div>'
          '<div class="mb-3"><label class="form-label">Assign To *</label><select class="form-select" name="assigned_to_id" required><option value="">-- Select --</option>' + uo + '</select></div>'
          '<div class="mb-3"><label class="form-label">Instructions</label><textarea class="form-control" name="work_performed" rows="3"></textarea></div>'
-         '<button class="btn-primary"><i class="fas fa-save"></i> Assign</button></form></div>')
+         '<button class="btn-primary" style="width:auto;"><i class="fas fa-save"></i> Assign</button></form></div>')
     return page("Assign Work Order", c)
 
 @app.route("/workorders/<int:wo_id>")
@@ -3756,7 +3762,7 @@ def workorder_detail(wo_id):
         lt = (p.quantity or 0) * (p.unit_cost or 0); pt += lt
         rem = '<form method="post" action="' + url_for("workorder_part_remove", wo_id=wo.id, part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Remove?\')"><button type="submit" class="btn-icon" style="width:32px;height:32px;background:var(--danger);"><i class="fas fa-times"></i></button></form>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
         pr.append('<tr><td>' + str(pname) + '</td><td>' + str(psupp) + '</td><td>' + str(p.quantity) + '</td><td>' + str(pun) + '</td><td>' + str(p.unit_cost or 0) + '</td><td>' + str(lt) + '</td><td>' + str(p.notes or "") + '</td><td>' + rem + '</td></tr>')
-    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
+    apb = '<a class="btn-primary" href="' + url_for("workorder_part_add", wo_id=wo.id) + '" style="padding:0.5rem 1rem;font-size:0.85rem;width:auto;"><i class="fas fa-plus"></i> Add Part</a>' if can_parts_flag and wo.status in ["Assigned","In Progress"] else ""
     parts_card = ('<div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-boxes"></i> Parts &amp; Materials Used</div>' + apb + '</div>'
                   '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Part</th><th>Supplier</th><th>Qty</th><th>Unit</th><th>Cost</th><th>Total</th><th>Notes</th><th></th></tr></thead><tbody>' + ("".join(pr) if pr else '<tr><td colspan="8" style="text-align:center;">No parts</td></tr>') + '</tbody></table></div><p style="text-align:right;margin-top:1rem;font-weight:700;color:var(--rori-gold);">Total: ' + str(pt) + '</p></div>')
     ch = '<div style="margin-top:1rem;"><h6 style="color:var(--rori-gold);">Completion Photo:</h6><a href="/static/uploads/maintenance/' + str(wo.completion_photo) + '" target="_blank"><img src="/static/uploads/maintenance/' + str(wo.completion_photo) + '" style="max-width:100%;max-height:250px;border-radius:12px;border:1px solid var(--border-color);"></a></div>' if wo.completion_photo else ""
@@ -3767,8 +3773,8 @@ def workorder_detail(wo_id):
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
         actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;"><i class="fas fa-check-double"></i> Verify</button></form>'
     c = ('<div class="page-header"><div class="page-title"><h1>Work Order <span>' + str(wo.work_order_no) + '</span></h1></div>'
-        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary"><i class="fas fa-file-alt"></i> Report</a>'
-        '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);"><i class="fas fa-arrow-left"></i> Back</a></div></div>'
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-alt"></i> Report</a>'
+        '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-arrow-left"></i> Back</a></div></div>'
         '<div class="row"><div class="col-md-8"><div class="card"><table class="table"><tr><th>Request</th><td>' + str(wo.request.request_no if wo.request else "—") + '</td></tr><tr><th>Location</th><td>' + str(wo.request.location_name if wo.request else "—") + '</td></tr><tr><th>Item</th><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td></tr><tr><th>Status</th><td>' + str(wo.status) + '</td></tr><tr><th>Assigned</th><td>' + str(wo.assigned_to.full_name if wo.assigned_to else "Unassigned") + '</td></tr><tr><th>Instructions</th><td>' + str(wo.work_performed or "—") + '</td></tr><tr><th>Completion</th><td>' + str(wo.completion_notes or "—") + '</td></tr><tr><th>Root Cause</th><td>' + str(wo.root_cause or "—") + '</td></tr><tr><th>Recommendation</th><td>' + str(wo.recommendation or "—") + '</td></tr></table>' + ch + '</div>' + parts_card + '</div><div class="col-md-4"><div class="card"><h5 style="color:var(--rori-gold);">Actions</h5>' + actions + '</div></div></div>')
     return page("Work Order Detail", c)
 
@@ -3855,7 +3861,7 @@ def supplier_form(s, action, edit):
             '<div class="col-md-6 mb-3"><label class="form-label">Tax Number</label><input type="text" class="form-control" name="tax_number" value="' + v("tax_number") + '"></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + a1 + '>Active</option><option value="Inactive"' + a2 + '>Inactive</option></select></div>'
             '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="3">' + v("notes") + '</textarea></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("suppliers_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;">Cancel</a><button type="submit" class="btn-primary" style="width:auto;"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/suppliers")
 @role_required("ADMIN","MANAGER")
@@ -3863,10 +3869,10 @@ def suppliers_list():
     ss = Supplier.query.order_by(Supplier.company_name).all(); rows = []
     for s in ss:
         act = supplier_active(s); bg = '<span class="badge badge-success">Active</span>' if act else '<span class="badge badge-secondary">Inactive</span>'
-        ac = '<a class="btn-primary" href="' + url_for("supplier_edit", supplier_id=s.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Edit</a> '
-        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:0.4rem 0.8rem;font-size:0.8rem;">Ban</button></form>'
+        ac = '<a class="btn-primary" href="' + url_for("supplier_edit", supplier_id=s.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;width:auto;">Edit</a> '
+        if act: ac += '<form method="post" action="' + url_for("supplier_deactivate", supplier_id=s.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:0.4rem 0.8rem;font-size:0.8rem;width:auto;">Ban</button></form>'
         rows.append('<tr><td>' + str(s.id) + '</td><td>' + str(s.company_name) + '</td><td>' + str(s.contact_person or "—") + '</td><td>' + str(s.phone or "—") + '</td><td>' + str(s.email or "—") + '</td><td>' + bg + '</td><td>' + ac + '</td></tr>')
-    c = ('<div class="page-header"><div class="page-title"><h1>Suppliers</h1></div><a class="btn-primary" href="' + url_for("supplier_add") + '">Add</a></div>'
+    c = ('<div class="page-header"><div class="page-title"><h1>Suppliers</h1></div><a class="btn-primary" href="' + url_for("supplier_add") + '" style="width:auto;">Add</a></div>'
          '<div class="card"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="7" style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
     return page("Suppliers", c)
 
@@ -3933,7 +3939,7 @@ def part_form(p, action):
             '<div class="col-md-6 mb-3"><label class="form-label">Supplier</label><select class="form-select" name="supplier_id">' + so + '</select></div>'
             '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="2">' + v("description") + '</textarea></div>'
             '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (p and (p.status or "Active")=="Active") or not p else '') + '>Active</option><option value="Inactive"' + (' selected' if p and (p.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
-            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);">Cancel</a><button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
+            '<div class="col-12 d-flex gap-2"><a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;">Cancel</a><button type="submit" class="btn-primary" style="width:auto;"><i class="fas fa-save"></i> Save</button></div></div></form></div>')
 
 @app.route("/inventory")
 @role_required("ADMIN","MANAGER","SUPERVISOR","TECHNICIAN","MAINTENANCE STAFF")
@@ -3953,18 +3959,18 @@ def inventory_list():
         else: bg, label = 'badge-success', 'OK'
         sn = p.supplier.company_name if p.supplier else "—"; inactive = (p.is_active is False)
         st_badge = '<span class="badge badge-secondary">Inactive</span>' if inactive else '<span class="badge badge-success">Active</span>'
-        actions = ('<a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:.35rem .6rem;font-size:.75rem;">Edit</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_history", part_id=p.id) + '" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.35rem .6rem;font-size:.75rem;">Hist</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_stock_in", part_id=p.id) + '" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;">In</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_stock_out", part_id=p.id) + '" style="background:var(--warning);padding:.35rem .6rem;font-size:.75rem;">Out</a> '
-                   '<a class="btn-primary" href="' + url_for("inventory_adjust", part_id=p.id) + '" style="background:var(--info);padding:.35rem .6rem;font-size:.75rem;">Adj</a> ')
-        if inactive: actions += '<form method="post" action="' + url_for("inventory_activate", part_id=p.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;">On</button></form>'
-        else: actions += '<form method="post" action="' + url_for("inventory_deactivate", part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--danger);padding:.35rem .6rem;font-size:.75rem;">Off</button></form>'
+        actions = ('<a class="btn-primary" href="' + url_for("inventory_edit", part_id=p.id) + '" style="padding:.35rem .6rem;font-size:.75rem;width:auto;">Edit</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_history", part_id=p.id) + '" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.35rem .6rem;font-size:.75rem;width:auto;">Hist</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_in", part_id=p.id) + '" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;width:auto;">In</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_stock_out", part_id=p.id) + '" style="background:var(--warning);padding:.35rem .6rem;font-size:.75rem;width:auto;">Out</a> '
+                   '<a class="btn-primary" href="' + url_for("inventory_adjust", part_id=p.id) + '" style="background:var(--info);padding:.35rem .6rem;font-size:.75rem;width:auto;">Adj</a> ')
+        if inactive: actions += '<form method="post" action="' + url_for("inventory_activate", part_id=p.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .6rem;font-size:.75rem;width:auto;">On</button></form>'
+        else: actions += '<form method="post" action="' + url_for("inventory_deactivate", part_id=p.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\')"><button type="submit" class="btn-primary" style="background:var(--danger);padding:.35rem .6rem;font-size:.75rem;width:auto;">Off</button></form>'
         rows.append('<tr><td>' + str(p.part_name) + '</td><td>' + str(p.category or "—") + '</td><td>' + str(sn) + '</td><td><strong>' + str(p.quantity) + '</strong></td><td>' + str(p.minimum_stock) + '</td><td>' + str(p.unit or "pcs") + '</td><td>' + str(p.storage_location or "—") + '</td><td><span class="badge ' + bg + '">' + label + '</span></td><td>' + st_badge + '</td><td style="white-space:nowrap;">' + actions + '</td></tr>')
     total_items = InventoryPart.query.count(); active_items = InventoryPart.query.filter((InventoryPart.is_active == True) | (InventoryPart.is_active == None)).count()
     low_items = len([p for p in InventoryPart.query.all() if 0 < (p.quantity or 0) <= (p.minimum_stock or 0)]); out_items = len([p for p in InventoryPart.query.all() if (p.quantity or 0) <= 0])
     cat_opts = '<option value="">All Categories</option>' + "".join('<option value="' + c + '"' + (' selected' if cat_f == c else '') + '>' + c + '</option>' for c in INVENTORY_CATEGORIES)
-    content = ('<div class="page-header"><div class="page-title"><h1>Engineering / Maintenance Inventory</h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '">Add Item</a></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Engineering / Maintenance Inventory</h1></div><a class="btn-primary" href="' + url_for("inventory_add") + '" style="width:auto;">Add Item</a></div>'
         '<div class="kpi-grid"><div class="kpi-card"><div class="kpi-icon"><i class="fas fa-boxes"></i></div><div class="kpi-value">' + str(total_items) + '</div><div class="kpi-label">Total</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--success)"><i class="fas fa-check-circle"></i></div><div class="kpi-value">' + str(active_items) + '</div><div class="kpi-label">Active</div></div>'
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--warning)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(low_items) + '</div><div class="kpi-label">Low</div></div>'
@@ -3974,8 +3980,8 @@ def inventory_list():
         '<select class="form-select" name="status"><option value="">All Status</option><option value="Active"' + (' selected' if status_f=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if status_f=="Inactive" else '') + '>Inactive</option></select>'
         '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="low" value="1"' + (' checked' if low_f else '') + '> Low only</label>'
         '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
-        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;"><i class="fas fa-search"></i> Filter</button>'
-        '<a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;">Reset</a></form>'
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;width:auto;"><i class="fas fa-search"></i> Filter</button>'
+        '<a href="' + url_for("inventory_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;width:auto;">Reset</a></form>'
         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Item</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Min</th><th>Unit</th><th>Location</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="10" style="text-align:center;padding:2rem;">No items.</td></tr>') + '</tbody></table></div></div>')
     return page("Engineering Inventory", content)
 
@@ -4044,12 +4050,12 @@ def inventory_stock_in(part_id):
             db.session.commit(); flash("✅ Stock added","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     c = ('<div class="page-header"><div class="page-title"><h1>Stock In — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-4 mb-3"><label class="form-label">Qty to Add *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
         '<div class="col-md-4 mb-3"><label class="form-label">Unit Cost (optional)</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost" value="' + str(p.unit_cost or "") + '"></div>'
         '<div class="col-md-4 mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes"></div>'
-        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--success);">Add Stock</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--success);width:auto;">Add Stock</button></div></div></form></div>')
     return page("Stock In", c)
 
 @app.route("/inventory/<int:part_id>/stock-out", methods=["GET","POST"])
@@ -4067,11 +4073,11 @@ def inventory_stock_out(part_id):
             db.session.commit(); flash("✅ Stock removed","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     c = ('<div class="page-header"><div class="page-title"><h1>Stock Out — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-4 mb-3"><label class="form-label">Qty to Remove *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required autofocus></div>'
         '<div class="col-md-8 mb-3"><label class="form-label">Notes / Reason</label><input type="text" class="form-control" name="notes"></div>'
-        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--warning);">Remove Stock</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--warning);width:auto;">Remove Stock</button></div></div></form></div>')
     return page("Stock Out", c)
 
 @app.route("/inventory/<int:part_id>/adjust", methods=["GET","POST"])
@@ -4089,11 +4095,11 @@ def inventory_adjust(part_id):
             db.session.commit(); flash("✅ Adjusted","success"); return redirect(url_for("inventory_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     c = ('<div class="page-header"><div class="page-title"><h1>Adjust Stock — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-4 mb-3"><label class="form-label">New Quantity *</label><input type="number" step="0.01" min="0" class="form-control" name="new_quantity" value="' + str(p.quantity or 0) + '" required autofocus></div>'
         '<div class="col-md-8 mb-3"><label class="form-label">Reason</label><input type="text" class="form-control" name="notes"></div>'
-        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--info);">Save</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary" style="background:var(--info);width:auto;">Save</button></div></div></form></div>')
     return page("Adjust Stock", c)
 
 @app.route("/inventory/<int:part_id>/history")
@@ -4110,7 +4116,7 @@ def inventory_history(part_id):
             '<td>' + str(h.quantity) + '</td><td>' + str(h.previous_qty) + '</td><td>' + str(h.new_qty) + '</td><td>' + str(h.unit or "") + '</td>'
             '<td>' + str((h.user.full_name or h.user.username) if h.user else "System") + '</td><td>' + str(h.notes or "") + '</td></tr>')
     content = ('<div class="page-header"><div class="page-title"><h1>Stock History — ' + str(p.part_name) + '</h1><p>Current: <strong style="color:var(--rori-gold)">' + str(p.quantity) + ' ' + str(p.unit or "pcs") + '</strong></p></div>'
-        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("inventory_list") + '">Back</a></div>'
+        '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("inventory_list") + '">Back</a></div>'
         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Date</th><th>Action</th><th>Qty</th><th>Prev</th><th>New</th><th>Unit</th><th>By</th><th>Notes</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;padding:2rem;">No history.</td></tr>') + '</tbody></table></div></div>')
     return page("Stock History", content)
 
@@ -4146,13 +4152,13 @@ def workorder_part_add(wo_id):
         for p in by_cat[cat]: po += '<option value="' + str(p.id) + '">' + str(p.part_name) + ' (stock: ' + str(p.quantity) + ' ' + str(p.unit or "pcs") + ')</option>'
         po += '</optgroup>'
     c = ('<div class="page-header"><div class="page-title"><h1>Add Part — WO ' + str(wo.work_order_no) + '</h1></div>'
-         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("workorder_detail", wo_id=wo.id) + '">Back</a></div>'
+         '<a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("workorder_detail", wo_id=wo.id) + '">Back</a></div>'
          '<div class="card"><form method="post"><div class="row">'
          '<div class="col-md-6 mb-3"><label class="form-label">Item *</label><select class="form-select" name="part_id" required>' + po + '</select></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Quantity *</label><input type="number" step="0.01" min="0.01" class="form-control" name="quantity" required></div>'
          '<div class="col-md-3 mb-3"><label class="form-label">Unit Cost</label><input type="number" step="0.01" min="0" class="form-control" name="unit_cost"></div>'
          '<div class="col-12 mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2"></textarea></div>'
-         '<div class="col-12"><button type="submit" class="btn-primary">Add &amp; Deduct</button></div></div></form></div>')
+         '<div class="col-12"><button type="submit" class="btn-primary" style="width:auto;">Add &amp; Deduct</button></div></div></form></div>')
     return page("Add Part", c)
 
 @app.route("/workorders/<int:wo_id>/parts/<int:part_id>/remove", methods=["POST"])
@@ -4187,7 +4193,7 @@ def notifications():
     ns = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(100).all(); rows = []
     for n in ns:
         cls = "" if n.is_read else "table-warning"; link = n.link or "#"
-        ra = '<span style="color:var(--success);">✓</span>' if n.is_read else '<a class="btn-primary" href="/notifications/mark-read/' + str(n.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Read</a>'
+        ra = '<span style="color:var(--success);">✓</span>' if n.is_read else '<a class="btn-primary" href="/notifications/mark-read/' + str(n.id) + '" style="padding:0.4rem 0.8rem;font-size:0.8rem;width:auto;">Read</a>'
         rows.append('<tr class="' + cls + '"><td><a href="' + link + '" style="color:var(--rori-gold);font-weight:600;">' + str(n.title) + '</a></td><td>' + str(n.message) + '</td><td>' + str(n.notification_type) + '</td><td>' + (n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "") + '</td><td>' + ra + '</td></tr>')
     c = ('<div class="page-header"><div class="page-title"><h1>Notifications</h1></div></div>'
          '<div class="card"><table class="table"><thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Date</th><th>Action</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="5" style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
@@ -4279,15 +4285,15 @@ def areas_list():
             + '<div class="area-stat-grid"><div class="area-stat"><div class="area-stat-val">' + str(s["total"]) + '</div><div class="area-stat-lbl">Total</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--warning)">' + str(s["open"]) + '</div><div class="area-stat-lbl">Open</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--info)">' + str(s["in_progress"]) + '</div><div class="area-stat-lbl">In Prog</div></div><div class="area-stat"><div class="area-stat-val" style="color:var(--success)">' + str(s["completed"]) + '</div><div class="area-stat-lbl">Done</div></div></div>'
             + '<div class="area-status-row" style="color:' + st_color + '"><i class="fas fa-circle" style="font-size:.55rem"></i> <span>' + st_label + '</span></div>'
             + '<div class="area-last-row"><i class="fas fa-clock"></i> Last: ' + last_str + '</div>'
-            + '<div class="area-card-actions"><a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;" href="' + url_for("area_detail", area_id=a.id) + '">View</a>'
-            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;" href="' + url_for("area_edit", area_id=a.id) + '">Edit</a>'
-            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;">Off</button></form>' if is_active else '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;">On</button></form>')
+            + '<div class="area-card-actions"><a class="btn-primary" style="padding:.5rem 1rem;font-size:.82rem;flex:1;justify-content:center;width:auto;" href="' + url_for("area_detail", area_id=a.id) + '">View</a>'
+            + '<a class="btn-primary" style="background:var(--bg-secondary);border:1px solid var(--border-color);padding:.5rem .85rem;font-size:.82rem;width:auto;" href="' + url_for("area_edit", area_id=a.id) + '">Edit</a>'
+            + ('<form method="post" action="' + url_for("area_deactivate", area_id=a.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate?\');"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.5rem .85rem;font-size:.82rem;width:auto;">Off</button></form>' if is_active else '<form method="post" action="' + url_for("area_activate", area_id=a.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.5rem .85rem;font-size:.82rem;width:auto;">On</button></form>')
             + '</div></div>')
     cards_html = "".join(cards) if cards else '<div class="empty-state"><i class="fas fa-map-marked-alt"></i><p>No areas match.</p></div>'
     dept_options = '<option value="">All Departments</option>' + "".join('<option value="' + d + '"' + (' selected' if dept_filter == d else '') + '>' + d + '</option>' for d in dept_set)
     def _sel(m): return ' selected' if mode == m else ''
     filter_options = ('<option value="all"' + _sel("all") + '>All Areas</option><option value="active"' + _sel("active") + '>Has Active</option><option value="no_active"' + _sel("no_active") + '>No Active</option><option value="in_progress"' + _sel("in_progress") + '>In Progress</option><option value="completed"' + _sel("completed") + '>All Completed</option>')
-    content = ('<div class="page-header"><div class="page-title"><h1>Areas &amp; Maintenance</h1></div><div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("area_add") + '" class="btn-primary">Add Area</a></div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Areas &amp; Maintenance</h1></div><div style="display:flex;gap:.6rem;flex-wrap:wrap;"><a href="' + url_for("area_add") + '" class="btn-primary" style="width:auto;">Add Area</a></div></div>'
         '<div class="kpi-mini"><div class="kpi-mini-card"><div class="kpi-mini-label">Total Areas</div><div class="kpi-mini-value">' + str(total_areas) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">With Active</div><div class="kpi-mini-value" style="color:var(--warning)">' + str(areas_with_active) + '</div></div>'
         + '<div class="kpi-mini-card"><div class="kpi-mini-label">Without Active</div><div class="kpi-mini-value" style="color:var(--success)">' + str(areas_without_active) + '</div></div>'
@@ -4296,8 +4302,8 @@ def areas_list():
         + '<form method="get" class="area-toolbar"><input type="text" class="form-control" name="q" placeholder="Search..." value="' + str(q) + '">'
         + '<select class="form-select" name="filter">' + filter_options + '</select><select class="form-select" name="dept">' + dept_options + '</select>'
         + '<label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;"><input type="checkbox" name="show_inactive" value="1"' + (' checked' if show_inactive else '') + '> Show inactive</label>'
-        + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;">Apply</button>'
-        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;">Reset</a></form>'
+        + '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;width:auto;">Apply</button>'
+        + '<a href="' + url_for("areas_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);padding:.7rem 1.4rem;text-decoration:none;width:auto;">Reset</a></form>'
         + '<div class="area-grid">' + cards_html + '</div>')
     return page("Areas", content)
 
@@ -4315,12 +4321,12 @@ def area_add():
             flash("✅ Area added","success"); return redirect(url_for("areas_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d.name + '">' + d.name + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1>Add Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '">Back</a></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Add Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("areas_list") + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Area Name *</label><input type="text" class="form-control" name="name" required autofocus></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + dept_opts + '</select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3"></textarea></div>'
-        '<div class="col-12"><button type="submit" class="btn-primary">Save Area</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary" style="width:auto;">Save Area</button></div></div></form></div>')
     return page("Add Area", content)
 
 @app.route("/areas/<int:area_id>")
@@ -4342,7 +4348,7 @@ def area_detail(area_id):
     for r in reqs:
         bc = {"Pending":"warning","Approved":"primary","Assigned":"info","In Progress":"info","Completed":"success","Verified":"success","Closed":"secondary","Rejected":"danger","Overdue":"danger"}.get(r.status, "secondary")
         rows.append('<tr><td><a href="' + url_for("request_detail", req_id=r.id) + '" style="color:var(--rori-gold);">' + str(r.request_no) + '</a></td><td>' + str(r.working_item.name if r.working_item else "—") + '</td><td>' + str(r.requested_by.full_name if r.requested_by else "—") + '</td><td>' + str(r.assigned_to.full_name if r.assigned_to else "Unassigned") + '</td><td><span class="badge badge-' + bc + '">' + str(r.status) + '</span></td><td>' + (r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—") + '</td></tr>')
-    content = ('<div class="page-header"><div class="page-title"><h1>' + str(a.name) + '</h1><p>' + str(dept_label) + '</p></div><div style="display:flex;gap:.6rem;"><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("areas_list") + '">Back</a><a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '">Edit</a></div></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>' + str(a.name) + '</h1><p>' + str(dept_label) + '</p></div><div style="display:flex;gap:.6rem;"><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("areas_list") + '">Back</a><a class="btn-primary" href="' + url_for("area_edit", area_id=a.id) + '" style="width:auto;">Edit</a></div></div>'
         + '<div class="card" style="border-left:3px solid ' + st_color + ';"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:1rem;"><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Status</div><div style="font-size:1.15rem;font-weight:800;color:' + st_color + ';">● ' + st_label + '</div></div><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Dept</div><div style="font-size:1.15rem;font-weight:800;color:var(--rori-gold);">' + str(dept_label) + '</div></div><div><div style="font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;">Staff</div><div style="font-size:1.15rem;font-weight:800;">' + (", ".join(sorted(staff_set)) if staff_set else "—") + '</div></div></div></div>'
         + '<div class="card"><h5 style="color:var(--rori-gold);">Recent Requests</h5><table class="table"><thead><tr><th>Request #</th><th>Item</th><th>Requested</th><th>Assigned</th><th>Status</th><th>Created</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="6" style="text-align:center;">No requests.</td></tr>') + '</tbody></table></div>')
     return page("Area: " + str(a.name), content)
@@ -4364,13 +4370,13 @@ def area_edit(area_id):
     depts = [d.name for d in Department.query.order_by(Department.name).all()]; current = (a.department or "").strip()
     if current and current not in depts and current.lower() != "unknown": depts = [current] + depts
     opts = '<option value="">Not Assigned</option>' + "".join('<option value="' + d + '"' + (' selected' if d == current else '') + '>' + d + '</option>' for d in depts)
-    content = ('<div class="page-header"><div class="page-title"><h1>Edit Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);" href="' + url_for("area_detail", area_id=a.id) + '">Back</a></div>'
+    content = ('<div class="page-header"><div class="page-title"><h1>Edit Area</h1></div><a class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;" href="' + url_for("area_detail", area_id=a.id) + '">Back</a></div>'
         '<div class="card"><form method="post"><div class="row">'
         '<div class="col-md-6 mb-3"><label class="form-label">Name *</label><input type="text" class="form-control" name="name" value="' + str(a.name) + '" required></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Department</label><select class="form-select" name="department">' + opts + '</select></div>'
         '<div class="col-md-6 mb-3"><label class="form-label">Status</label><select class="form-select" name="status"><option value="Active"' + (' selected' if (a.status or "Active")=="Active" else '') + '>Active</option><option value="Inactive"' + (' selected' if (a.status or "")=="Inactive" else '') + '>Inactive</option></select></div>'
         '<div class="col-12 mb-3"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="3">' + str(a.description or "") + '</textarea></div>'
-        '<div class="col-12"><button type="submit" class="btn-primary">Save</button></div></div></form></div>')
+        '<div class="col-12"><button type="submit" class="btn-primary" style="width:auto;">Save</button></div></div></form></div>')
     return page("Edit Area", content)
 
 @app.route("/areas/<int:area_id>/deactivate", methods=["POST"])
@@ -4432,7 +4438,7 @@ def rooms_list():
         '<div class="kpi-card"><div class="kpi-icon" style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-value">' + str(open_reqs) + '</div><div class="kpi-label">Open</div></div></div>'
         '<form method="get" class="rpro-toolbar"><input type="text" class="form-control" name="q" placeholder="Room #..." value="' + q + '">'
         '<select class="form-select" name="floor">' + floor_opts + '</select><select class="form-select" name="status">' + status_opts + '</select>'
-        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;">Filter</button></form>'
+        '<button type="submit" class="btn-primary" style="padding:.7rem 1.4rem;width:auto;">Filter</button></form>'
         + ('<div class="rpro-room-grid">' + "".join(cards) + '</div>' if cards else '<div class="rpro-card" style="text-align:center;padding:3rem;">No rooms match.</div>'))
     return page("Rooms", content)
 
@@ -4464,7 +4470,7 @@ def backup_page():
     bs = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.endswith(".db")], reverse=True)
     rows = "".join('<tr><td>' + str(b) + '</td></tr>' for b in bs)
     c = ('<div class="page-header"><div class="page-title"><h1>Backups</h1></div></div>'
-         '<form method="post" action="/admin/backup/now" style="margin-bottom:1.5rem;"><button class="btn-primary">Backup Now</button></form>'
+         '<form method="post" action="/admin/backup/now" style="margin-bottom:1.5rem;"><button class="btn-primary" style="width:auto;">Backup Now</button></form>'
          '<div class="card"><table class="table"><thead><tr><th>File</th></tr></thead><tbody>' + (rows if rows else '<tr><td style="text-align:center;">None</td></tr>') + '</tbody></table></div>')
     return page("Backups", c)
 
@@ -4496,7 +4502,6 @@ def reports():
 
 @app.route("/debug")
 def debug():
-    la = Area.query.filter_by(name=LAUNDRY_AREA_NAME).first()
     hk = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
     return jsonify({
         "database_backend": db.engine.dialect.name,
@@ -4514,6 +4519,9 @@ def debug():
         "work_order_parts_total": WorkOrderPart.query.count(),
         "notifications": Notification.query.count(),
         "messages": Message.query.count(),
+        "messages_with_attachment": Message.query.filter(Message.attachment.isnot(None)).count(),
+        "messages_voice": Message.query.filter_by(attachment_type="voice").count(),
+        "messages_image": Message.query.filter_by(attachment_type="image").count(),
         "rooms_total": Room.query.count(),
         "areas_total": Area.query.count(),
         "working_items_total": WorkingItem.query.count(),
@@ -4521,6 +4529,7 @@ def debug():
         "inventory_stock_history": InventoryStockHistory.query.count(),
         "marketing_manager_exists": bool(User.query.filter_by(username="yordanose").first()),
         "hotel_areas_configured": len(HOTEL_AREAS),
+        "finance_items_configured": len(NEW_ITEMS_BY_DEPT.get("Finance", [])),
         "note": "Read-only diagnostics. No data was modified.",
     })
 
@@ -4568,13 +4577,13 @@ with app.app_context():
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
     print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
-    print("✅ Profile Photo upload added to /profile (all users — upload/change/remove, 5 MB max, JPG/PNG/WEBP only)")
-    print("✅ Internal user-to-user messaging available at /messages")
-    print("✅ Messenger-style chat thread at /messages/thread/<user_id>")
-    print("✅ Active/online status via request-driven last_seen (no background processes)")
-    print("✅ Reports (WO/Request/Detailed) now show the Rori logo at the top")
-    print("✅ Finance department: 70+ maintenance items added")
-    print("✅ 3D depth effects active (shadows, tilt, press, float) — disabled on mobile for performance")
+    print("✅ Profile Photo upload added to /profile (all users)")
+    print("✅ Telegram-style messaging: /messages (card inbox) + /messages/thread/<user_id>")
+    print("✅ Voice messages (MediaRecorder) + Image attachments supported")
+    print("✅ Active/online status via request-driven last_seen")
+    print("✅ Reports show the Rori logo at the top")
+    print("✅ Finance department: 70+ maintenance items")
+    print("✅ 3D depth effects (shadows, tilt, press, float) — disabled on mobile")
     print("="*60)
 
 if __name__ == "__main__":
