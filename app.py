@@ -1,15 +1,17 @@
 # app.py - Rori Hotel Maintenance Management System
 # Developer: Edom Adinew
 #
-# LAYOUT FIXES APPLIED (this version):
-# - Compact left sidebar: 260px on desktop.
-# - Main content: width = calc(100% - 260px); fills all remaining space.
-# - Sidebar becomes a slide-in drawer on screens <= 1024px.
-# - Hamburger (☰) button visible on tablet/mobile.
-# - Mobile main content: 100% width, no horizontal page scroll.
-# - JS: sidebar open/close, orientation change, body scroll lock, auto-close on nav.
-# - Dashboard container now full-width.
-# - All routes, models, data, and features preserved.
+# FINAL VERSION — includes:
+#  ✅ Layout: compact 260px sidebar, drawer on mobile, hamburger toggle
+#  ✅ Profile photo persistence: base64 stored in users.profile_pic_data (DB)
+#  ✅ Compact message composer [📎][input][🎤][➤]
+#  ✅ Work order delete (ADMIN-only)
+#  ✅ log_audit() duplicate new_value fix in request_delete()
+#  ✅ /workorders status filter (completed / active / exact statuses)
+#  ✅ Profile photo black shadow replaced with soft gold glow
+#  ✅ Profile photo card gets a subtle gold radial gradient
+#  ✅ .user-avatar dark inset removed (subtle visual only)
+#  ⛔ .card:hover globally UNCHANGED
 import csv, io, json, os, re, base64, sqlite3, uuid, traceback, calendar, shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -960,7 +962,7 @@ a:hover{color:var(--gold-bright)}
 .notif-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#0e0e0e;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;min-width:18px;text-align:center;line-height:1.3;box-shadow:0 2px 8px rgba(255,107,94,.5)}
 .user-profile{display:flex;align-items:center;gap:.65rem;padding:.3rem .5rem .3rem .3rem;border-radius:12px;text-decoration:none;transition:all .22s cubic-bezier(.4,0,.2,1);border:1px solid transparent}
 .user-profile:hover{background:rgba(255,255,255,0.04);border-color:var(--border);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
-.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--gold);color:#16120a;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;box-shadow:0 3px 10px rgba(197,160,89,.35), inset 0 -2px 4px rgba(0,0,0,.18), inset 0 2px 4px rgba(255,255,255,.18)}
+.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--gold);color:#16120a;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;box-shadow:0 3px 10px rgba(197,160,89,.35), inset 0 2px 4px rgba(255,255,255,.20)}
 .user-avatar img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
 .user-info{display:flex;flex-direction:column;line-height:1.15}
 .user-name{font-weight:600;font-size:.82rem;color:var(--text-primary)}
@@ -1812,18 +1814,18 @@ def profile():
     has_photo = u.has_profile_photo()
     if has_photo:
         avatar_src = get_profile_photo_url(u)
-        avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3);display:block;">')
+        avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:3px solid var(--gold);box-shadow:0 4px 14px rgba(197,160,89,.28), 0 0 0 6px rgba(197,160,89,.10);display:block;background:rgba(197,160,89,.06);">')
         primary_label = "Change Photo"; primary_icon = "fa-camera"
     else:
         letter = ((u.full_name or u.username or "U")[:1]).upper()
-        avatar_html = ('<div style="width:150px;height:150px;border-radius:50%;background:var(--rori-gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:4.25rem;font-weight:700;border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3), inset 0 -4px 8px rgba(0,0,0,.2), inset 0 4px 8px rgba(255,255,255,.2);">' + letter + '</div>')
+        avatar_html = ('<div style="width:150px;height:150px;border-radius:50%;background:var(--gold);color:#16120a;display:flex;align-items:center;justify-content:center;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:4.25rem;font-weight:700;border:3px solid var(--gold);box-shadow:0 4px 14px rgba(197,160,89,.28), 0 0 0 6px rgba(197,160,89,.10), inset 0 2px 4px rgba(255,255,255,.22);">' + letter + '</div>')
         primary_label = "Upload Photo"; primary_icon = "fa-upload"
     remove_btn_html = ""
     if has_photo:
         remove_btn_html = ('<form method="post" style="display:inline;margin:0;"><input type="hidden" name="action" value="remove_photo">'
             '<button type="submit" class="btn-primary profile-photo-btn" style="background:var(--danger-bg);border:1.5px solid rgba(255,107,94,0.5);color:var(--danger);" '
             'onclick="return confirm(\'Remove your profile photo? This cannot be undone.\');"><i class="fas fa-trash"></i> Remove Photo</button></form>')
-    photo_section = ('<div class="card" style="text-align:center;">'
+    photo_section = ('<div class="card" style="text-align:center;background:radial-gradient(ellipse 320px 200px at 50% 0%, rgba(197,160,89,0.06) 0%, var(--card-bg) 62%);">'
         '<div class="card-title" style="justify-content:center;margin-bottom:1.25rem;font-size:1.25rem;"><i class="fas fa-camera"></i> Profile Photo</div>'
         '<div style="display:flex;justify-content:center;margin-bottom:1.25rem;">' + avatar_html + '</div>'
         '<form method="post" enctype="multipart/form-data" style="display:inline;margin:0;"><input type="hidden" name="action" value="upload_photo">'
@@ -2653,7 +2655,8 @@ def request_delete(req_id):
         if req.is_deleted: flash("Already archived","warning"); return redirect(url_for("request_detail", req_id=req_id))
         req.is_deleted = True; req.deleted_at = datetime.utcnow(); req.deleted_by_id = current_user.id
         req.deletion_reason = request.form.get("reason","Archived by manager")
-        log_audit("Archive","MaintenanceRequest",req.id,"active","archived",new_value=req.deletion_reason)
+        log_audit("Archive", "MaintenanceRequest", req.id,
+                  old_value="active", new_value=req.deletion_reason)
         db.session.commit(); flash("✅ Request archived successfully (soft-delete only — no data destroyed)","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("requests_list"))
@@ -3605,9 +3608,32 @@ def employee_dashboard():
 def workorders_list():
     if current_user.role == "DEPARTMENT": return redirect(url_for("department_dashboard"))
     if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
-    if current_user.role in STAFF_ROLES: wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id, WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
-    else: wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
+
+    # ── Status filter (existing statuses only, no new ones invented) ──
+    status_filter = (request.args.get("status") or "").strip()
+    COMPLETED_SET  = ("Completed", "Verified", "Closed")
+    ACTIVE_SET     = ("Pending", "Assigned", "In Progress")
+    KNOWN_STATUSES = ("Pending", "Assigned", "In Progress", "Completed",
+                      "Verified", "Closed", "Rejected", "Overdue")
+
+    if current_user.role in STAFF_ROLES:
+        base_q = WorkOrder.query.filter(
+            db.or_(WorkOrder.assigned_to_id == current_user.id,
+                   WorkOrder.assigned_to_id.is_(None))
+        )
+    else:
+        base_q = WorkOrder.query
+
+    if status_filter == "completed":
+        base_q = base_q.filter(WorkOrder.status.in_(COMPLETED_SET))
+    elif status_filter == "active":
+        base_q = base_q.filter(WorkOrder.status.in_(ACTIVE_SET))
+    elif status_filter in KNOWN_STATUSES:
+        base_q = base_q.filter(WorkOrder.status == status_filter)
+
+    wos = base_q.order_by(WorkOrder.created_at.desc()).all()
     is_admin = (current_user.role == "ADMIN")
+
     rows = []
     for wo in wos:
         assigned = (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned"
@@ -3619,9 +3645,46 @@ def workorders_list():
                         '<button type="submit" class="btn-icon" style="width:30px;height:30px;background:var(--danger-bg);color:var(--danger);border:1px solid rgba(255,107,94,.35);" title="Delete work order" aria-label="Delete work order"><i class="fas fa-trash"></i></button></form>')
         rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td style="white-space:nowrap;"><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i> Detail</a> ' + del_cell + '</td></tr>')
     header_extra = '<th></th>' if is_admin else ''
-    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th>' + header_extra + '</tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;">No work orders</td></tr>') + '</tbody></table></div></div>')
-    return page("Work Orders", c)
+
+    def _chip(label, value, active):
+        url = url_for("workorders_list") if not value else url_for("workorders_list", status=value)
+        base = ('display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;'
+                'border-radius:10px;font-weight:700;font-size:.82rem;text-decoration:none;'
+                'border:1.5px solid ')
+        if active:
+            style = base + 'var(--gold);background:var(--gold);color:#16120a;'
+        else:
+            style = base + 'var(--border-color);background:var(--bg-card);color:var(--text-primary);'
+        return ('<a href="' + url + '" style="' + style + 'width:auto;">' + label + '</a>')
+
+    filter_bar = (
+        '<div class="rpro-toolbar" style="gap:.5rem;flex-wrap:wrap;">'
+        + _chip('<i class="fas fa-list"></i> All',              "",            status_filter == "")
+        + _chip('<i class="fas fa-spinner"></i> Active',        "active",      status_filter == "active")
+        + _chip('<i class="fas fa-check-circle"></i> Completed', "completed",  status_filter == "completed")
+        + _chip('<i class="fas fa-clock"></i> Pending',         "Pending",     status_filter == "Pending")
+        + _chip('<i class="fas fa-play"></i> In Progress',      "In Progress", status_filter == "In Progress")
+        + _chip('<i class="fas fa-times-circle"></i> Rejected', "Rejected",    status_filter == "Rejected")
+        + '</div>'
+    )
+
+    page_title_map = {
+        "completed": "Completed Work Orders",
+        "active":    "Active Work Orders",
+    }
+    title_label = page_title_map.get(status_filter, "Work Orders")
+
+    col_count = 9 if is_admin else 8
+    c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>'
+         + title_label + '</span></h1></div></div>'
+         + filter_bar
+         + '<div class="card"><div style="overflow-x:auto;"><table class="table">'
+         + '<thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th>'
+         + '<th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th>'
+         + header_extra + '</tr></thead><tbody>'
+         + ("".join(rows) if rows else '<tr><td colspan="' + str(col_count) + '" style="text-align:center;color:var(--text-secondary);">No work orders match this filter.</td></tr>')
+         + '</tbody></table></div></div>')
+    return page(title_label, c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
 @role_required("MANAGER","ADMIN")
@@ -4507,18 +4570,11 @@ with app.app_context():
     seed_data()
     fix_room_structure()
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
-    print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
-    print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
-    print("✅ LAYOUT: compact 260px sidebar; content fills remaining width on desktop")
-    print("✅ LAYOUT: sidebar slides in as drawer on screens ≤1024px (hamburger toggle)")
-    print("✅ LAYOUT: main content 100% width on mobile — no horizontal scroll")
-    print("✅ PROFILE PHOTO PERSISTENCE: photos stored as base64 in users.profile_pic_data")
-    print("✅ Serving route: /profile/photo/<user_id> (DB → disk fallback → default avatar)")
-    print("✅ Telegram-style messaging: /messages (card inbox) + /messages/thread/<user_id>")
-    print("✅ Voice messages (MediaRecorder) + Image attachments supported")
-    print("✅ Compact message composer [📎][input][🎤][➤] with safe-area padding")
-    print("✅ Work order delete (ADMIN-only) — deletes only the selected WO + its parts")
-    print("✅ Finance department: 70+ maintenance items")
+    print("✅ log_audit() duplicate new_value fixed in request_delete()")
+    print("✅ /workorders status filter added (completed / active / exact)")
+    print("✅ Profile photo shadow + card gradient + user-avatar inset fixed")
+    print("✅ .card:hover globally UNCHANGED")
+    print("✅ No destructive DB operations introduced")
     print("="*60)
 
 if __name__ == "__main__":
