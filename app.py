@@ -1,16 +1,15 @@
 # app.py - Rori Hotel Maintenance Management System
 # Developer: Edom Adinew
 #
-# PROFILE PHOTO PERSISTENCE FIX (this version):
-# - Added `profile_pic_data` TEXT column on users (base64 PNG/JPEG/WEBP data URI).
-# - Profile photo bytes are now stored in the database so they survive
-#   page refresh, login/logout, server restart, and Render redeploy.
-# - New route `/profile/photo/<user_id>` serves the photo from DB first,
-#   falls back to disk file (for legacy uploads), then to a default avatar.
-# - Header, dashboard, thread avatars now use this route so the photo is
-#   always loaded from the database, never from ephemeral disk.
-# - All other features, routes, models, users, requests, work orders,
-#   reports, signatures, and photos are preserved unchanged.
+# LAYOUT FIXES APPLIED (this version):
+# - Compact left sidebar: 260px on desktop.
+# - Main content: width = calc(100% - 260px); fills all remaining space.
+# - Sidebar becomes a slide-in drawer on screens <= 1024px.
+# - Hamburger (☰) button visible on tablet/mobile.
+# - Mobile main content: 100% width, no horizontal page scroll.
+# - JS: sidebar open/close, orientation change, body scroll lock, auto-close on nav.
+# - Dashboard container now full-width.
+# - All routes, models, data, and features preserved.
 import csv, io, json, os, re, base64, sqlite3, uuid, traceback, calendar, shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -75,7 +74,6 @@ STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
 PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
-# MIME -> extension map for safe storage of base64 photo data.
 PROFILE_PHOTO_MIME_TO_EXT = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}
 
 MESSAGE_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
@@ -252,9 +250,6 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120))
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     profile_pic = db.Column(db.String(255), nullable=True)
-    # NEW: base64 data URI of the uploaded photo, persisted in the DB so it
-    # survives server restarts and Render redeploys. `profile_pic` (filename)
-    # is retained for backward compatibility with existing uploads.
     profile_pic_data = db.Column(db.Text, nullable=True)
     active = db.Column(db.Boolean, default=True)
     last_seen = db.Column(db.DateTime, nullable=True)
@@ -622,9 +617,6 @@ def is_manager(user):
     return user.role in ["MANAGER", "ADMIN"]
 
 def get_profile_photo_url(user):
-    """Return the URL that serves a user's profile photo.
-       The route falls back through DB data -> disk file -> default avatar,
-       so this always returns a valid URL (never None)."""
     if not user: return url_for("default_avatar")
     return url_for("serve_profile_photo", user_id=getattr(user, "id", 0))
 
@@ -779,7 +771,6 @@ def ensure_database_schema():
             ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("users","profile_pic","ALTER TABLE users ADD COLUMN profile_pic VARCHAR(255)")
-            # NEW persistent profile-photo column (base64 data URI).
             add_column_if_missing("users","profile_pic_data","ALTER TABLE users ADD COLUMN profile_pic_data TEXT")
             add_column_if_missing("users","last_seen","ALTER TABLE users ADD COLUMN last_seen " + dt)
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
@@ -917,8 +908,6 @@ def page(title, content):
         _display_name = current_user.full_name or current_user.username or "User"
         _avatar_letter = _display_name[0].upper() if _display_name else "U"
         _display_role = current_user.role or ""
-        # FIX: always use the persistent photo route so the avatar reflects the
-        # DB-stored photo across refresh/login/logout/redeploy.
         if current_user.has_profile_photo():
             _avatar_inner = '<img src="' + get_profile_photo_url(current_user) + '" alt="Profile Photo" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + _avatar_letter.replace("'", "") + '\';">'
         else:
@@ -952,7 +941,7 @@ def page(title, content):
   --info-bg:rgba(74,163,255,0.12);--danger-bg:rgba(255,107,94,0.12);
   --purple-bg:rgba(167,139,250,0.12);--purple-fg:#A78BFA;
   --radius:16px;--radius-sm:12px;--radius-xs:10px;
-  --header-h:64px;--sidebar-w:264px;
+  --header-h:64px;--sidebar-w:260px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%}
@@ -980,11 +969,13 @@ a:hover{color:var(--gold-bright)}
 @media(min-width:1200px){.sound-control{display:flex}}
 .btn-icon{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .22s cubic-bezier(.4,0,.2,1);font-size:.85rem}
 .btn-icon:hover{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft);transform:translateY(-1px)}
-.menu-toggle{display:none;background:transparent;border:1px solid var(--border);color:var(--text-primary);width:42px;height:42px;border-radius:12px;cursor:pointer;font-size:1.05rem;align-items:center;justify-content:center;transition:all .2s}
+.menu-toggle{display:none;background:transparent;border:1px solid var(--border);color:var(--text-primary);width:42px;height:42px;border-radius:12px;cursor:pointer;font-size:1.05rem;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
 .menu-toggle:hover{border-color:var(--gold-line);color:var(--gold)}
+@media(max-width:1024px){.menu-toggle{display:inline-flex}}
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:998;opacity:0;pointer-events:none;transition:opacity .22s ease}
 .sidebar-overlay.active{opacity:1;pointer-events:auto}
-.sidebar{position:fixed;left:0;top:var(--header-h);bottom:0;width:var(--sidebar-w);background:#0a0a0a;border-right:1px solid rgba(197,160,89,0.35);padding:1rem 0 2rem;overflow-y:auto;z-index:999;transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:4px 0 20px rgba(0,0,0,.5)}
+.sidebar{position:fixed;left:0;top:var(--header-h);bottom:0;width:var(--sidebar-w);max-width:82vw;background:#0a0a0a;border-right:1px solid rgba(197,160,89,0.35);padding:1rem 0 2rem;overflow-y:auto;overflow-x:hidden;z-index:999;transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:4px 0 20px rgba(0,0,0,.5);transform:translateX(0);will-change:transform}
+.sidebar.active{transform:translateX(0)}
 .sidebar-nav{list-style:none}
 .sidebar-nav li{margin:0}
 .sidebar-nav .nav-link{display:flex;align-items:center;gap:.75rem;padding:.72rem .9rem;margin:.12rem .55rem;color:var(--text-secondary);font-size:.9rem;font-weight:500;border-radius:10px;transition:all .22s cubic-bezier(.4,0,.2,1);line-height:1.2;min-height:44px;border:1px solid transparent}
@@ -993,7 +984,18 @@ a:hover{color:var(--gold-bright)}
 .sidebar-nav .nav-link:hover i{color:var(--gold)}
 .sidebar-nav .nav-link.active{background:rgba(197,160,89,0.14);color:var(--gold);border-color:rgba(197,160,89,0.28);font-weight:600;box-shadow:inset 0 0 0 1px rgba(197,160,89,.1), 0 4px 12px rgba(197,160,89,.15)}
 .sidebar-nav .nav-link.active i{color:var(--gold)}
-.main-content{margin-left:var(--sidebar-w);padding:1.75rem 1.75rem 4rem;min-height:calc(100vh - var(--header-h));animation:fadeIn .28s ease}
+.main-content{margin-left:var(--sidebar-w);width:calc(100% - var(--sidebar-w));max-width:none;padding:1.75rem 1.75rem 4rem;min-height:calc(100vh - var(--header-h));animation:fadeIn .28s ease;box-sizing:border-box;overflow-x:hidden;display:block}
+.main-content > *{max-width:100%}
+.main-content > .card,
+.main-content > .rpro-card,
+.main-content > .kpi-grid,
+.main-content > .kpi-mini,
+.main-content > .page-header,
+.main-content > .rpro-toolbar,
+.main-content > .area-toolbar,
+.main-content > .rpro-room-grid,
+.main-content > .area-grid,
+.main-content > .row{width:100%;box-sizing:border-box}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .page-header{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1.75rem;flex-wrap:wrap}
 .page-title h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;font-weight:700;letter-spacing:.02em;color:var(--gold);margin-bottom:.25rem;line-height:1.2;text-shadow:0 2px 12px rgba(197,160,89,.18)}
@@ -1251,10 +1253,15 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .attach-menu button:hover{background:var(--gold-soft)}
 .attach-menu button i{color:var(--gold);width:20px;text-align:center}
 @media(max-width:1024px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.active{transform:translateX(0)}
+  .main-content{margin-left:0 !important;width:100% !important;max-width:100% !important;padding:1.25rem 1.25rem 3rem}
   .card:hover,.kpi-card:hover,.kpi-mini-card:hover,.rpro-card:hover,.area-card:hover,.rpro-room-card:hover,.btn-primary:hover{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35) !important}
   .form-control:focus,.form-select:focus{transform:none}
   .sidebar-nav .nav-link:hover,.header-icon:hover,.user-profile:hover{transform:none}
   .tg-row:hover,.tg-row:active{transform:none}
+  body{overflow-x:hidden}
+  .table-responsive,.rpro-toolbar,.area-toolbar{max-width:100%}
 }
 @media(max-width:768px){
   body{font-size:14px}
@@ -1306,7 +1313,7 @@ input[type="checkbox"]{accent-color:var(--gold)}
 @media print{
   .header,.sidebar,.sidebar-overlay,.no-print,.rori-footer,.menu-toggle{display:none!important}
   body{background:#fff!important;color:#000!important;padding-top:0!important}
-  .main-content{margin-left:0!important;padding:0!important}
+  .main-content{margin-left:0!important;padding:0!important;width:100%!important}
   .card,.report-doc{box-shadow:none!important;border:1px solid #ccc!important;background:#fff!important;color:#000!important;padding:1rem!important}
   .report-section{page-break-inside:avoid}
   .report-head .brand,.report-head .dept,.report-head .doctype{color:#000!important}
@@ -1418,10 +1425,44 @@ input[type="checkbox"]{accent-color:var(--gold)}
 <div id="roriAlertBanner"><div class="ra-title"></div><div class="ra-body"></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-function toggleSidebar(){var s=document.getElementById('sidebar');var o=document.getElementById('sidebarOverlay');var open=s.classList.toggle('active');o.classList.toggle('active',open);document.body.style.overflow=open?'hidden':'';}
-function closeSidebar(){var s=document.getElementById('sidebar');var o=document.getElementById('sidebarOverlay');if(!s||!o)return;s.classList.remove('active');o.classList.remove('active');document.body.style.overflow='';}
+function toggleSidebar(){
+  var s=document.getElementById('sidebar');
+  var o=document.getElementById('sidebarOverlay');
+  if(!s||!o)return;
+  var open=s.classList.toggle('active');
+  o.classList.toggle('active',open);
+  document.body.style.overflow=open?'hidden':'';
+}
+function closeSidebar(){
+  var s=document.getElementById('sidebar');
+  var o=document.getElementById('sidebarOverlay');
+  if(!s||!o)return;
+  s.classList.remove('active');
+  o.classList.remove('active');
+  document.body.style.overflow='';
+}
 window.addEventListener('resize',function(){if(window.innerWidth>1024)closeSidebar();});
-(function(){var path=window.location.pathname;document.querySelectorAll('.sidebar-nav .nav-link').forEach(function(a){try{var u=new URL(a.href).pathname;if(u!=='/'&&path.indexOf(u)===0)a.classList.add('active');}catch(e){}});})();
+window.addEventListener('orientationchange',function(){setTimeout(closeSidebar,120);});
+(function(){
+  var body=document.body;
+  var sb=document.getElementById('sidebar');
+  if(!sb)return;
+  var obs=new MutationObserver(function(){
+    var open=sb.classList.contains('active');
+    body.style.overflow=open?'hidden':'';
+  });
+  obs.observe(sb,{attributes:true,attributeFilter:['class']});
+  sb.querySelectorAll('.nav-link').forEach(function(a){
+    a.addEventListener('click',function(){if(window.innerWidth<=1024)closeSidebar();});
+  });
+})();
+(function(){
+  var path=window.location.pathname;
+  document.querySelectorAll('.sidebar-nav .nav-link').forEach(function(a){
+    try{var u=new URL(a.href).pathname;if(u!=='/'&&path.indexOf(u)===0)a.classList.add('active');}
+    catch(e){}
+  });
+})();
 let roriAudioCtx=null;
 let roriSoundEnabled=localStorage.getItem('rori_sound_enabled')==='true';
 let roriAlertedRequests=JSON.parse(sessionStorage.getItem('rori_alerted_requests')||'[]');
@@ -1608,20 +1649,11 @@ def fix_room_structure():
     print(f"✅ Room structure enforced: {Room.query.count()} rooms (expected 100) — historical requests preserved")
     return Room.query.count()
 
-# ══════════════════════════════════════════ PROFILE PHOTO SERVING (persistent)
+# ══════════════════════════════════════════ PROFILE PHOTO SERVING
 @app.route("/profile/photo/<int:user_id>")
 def serve_profile_photo(user_id):
-    """Serve the user's profile photo. Priority:
-       1. Base64 data stored in `users.profile_pic_data` (persistent, DB-backed).
-       2. Legacy filename on disk under `static/profile_pics/` (survives until redeploy).
-       3. Default avatar.
-       This route is intentionally NOT gated to logged-in users so that avatars
-       render in emails/notifications/printouts where the session may not be active.
-       No sensitive filesystem paths are exposed."""
     u = db.session.get(User, user_id)
-    if not u:
-        return redirect(url_for("default_avatar"))
-    # 1. DB-stored photo (works across restarts and redeploys)
+    if not u: return redirect(url_for("default_avatar"))
     data_uri = (u.profile_pic_data or "").strip()
     if data_uri.startswith("data:image/") and ";base64," in data_uri:
         try:
@@ -1632,24 +1664,18 @@ def serve_profile_photo(user_id):
             resp.headers["Content-Type"] = mime or "image/jpeg"
             resp.headers["Cache-Control"] = "private, max-age=300"
             return resp
-        except Exception:
-            pass
-    # 2. Legacy disk file
+        except Exception: pass
     fname = (u.profile_pic or "").strip()
     if fname:
         safe = os.path.basename(fname)
         path = os.path.join(PROFILE_PIC_FOLDER, safe)
         if safe and os.path.isfile(path):
-            try:
-                return send_file(path, max_age=300)
-            except Exception:
-                pass
-    # 3. Default
+            try: return send_file(path, max_age=300)
+            except Exception: pass
     return redirect(url_for("default_avatar"))
 
 @app.route("/profile/photo/default")
 def default_avatar():
-    """Tiny inline SVG avatar used when the user has no photo (or file missing)."""
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">'
            '<rect width="120" height="120" fill="#C5A059"/>'
            '<circle cx="60" cy="46" r="24" fill="#16120a" opacity="0.85"/>'
@@ -1679,8 +1705,6 @@ def login():
             login_user(u)
             log_audit("Login","User",u.id)
             db.session.commit()
-            # NOTE: profile_pic / profile_pic_data are NOT touched here —
-            # the saved photo is loaded fresh from the DB on every request.
             return redirect(url_for("index"))
         flash("Incorrect username or password","danger")
     lh = """<div class="login-container">
@@ -1705,14 +1729,13 @@ def login():
 def logout():
     log_audit("Logout","User",current_user.id); db.session.commit(); logout_user(); return redirect(url_for("login"))
 
-# ══════════════════════════════════════════ PROFILE (FIXED: persistent photo)
+# ══════════════════════════════════════════ PROFILE
 @app.route("/profile", methods=["GET","POST"])
 @login_required
 def profile():
     u = current_user
     if request.method == "POST":
         action = (request.form.get("action") or "update_info").strip()
-        # ── Upload new profile photo: store both on disk AND in the DB ──
         if action == "upload_photo":
             f = request.files.get("profile_photo")
             if not f or not f.filename:
@@ -1730,17 +1753,13 @@ def profile():
                 flash("Uploaded file is empty.", "danger"); return redirect(url_for("profile"))
             if size > PROFILE_PHOTO_MAX_BYTES:
                 flash("File too large. Maximum size is 5 MB.", "danger"); return redirect(url_for("profile"))
-            # Verify real image bytes (not just the extension)
             if not _is_valid_image_file(f):
                 flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger"); return redirect(url_for("profile"))
-            # Read bytes for DB storage
             try:
                 f.seek(0); raw_bytes = f.read(); f.seek(0)
-            except Exception:
-                raw_bytes = b""
+            except Exception: raw_bytes = b""
             if not raw_bytes:
                 flash("Could not read the uploaded file.", "danger"); return redirect(url_for("profile"))
-            # Map extension to a canonical image/* MIME for the data URI
             ext_to_mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
             mime = ext_to_mime.get(ext, "image/jpeg")
             try:
@@ -1748,11 +1767,9 @@ def profile():
                 data_uri = "data:" + mime + ";base64," + b64
             except Exception:
                 flash("Could not encode the photo.", "danger"); return redirect(url_for("profile"))
-            # Safe unique filename on disk (legacy path — kept for compatibility)
             safe_name = secure_filename("user_" + str(u.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "." + ext)
             if not safe_name:
                 flash("Could not generate a safe filename.", "danger"); return redirect(url_for("profile"))
-            # Remove previous disk file if any (best-effort)
             old = (u.profile_pic or "").strip()
             if old:
                 old_safe = os.path.basename(old); old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
@@ -1763,17 +1780,13 @@ def profile():
                 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
                 with open(os.path.join(PROFILE_PIC_FOLDER, safe_name), "wb") as fh: fh.write(raw_bytes)
             except Exception as ex:
-                # Disk write failure is not fatal — the DB copy is authoritative.
                 print("Disk write warn: " + str(ex))
-            # Persist BOTH the DB data (authoritative, survives redeploy)
-            # and the filename (for backward compatibility).
             u.profile_pic_data = data_uri
             u.profile_pic = safe_name
             log_audit("Profile Photo Uploaded", "User", u.id, new_value=safe_name)
             db.session.commit()
             flash("✅ Profile photo updated successfully", "success")
             return redirect(url_for("profile"))
-        # ── Remove photo: clear BOTH DB data and disk file ──
         if action == "remove_photo":
             had = u.has_profile_photo()
             old = (u.profile_pic or "").strip()
@@ -1790,14 +1803,12 @@ def profile():
             else:
                 db.session.commit(); flash("No profile photo to remove.", "info")
             return redirect(url_for("profile"))
-        # ── Update basic info ──
         u.email = request.form.get("email","").strip()
         u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
 
-    # GET: render profile page using persistent photo URL
     has_photo = u.has_profile_photo()
     if has_photo:
         avatar_src = get_profile_photo_url(u)
@@ -1834,7 +1845,7 @@ def profile():
          '<button class="btn-primary"><i class="fas fa-save"></i> Save</button></form></div>')
     return page("Profile", c)
 
-# ══════════════════════════════════════════ MESSAGING — Telegram-style
+# ══════════════════════════════════════════ MESSAGING
 @app.route("/messages")
 @login_required
 def messages_inbox():
@@ -3219,7 +3230,7 @@ a{color:var(--gold);text-decoration:none}
 .nav-link i{color:var(--text-muted);margin-right:5px}
 .nav-link:hover{background:rgba(197,160,89,0.12);color:var(--gold)!important}
 .nav-link:hover i{color:var(--gold)}
-.container{max-width:1400px;padding:1.5rem}
+.container{max-width:none;width:100%;padding:1.5rem 1.75rem;margin:0 auto}
 .card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;color:var(--text-primary);padding:1.25rem 1.35rem;margin-bottom:1.25rem;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 .card h5{font-family:'Cormorant Garamond',Georgia,serif;color:var(--gold);font-weight:700;font-size:1.25rem}
 .metric-card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:1.1rem 1rem;text-align:center;height:100%;position:relative;overflow:hidden}
@@ -4498,15 +4509,15 @@ with app.app_context():
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
     print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
+    print("✅ LAYOUT: compact 260px sidebar; content fills remaining width on desktop")
+    print("✅ LAYOUT: sidebar slides in as drawer on screens ≤1024px (hamburger toggle)")
+    print("✅ LAYOUT: main content 100% width on mobile — no horizontal scroll")
     print("✅ PROFILE PHOTO PERSISTENCE: photos stored as base64 in users.profile_pic_data")
-    print("   → survives refresh, login/logout, server restart and Render redeploy")
     print("✅ Serving route: /profile/photo/<user_id> (DB → disk fallback → default avatar)")
     print("✅ Telegram-style messaging: /messages (card inbox) + /messages/thread/<user_id>")
     print("✅ Voice messages (MediaRecorder) + Image attachments supported")
     print("✅ Compact message composer [📎][input][🎤][➤] with safe-area padding")
-    print("✅ Active/online status via request-driven last_seen")
     print("✅ Work order delete (ADMIN-only) — deletes only the selected WO + its parts")
-    print("✅ Reports show the Rori logo at the top")
     print("✅ Finance department: 70+ maintenance items")
     print("="*60)
 
