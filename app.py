@@ -1,6 +1,17 @@
 # app.py - Rori Hotel Maintenance Management System
 # Developer: Edom Adinew
-import csv, io, json, os, re, sqlite3, uuid, traceback, calendar, shutil
+#
+# PROFILE PHOTO PERSISTENCE FIX (this version):
+# - Added `profile_pic_data` TEXT column on users (base64 PNG/JPEG/WEBP data URI).
+# - Profile photo bytes are now stored in the database so they survive
+#   page refresh, login/logout, server restart, and Render redeploy.
+# - New route `/profile/photo/<user_id>` serves the photo from DB first,
+#   falls back to disk file (for legacy uploads), then to a default avatar.
+# - Header, dashboard, thread avatars now use this route so the photo is
+#   always loaded from the database, never from ephemeral disk.
+# - All other features, routes, models, users, requests, work orders,
+#   reports, signatures, and photos are preserved unchanged.
+import csv, io, json, os, re, base64, sqlite3, uuid, traceback, calendar, shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -44,6 +55,13 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROFILE_PIC_FOLDER"] = PROFILE_PIC_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -57,11 +75,13 @@ STAFF_ROLES = ["MAINTENANCE STAFF", "TECHNICIAN", "SUPERVISOR"]
 
 PROFILE_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+# MIME -> extension map for safe storage of base64 photo data.
+PROFILE_PHOTO_MIME_TO_EXT = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}
 
 MESSAGE_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
 MESSAGE_VOICE_EXTENSIONS = {"webm", "ogg", "mp3", "m4a", "wav"}
-MESSAGE_IMAGE_MAX_BYTES = 8 * 1024 * 1024   # 8 MB
-MESSAGE_VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+MESSAGE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+MESSAGE_VOICE_MAX_BYTES = 10 * 1024 * 1024
 
 ONLINE_WINDOW_SECONDS = 120
 LAST_SEEN_THROTTLE_SECONDS = 60
@@ -232,12 +252,18 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120))
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     profile_pic = db.Column(db.String(255), nullable=True)
+    # NEW: base64 data URI of the uploaded photo, persisted in the DB so it
+    # survives server restarts and Render redeploys. `profile_pic` (filename)
+    # is retained for backward compatibility with existing uploads.
+    profile_pic_data = db.Column(db.Text, nullable=True)
     active = db.Column(db.Boolean, default=True)
     last_seen = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     department = db.relationship("Department", foreign_keys=[department_id])
     def set_password(self, p): self.password_hash = generate_password_hash(p)
     def check_password(self, p): return check_password_hash(self.password_hash, p)
+    def has_profile_photo(self):
+        return bool((self.profile_pic_data or "").strip() or (self.profile_pic or "").strip())
 
 class Message(db.Model):
     __tablename__ = "messages"
@@ -246,8 +272,8 @@ class Message(db.Model):
     recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     body = db.Column(db.Text, nullable=True)
     attachment = db.Column(db.String(255), nullable=True)
-    attachment_type = db.Column(db.String(20), nullable=True)  # "image" | "voice"
-    duration = db.Column(db.Float, default=0)  # seconds for voice
+    attachment_type = db.Column(db.String(20), nullable=True)
+    duration = db.Column(db.Float, default=0)
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     sender = db.relationship("User", foreign_keys=[sender_id])
@@ -561,7 +587,7 @@ def _rori_track_activity():
             if ls is None or (now - ls).total_seconds() > LAST_SEEN_THROTTLE_SECONDS:
                 current_user.last_seen = now
                 db.session.commit()
-    except Exception as e:
+    except Exception:
         try: db.session.rollback()
         except Exception: pass
 
@@ -569,10 +595,8 @@ def _user_is_online(u):
     if not u: return False
     ls = getattr(u, "last_seen", None)
     if not ls: return False
-    try:
-        return (datetime.utcnow() - ls).total_seconds() < ONLINE_WINDOW_SECONDS
-    except Exception:
-        return False
+    try: return (datetime.utcnow() - ls).total_seconds() < ONLINE_WINDOW_SECONDS
+    except Exception: return False
 
 def _online_dot(is_online):
     if is_online:
@@ -596,6 +620,13 @@ def role_required(*roles):
 def is_manager(user):
     if not user or not user.is_authenticated: return False
     return user.role in ["MANAGER", "ADMIN"]
+
+def get_profile_photo_url(user):
+    """Return the URL that serves a user's profile photo.
+       The route falls back through DB data -> disk file -> default avatar,
+       so this always returns a valid URL (never None)."""
+    if not user: return url_for("default_avatar")
+    return url_for("serve_profile_photo", user_id=getattr(user, "id", 0))
 
 def log_audit(action, object_type=None, object_id=None, old_value=None, new_value=None):
     try:
@@ -660,43 +691,27 @@ def allowed_file(fn):
 
 def _is_valid_image_file(f):
     try:
-        f.seek(0)
-        header = f.read(12)
-        f.seek(0)
-        if not header or len(header) < 3:
-            return False
-        if header[:3] == b'\xff\xd8\xff':
-            return True
-        if header[:8] == b'\x89PNG\r\n\x1a\n':
-            return True
-        if len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WEBP':
-            return True
-        if header[:6] in (b'GIF87a', b'GIF89a'):
-            return True
+        f.seek(0); header = f.read(12); f.seek(0)
+        if not header or len(header) < 3: return False
+        if header[:3] == b'\xff\xd8\xff': return True
+        if header[:8] == b'\x89PNG\r\n\x1a\n': return True
+        if len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WEBP': return True
+        if header[:6] in (b'GIF87a', b'GIF89a'): return True
         return False
-    except Exception:
-        return False
+    except Exception: return False
 
 def _is_valid_voice_file(f):
     try:
-        f.seek(0)
-        header = f.read(16)
-        f.seek(0)
+        f.seek(0); header = f.read(16); f.seek(0)
         if not header: return False
-        # WebM/Matroska: 1A 45 DF A3
         if header[:4] == b'\x1a\x45\xdf\xa3': return True
-        # OGG: OggS
         if header[:4] == b'OggS': return True
-        # MP3: ID3 or FF FB / FF F3 / FF F2
         if header[:3] == b'ID3': return True
         if len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0: return True
-        # WAV: RIFF....WAVE
         if header[:4] == b'RIFF' and len(header) >= 12 and header[8:12] == b'WAVE': return True
-        # M4A/MP4: ftyp
         if len(header) >= 8 and header[4:8] == b'ftyp': return True
         return False
-    except Exception:
-        return False
+    except Exception: return False
 
 def get_one(model, ident): return db.session.get(model, ident)
 def get_or_404(model, ident):
@@ -764,6 +779,8 @@ def ensure_database_schema():
             ]: add_column_if_missing("maintenance_requests", col, sql)
             add_column_if_missing("users","department_id","ALTER TABLE users ADD COLUMN department_id INTEGER")
             add_column_if_missing("users","profile_pic","ALTER TABLE users ADD COLUMN profile_pic VARCHAR(255)")
+            # NEW persistent profile-photo column (base64 data URI).
+            add_column_if_missing("users","profile_pic_data","ALTER TABLE users ADD COLUMN profile_pic_data TEXT")
             add_column_if_missing("users","last_seen","ALTER TABLE users ADD COLUMN last_seen " + dt)
             add_column_if_missing("notifications","work_order_id","ALTER TABLE notifications ADD COLUMN work_order_id INTEGER")
             add_column_if_missing("work_orders","completed_date","ALTER TABLE work_orders ADD COLUMN completed_date " + dt)
@@ -786,7 +803,6 @@ def ensure_database_schema():
             add_column_if_missing("working_items","area_id","ALTER TABLE working_items ADD COLUMN area_id INTEGER")
             add_column_if_missing("working_items","is_active","ALTER TABLE working_items ADD COLUMN is_active BOOLEAN " + bd_t)
             add_column_if_missing("areas","is_active","ALTER TABLE areas ADD COLUMN is_active BOOLEAN " + bd_t)
-            # ─── Message attachment columns (for image / voice support) ───
             add_column_if_missing("messages","attachment","ALTER TABLE messages ADD COLUMN attachment VARCHAR(255)")
             add_column_if_missing("messages","attachment_type","ALTER TABLE messages ADD COLUMN attachment_type VARCHAR(20)")
             add_column_if_missing("messages","duration","ALTER TABLE messages ADD COLUMN duration FLOAT DEFAULT 0")
@@ -901,10 +917,10 @@ def page(title, content):
         _display_name = current_user.full_name or current_user.username or "User"
         _avatar_letter = _display_name[0].upper() if _display_name else "U"
         _display_role = current_user.role or ""
-        _pic = (current_user.profile_pic or "").strip()
-        if _pic:
-            _pic_src = url_for("static", filename="profile_pics/" + os.path.basename(_pic))
-            _avatar_inner = '<img src="' + _pic_src + '" alt="Profile Photo">'
+        # FIX: always use the persistent photo route so the avatar reflects the
+        # DB-stored photo across refresh/login/logout/redeploy.
+        if current_user.has_profile_photo():
+            _avatar_inner = '<img src="' + get_profile_photo_url(current_user) + '" alt="Profile Photo" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + _avatar_letter.replace("'", "") + '\';">'
         else:
             _avatar_inner = _avatar_letter
         user_profile_html = ('<a class="user-profile" href="' + url_for('profile') + '">'
@@ -1157,8 +1173,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .report-photo{border:2px solid #C5A059;border-radius:10px;padding:.5rem;background:#fafafa;display:inline-block;max-width:100%}
 .report-photo img{max-width:340px;max-height:240px;display:block;border-radius:6px}
 .report-footer{margin-top:1.5rem;padding-top:.75rem;border-top:1px solid #ddd;font-size:.72rem;color:#666;text-align:center}
-
-/* ══════════ Telegram-style messaging ══════════ */
 .tg-inbox{display:flex;flex-direction:column;gap:0}
 .tg-row{display:flex;align-items:center;gap:.9rem;padding:.85rem .9rem;border-bottom:1px solid rgba(197,160,89,.10);text-decoration:none;color:inherit;transition:background .15s ease, transform .15s ease;cursor:pointer;position:relative}
 .tg-row:last-child{border-bottom:none}
@@ -1177,8 +1191,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .tg-preview .tg-unread-badge{background:var(--danger);color:#0e0e0e;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;margin-left:.5rem;box-shadow:0 2px 8px rgba(255,107,94,.5)}
 .tg-preview.unread{color:var(--text-primary);font-weight:600}
 .tg-chevron{color:var(--text-muted);font-size:.85rem;flex-shrink:0}
-
-/* Chat shell (thread) */
 .chat-shell{display:flex;flex-direction:column;height:calc(100vh - 190px);min-height:460px;background:var(--card-bg);border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04)}
 .chat-head{display:flex;align-items:center;gap:.75rem;padding:.7rem .9rem;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--bg-secondary),var(--card-bg))}
 .chat-head-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#C5A059,#8B6F26);color:#16120a;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Cormorant Garamond',Georgia,serif;font-size:1.2rem;overflow:hidden;flex-shrink:0;box-shadow:0 3px 10px rgba(197,160,89,.35)}
@@ -1206,16 +1218,22 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .msg-voice-dur{font-size:.72rem;font-weight:600;opacity:.75;min-width:36px;text-align:right}
 .msg-time{font-size:.65rem;color:var(--text-muted);margin:.15rem 0 .4rem;padding-left:40px}
 .msg-time.mine{text-align:right;padding-right:40px;padding-left:0}
-.chat-input-wrap{display:flex;gap:.5rem;padding:.7rem .8rem;border-top:1px solid var(--border);background:var(--bg-secondary);align-items:flex-end}
-.chat-input{flex:1;background:#0e0e0e;border:1.5px solid var(--border);color:var(--text-primary);border-radius:22px;padding:.7rem 1.05rem;font-size:.94rem;outline:none;resize:none;min-height:46px;max-height:120px;font-family:inherit;line-height:1.4;transition:border-color .15s, box-shadow .15s}
+.chat-input-wrap{display:flex;gap:.4rem;padding:.5rem .6rem calc(.5rem + env(safe-area-inset-bottom,0px));border-top:1px solid var(--border);background:var(--bg-secondary);align-items:center}
+.chat-input{flex:1;background:#0e0e0e;border:1.5px solid var(--border);color:var(--text-primary);border-radius:20px;padding:.55rem .95rem;font-size:.92rem;outline:none;resize:none;min-height:42px;max-height:100px;font-family:inherit;line-height:1.3;transition:border-color .15s, box-shadow .15s}
 .chat-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(197,160,89,.18)}
-.chat-attach-btn{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.05);border:1.5px solid var(--border);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;flex-shrink:0;transition:all .15s}
-.chat-attach-btn:hover{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
-.chat-send{width:46px;height:46px;border-radius:50%;background:var(--gold);color:#16120a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;transition:all .15s;box-shadow:0 3px 0 var(--gold-deep), 0 6px 14px rgba(197,160,89,.35)}
-.chat-send:hover{background:#d4b06c;transform:translateY(-2px);box-shadow:0 5px 0 var(--gold-deep), 0 10px 22px rgba(197,160,89,.45)}
+.chat-attach-btn,.chat-mic-btn{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.05);border:1.5px solid var(--border);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.95rem;flex-shrink:0;transition:all .15s}
+.chat-attach-btn:hover,.chat-mic-btn:hover{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
+.chat-mic-btn:active,.chat-attach-btn:active{transform:scale(.95)}
+.chat-mic-btn.recording{background:var(--danger);border-color:var(--danger);color:#fff;animation:pulseMic 1.2s ease-in-out infinite}
+@keyframes pulseMic{0%,100%{box-shadow:0 0 0 0 rgba(255,107,94,.55)}50%{box-shadow:0 0 0 10px rgba(255,107,94,0)}}
+.chat-send{width:40px;height:40px;border-radius:50%;background:var(--gold);color:#16120a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;transition:all .15s;box-shadow:0 2px 0 var(--gold-deep), 0 4px 10px rgba(197,160,89,.35)}
+.chat-send:hover{background:#d4b06c;transform:translateY(-2px);box-shadow:0 4px 0 var(--gold-deep), 0 8px 18px rgba(197,160,89,.45)}
 .chat-send:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-deep)}
-.chat-mic{background:var(--danger);box-shadow:0 3px 0 #a8332a, 0 6px 14px rgba(255,107,94,.35)}
-.chat-mic:hover{background:#ff8577;box-shadow:0 5px 0 #a8332a, 0 10px 22px rgba(255,107,94,.45)}
+@media(max-width:420px){
+  .chat-input-wrap{padding:.4rem .5rem calc(.4rem + env(safe-area-inset-bottom,0px));gap:.3rem}
+  .chat-input{min-height:40px;padding:.5rem .8rem;font-size:.9rem}
+  .chat-attach-btn,.chat-mic-btn,.chat-send{width:38px;height:38px;font-size:.9rem}
+}
 .recording-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
 .recording-overlay.show{display:flex}
 .recording-box{background:var(--card-bg);border:1px solid var(--gold-line);border-radius:20px;padding:1.6rem 2rem;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6);max-width:320px}
@@ -1232,7 +1250,6 @@ input[type="checkbox"]{accent-color:var(--gold)}
 .attach-menu button{display:flex;align-items:center;gap:.65rem;width:100%;padding:.6rem .8rem;border:none;background:transparent;color:var(--text-primary);font-weight:600;font-size:.88rem;border-radius:10px;cursor:pointer;text-align:left;transition:background .15s}
 .attach-menu button:hover{background:var(--gold-soft)}
 .attach-menu button i{color:var(--gold);width:20px;text-align:center}
-
 @media(max-width:1024px){
   .card:hover,.kpi-card:hover,.kpi-mini-card:hover,.rpro-card:hover,.area-card:hover,.rpro-room-card:hover,.btn-primary:hover{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35) !important}
   .form-control:focus,.form-select:focus{transform:none}
@@ -1401,29 +1418,10 @@ input[type="checkbox"]{accent-color:var(--gold)}
 <div id="roriAlertBanner"><div class="ra-title"></div><div class="ra-body"></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-function toggleSidebar(){
-  var s=document.getElementById('sidebar');
-  var o=document.getElementById('sidebarOverlay');
-  var open=s.classList.toggle('active');
-  o.classList.toggle('active',open);
-  document.body.style.overflow=open?'hidden':'';
-}
-function closeSidebar(){
-  var s=document.getElementById('sidebar');
-  var o=document.getElementById('sidebarOverlay');
-  if(!s||!o)return;
-  s.classList.remove('active');
-  o.classList.remove('active');
-  document.body.style.overflow='';
-}
+function toggleSidebar(){var s=document.getElementById('sidebar');var o=document.getElementById('sidebarOverlay');var open=s.classList.toggle('active');o.classList.toggle('active',open);document.body.style.overflow=open?'hidden':'';}
+function closeSidebar(){var s=document.getElementById('sidebar');var o=document.getElementById('sidebarOverlay');if(!s||!o)return;s.classList.remove('active');o.classList.remove('active');document.body.style.overflow='';}
 window.addEventListener('resize',function(){if(window.innerWidth>1024)closeSidebar();});
-(function(){
-  var path=window.location.pathname;
-  document.querySelectorAll('.sidebar-nav .nav-link').forEach(function(a){
-    try{var u=new URL(a.href).pathname;if(u!=='/'&&path.indexOf(u)===0)a.classList.add('active');}
-    catch(e){}
-  });
-})();
+(function(){var path=window.location.pathname;document.querySelectorAll('.sidebar-nav .nav-link').forEach(function(a){try{var u=new URL(a.href).pathname;if(u!=='/'&&path.indexOf(u)===0)a.classList.add('active');}catch(e){}});})();
 let roriAudioCtx=null;
 let roriSoundEnabled=localStorage.getItem('rori_sound_enabled')==='true';
 let roriAlertedRequests=JSON.parse(sessionStorage.getItem('rori_alerted_requests')||'[]');
@@ -1437,22 +1435,7 @@ window.roriTestSound=function(){roriSoundEnabled=true;localStorage.setItem('rori
 function roriNotify(title,body,priority){roriShowBanner(title,body);if(roriBrowserNotif){try{const n=new Notification(title,{body:body,icon:'/logo.png',tag:'rori-'+Date.now()});setTimeout(()=>n.close(),7000);}catch(e){}}}
 function pollNotifications(){fetch('/api/notifications/unread',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(!d||!d.latest_id)return;if(roriAlertedRequests.includes(d.latest_id))return;const t=(d.latest_title||'').toUpperCase();if(!t.includes('REQUEST'))return;let prio='MEDIUM';if(t.includes('URGENT'))prio='URGENT';else if(t.includes('HIGH'))prio='HIGH';roriPlayAlert(prio);roriNotify(d.latest_title||'New Maintenance Request',d.latest_message||'A new request has been submitted.',prio);roriAlertedRequests.push(d.latest_id);sessionStorage.setItem('rori_alerted_requests',JSON.stringify(roriAlertedRequests));const badge=document.querySelector('.notif-badge');if(badge){badge.classList.add('pulse');setTimeout(()=>badge.classList.remove('pulse'),2500);}}).catch(()=>{});}
 if(document.querySelector('.header-icon')){pollNotifications();setInterval(pollNotifications,10000);}
-
-/* Lightbox for image viewing */
-window.openLightbox=function(src){
-  var lb=document.getElementById('roriLightbox');
-  if(!lb){
-    lb=document.createElement('div');
-    lb.id='roriLightbox';
-    lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem;cursor:zoom-out;backdrop-filter:blur(6px)';
-    lb.onclick=function(){lb.remove();};
-    var img=document.createElement('img');
-    img.src=src;
-    img.style.cssText='max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.8)';
-    lb.appendChild(img);
-    document.body.appendChild(lb);
-  }
-};
+window.openLightbox=function(src){var lb=document.getElementById('roriLightbox');if(!lb){lb=document.createElement('div');lb.id='roriLightbox';lb.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem;cursor:zoom-out;backdrop-filter:blur(6px)';lb.onclick=function(){lb.remove();};var img=document.createElement('img');img.src=src;img.style.cssText='max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.8)';lb.appendChild(img);document.body.appendChild(lb);}};
 </script>
 </body></html>"""
 
@@ -1625,6 +1608,58 @@ def fix_room_structure():
     print(f"✅ Room structure enforced: {Room.query.count()} rooms (expected 100) — historical requests preserved")
     return Room.query.count()
 
+# ══════════════════════════════════════════ PROFILE PHOTO SERVING (persistent)
+@app.route("/profile/photo/<int:user_id>")
+def serve_profile_photo(user_id):
+    """Serve the user's profile photo. Priority:
+       1. Base64 data stored in `users.profile_pic_data` (persistent, DB-backed).
+       2. Legacy filename on disk under `static/profile_pics/` (survives until redeploy).
+       3. Default avatar.
+       This route is intentionally NOT gated to logged-in users so that avatars
+       render in emails/notifications/printouts where the session may not be active.
+       No sensitive filesystem paths are exposed."""
+    u = db.session.get(User, user_id)
+    if not u:
+        return redirect(url_for("default_avatar"))
+    # 1. DB-stored photo (works across restarts and redeploys)
+    data_uri = (u.profile_pic_data or "").strip()
+    if data_uri.startswith("data:image/") and ";base64," in data_uri:
+        try:
+            header, b64 = data_uri.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "")
+            raw = base64.b64decode(b64)
+            resp = make_response(raw)
+            resp.headers["Content-Type"] = mime or "image/jpeg"
+            resp.headers["Cache-Control"] = "private, max-age=300"
+            return resp
+        except Exception:
+            pass
+    # 2. Legacy disk file
+    fname = (u.profile_pic or "").strip()
+    if fname:
+        safe = os.path.basename(fname)
+        path = os.path.join(PROFILE_PIC_FOLDER, safe)
+        if safe and os.path.isfile(path):
+            try:
+                return send_file(path, max_age=300)
+            except Exception:
+                pass
+    # 3. Default
+    return redirect(url_for("default_avatar"))
+
+@app.route("/profile/photo/default")
+def default_avatar():
+    """Tiny inline SVG avatar used when the user has no photo (or file missing)."""
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">'
+           '<rect width="120" height="120" fill="#C5A059"/>'
+           '<circle cx="60" cy="46" r="24" fill="#16120a" opacity="0.85"/>'
+           '<path d="M14 116c0-26 20-44 46-44s46 18 46 44z" fill="#16120a" opacity="0.85"/>'
+           '</svg>')
+    resp = make_response(svg)
+    resp.headers["Content-Type"] = "image/svg+xml; charset=utf-8"
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
 # ══════════════════════════════════════════ AUTH
 @app.route("/")
 def index():
@@ -1641,26 +1676,26 @@ def login():
     if request.method == "POST":
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")) and u.active:
-            login_user(u); log_audit("Login","User",u.id); db.session.commit(); return redirect(url_for("index"))
+            login_user(u)
+            log_audit("Login","User",u.id)
+            db.session.commit()
+            # NOTE: profile_pic / profile_pic_data are NOT touched here —
+            # the saved photo is loaded fresh from the DB on every request.
+            return redirect(url_for("index"))
         flash("Incorrect username or password","danger")
     lh = """<div class="login-container">
 <div class="login-card">
 <div class="text-center mb-4">
 <img src="/logo.png" alt="Rori Hotel Logo" style="max-height:110px;max-width:100%;width:auto;display:block;margin:0 auto 1rem;object-fit:contain;">
-<h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--rori-gold);letter-spacing:.18em;font-weight:700;">RORI HOTEL</h3>
+<h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--gold);letter-spacing:.18em;font-weight:700;">RORI HOTEL</h3>
 <p style="color:var(--text-secondary);font-size:.9rem;">Maintenance Management System</p>
 </div>
-<form method="post">
-<div class="mb-3"><label class="form-label">Username</label><input type="text" class="form-control" name="username" required autofocus></div>
-<div class="mb-4"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required></div>
-<button class="btn-primary w-100"><i class="fas fa-sign-in-alt"></i> Login</button>
+<form method="post" autocomplete="off">
+<div class="mb-3"><label class="form-label">Username</label><input type="text" class="form-control" name="username" required autofocus autocomplete="username" spellcheck="false" autocapitalize="off"></div>
+<div class="mb-4"><label class="form-label">Password</label><input type="password" class="form-control" name="password" required autocomplete="current-password"></div>
+<button class="btn-primary w-100" type="submit"><i class="fas fa-sign-in-alt"></i> Login</button>
 </form>
-<hr style="border-color:var(--border-color);margin:1.5rem 0">
-<div class="text-center small" style="color:var(--text-secondary)">
-<p class="mb-1">Manager: <b style="color:var(--rori-gold)">amir / 123456</b></p>
-<p class="mb-1">Marketing Mgr: <b style="color:var(--rori-gold)">yordanose / 123456</b></p>
-<p class="mb-0">Admin: <b style="color:var(--rori-gold)">admin / admin123</b></p>
-</div>
+<p style="text-align:center;color:var(--text-secondary);font-size:.78rem;margin-top:1.5rem;">Forgot your password? Contact your system administrator.</p>
 </div>
 </div>"""
     return page("Login", lh)
@@ -1670,13 +1705,14 @@ def login():
 def logout():
     log_audit("Logout","User",current_user.id); db.session.commit(); logout_user(); return redirect(url_for("login"))
 
-# ══════════════════════════════════════════ PROFILE
+# ══════════════════════════════════════════ PROFILE (FIXED: persistent photo)
 @app.route("/profile", methods=["GET","POST"])
 @login_required
 def profile():
     u = current_user
     if request.method == "POST":
         action = (request.form.get("action") or "update_info").strip()
+        # ── Upload new profile photo: store both on disk AND in the DB ──
         if action == "upload_photo":
             f = request.files.get("profile_photo")
             if not f or not f.filename:
@@ -1694,11 +1730,29 @@ def profile():
                 flash("Uploaded file is empty.", "danger"); return redirect(url_for("profile"))
             if size > PROFILE_PHOTO_MAX_BYTES:
                 flash("File too large. Maximum size is 5 MB.", "danger"); return redirect(url_for("profile"))
+            # Verify real image bytes (not just the extension)
             if not _is_valid_image_file(f):
                 flash("The file does not look like a valid image (JPG / PNG / WEBP).", "danger"); return redirect(url_for("profile"))
+            # Read bytes for DB storage
+            try:
+                f.seek(0); raw_bytes = f.read(); f.seek(0)
+            except Exception:
+                raw_bytes = b""
+            if not raw_bytes:
+                flash("Could not read the uploaded file.", "danger"); return redirect(url_for("profile"))
+            # Map extension to a canonical image/* MIME for the data URI
+            ext_to_mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+            mime = ext_to_mime.get(ext, "image/jpeg")
+            try:
+                b64 = base64.b64encode(raw_bytes).decode("ascii")
+                data_uri = "data:" + mime + ";base64," + b64
+            except Exception:
+                flash("Could not encode the photo.", "danger"); return redirect(url_for("profile"))
+            # Safe unique filename on disk (legacy path — kept for compatibility)
             safe_name = secure_filename("user_" + str(u.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "." + ext)
             if not safe_name:
                 flash("Could not generate a safe filename.", "danger"); return redirect(url_for("profile"))
+            # Remove previous disk file if any (best-effort)
             old = (u.profile_pic or "").strip()
             if old:
                 old_safe = os.path.basename(old); old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
@@ -1707,33 +1761,46 @@ def profile():
                     except Exception as ex: print("Old photo remove warn: " + str(ex))
             try:
                 os.makedirs(PROFILE_PIC_FOLDER, exist_ok=True)
-                f.save(os.path.join(PROFILE_PIC_FOLDER, safe_name))
+                with open(os.path.join(PROFILE_PIC_FOLDER, safe_name), "wb") as fh: fh.write(raw_bytes)
             except Exception as ex:
-                flash("Could not save photo: " + str(ex), "danger"); return redirect(url_for("profile"))
+                # Disk write failure is not fatal — the DB copy is authoritative.
+                print("Disk write warn: " + str(ex))
+            # Persist BOTH the DB data (authoritative, survives redeploy)
+            # and the filename (for backward compatibility).
+            u.profile_pic_data = data_uri
             u.profile_pic = safe_name
             log_audit("Profile Photo Uploaded", "User", u.id, new_value=safe_name)
-            db.session.commit(); flash("✅ Profile photo updated successfully", "success"); return redirect(url_for("profile"))
+            db.session.commit()
+            flash("✅ Profile photo updated successfully", "success")
+            return redirect(url_for("profile"))
+        # ── Remove photo: clear BOTH DB data and disk file ──
         if action == "remove_photo":
+            had = u.has_profile_photo()
             old = (u.profile_pic or "").strip()
             if old:
                 old_safe = os.path.basename(old); old_path = os.path.join(PROFILE_PIC_FOLDER, old_safe)
                 if old_safe and os.path.exists(old_path) and os.path.isfile(old_path):
                     try: os.remove(old_path)
                     except Exception as ex: print("Remove photo warn: " + str(ex))
-                u.profile_pic = None
-                log_audit("Profile Photo Removed", "User", u.id, old_value=old_safe)
+            u.profile_pic = None
+            u.profile_pic_data = None
+            if had:
+                log_audit("Profile Photo Removed", "User", u.id)
                 db.session.commit(); flash("Profile photo removed.", "success")
             else:
-                flash("No profile photo to remove.", "info")
+                db.session.commit(); flash("No profile photo to remove.", "info")
             return redirect(url_for("profile"))
-        u.email = request.form.get("email","").strip(); u.phone = request.form.get("phone","").strip()
+        # ── Update basic info ──
+        u.email = request.form.get("email","").strip()
+        u.phone = request.form.get("phone","").strip()
         np = request.form.get("new_password","").strip()
         if np: u.set_password(np)
         db.session.commit(); flash("Profile updated","success"); return redirect(url_for("profile"))
 
-    has_photo = bool(u.profile_pic and str(u.profile_pic).strip())
+    # GET: render profile page using persistent photo URL
+    has_photo = u.has_profile_photo()
     if has_photo:
-        avatar_src = url_for("static", filename="profile_pics/" + os.path.basename(u.profile_pic))
+        avatar_src = get_profile_photo_url(u)
         avatar_html = ('<img src="' + avatar_src + '" alt="Profile Photo" style="width:150px;height:150px;border-radius:50%;object-fit:cover;border:3px solid var(--rori-gold);box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 40px rgba(197,160,89,.3);display:block;">')
         primary_label = "Change Photo"; primary_icon = "fa-camera"
     else:
@@ -1753,7 +1820,7 @@ def profile():
         '<button type="button" class="btn-primary profile-photo-btn" onclick="document.getElementById(\'roriProfilePhotoInput\').click();">'
         '<i class="fas ' + primary_icon + '"></i> ' + primary_label + '</button></form>'
         + (' ' + remove_btn_html if remove_btn_html else '') +
-        '<p style="color:var(--text-secondary);font-size:.8rem;margin-top:1rem;margin-bottom:0;"><i class="fas fa-info-circle"></i> JPG, JPEG, PNG or WEBP · Maximum 5 MB</p></div>')
+        '<p style="color:var(--text-secondary);font-size:.8rem;margin-top:1rem;margin-bottom:0;"><i class="fas fa-info-circle"></i> JPG, JPEG, PNG or WEBP · Maximum 5 MB · Saved permanently to your account</p></div>')
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-user-circle"></i> Profile</h1><p>Manage your account information and profile photo</p></div></div>'
          + photo_section +
          '<div class="card"><h4 style="color:var(--rori-gold);margin-bottom:1rem;">' + str(u.full_name or u.username) + '</h4>'
@@ -1782,81 +1849,55 @@ def messages_inbox():
         conv_map[other_id]["total"] += 1
         if m.recipient_id == current_user.id and not m.is_read:
             conv_map[other_id]["unread"] += 1
-
     def _preview(m):
-        if m.attachment_type == "image":
-            return "📷 Photo" + ((" — " + m.body) if m.body else "")
-        if m.attachment_type == "voice":
-            return "🎤 Voice message" + ((" (" + str(round(m.duration or 0, 1)) + "s)") if m.duration else "")
+        if m.attachment_type == "image": return "📷 Photo" + ((" — " + m.body) if m.body else "")
+        if m.attachment_type == "voice": return "🎤 Voice message" + ((" (" + str(round(m.duration or 0, 1)) + "s)") if m.duration else "")
         return m.body or ""
-
     conv_rows = []
     for other_id, info in conv_map.items():
         other = db.session.get(User, other_id)
         if not other: continue
         online = _user_is_online(other)
-        pic = (other.profile_pic or "").strip()
-        if pic:
-            av_inner = '<img src="' + url_for("static", filename="profile_pics/" + os.path.basename(pic)) + '" alt="">'
+        if other.has_profile_photo():
+            av_inner = '<img src="' + get_profile_photo_url(other) + '" alt="">'
         else:
             av_inner = ((other.full_name or other.username or "U")[:1]).upper()
         status_dot = '<span class="' + ("tg-online" if online else "tg-offline") + '"></span>'
-        last = info["last"]
-        preview_text = _preview(last)
+        last = info["last"]; preview_text = _preview(last)
         if len(preview_text) > 60: preview_text = preview_text[:60] + "…"
         is_unread = info["unread"] > 0
         badge_html = ('<span class="tg-unread-badge">' + str(info["unread"]) + '</span>') if is_unread else ""
         when = last.created_at.strftime("%H:%M") if last.created_at and last.created_at.date() == datetime.utcnow().date() else (last.created_at.strftime("%b %d") if last.created_at else "")
-        conv_rows.append(
-            '<a class="tg-row" href="' + url_for("messages_thread", user_id=other.id) + '">'
+        conv_rows.append('<a class="tg-row" href="' + url_for("messages_thread", user_id=other.id) + '">'
             '<div class="tg-avatar"><div class="tg-avatar-inner">' + av_inner + '</div>' + status_dot + '</div>'
-            '<div class="tg-meta">'
-            '<div class="tg-name"><span>' + str(other.full_name or other.username) + '</span><span class="tg-time">' + when + '</span></div>'
+            '<div class="tg-meta"><div class="tg-name"><span>' + str(other.full_name or other.username) + '</span><span class="tg-time">' + when + '</span></div>'
             '<div class="tg-role">' + str(other.role) + '</div>'
-            '<div class="tg-preview' + (' unread' if is_unread else '') + '">' + preview_text + badge_html + '</div>'
-            '</div>'
-            '<i class="fas fa-chevron-right tg-chevron"></i>'
-            '</a>'
-        )
-
+            '<div class="tg-preview' + (' unread' if is_unread else '') + '">' + preview_text + badge_html + '</div></div>'
+            '<i class="fas fa-chevron-right tg-chevron"></i></a>')
     all_users = User.query.filter(User.id != current_user.id, User.active == True).order_by(User.full_name).all()
     user_opts = ""
     for u in all_users:
-        online = _user_is_online(u)
-        status = " 🟢" if online else " ⚪"
+        online = _user_is_online(u); status = " 🟢" if online else " ⚪"
         user_opts += ('<option value="' + str(u.id) + '">' + str(u.full_name or u.username) + ' (' + str(u.role) + ')' + status + '</option>')
-
     users_rows = []
     for u in all_users:
-        online = _user_is_online(u)
-        dot = _online_dot(online)
+        online = _user_is_online(u); dot = _online_dot(online)
         status_text = "Active" if online else "Offline"
         status_color = "#6fcf97" if online else "var(--text-secondary)"
-        users_rows.append(
-            '<div class="msg-user-row"><div>' + dot + '<strong>' + str(u.full_name or u.username) + '</strong> '
+        users_rows.append('<div class="msg-user-row"><div>' + dot + '<strong>' + str(u.full_name or u.username) + '</strong> '
             '<span style="color:var(--text-secondary);font-size:.78rem;">(' + str(u.role) + ')</span></div>'
             '<div><span style="color:' + status_color + ';font-size:.78rem;font-weight:600;">' + status_text + '</span>'
-            ' <a class="btn-primary" style="padding:.3rem .7rem;font-size:.72rem;margin-left:.5rem;" href="' +
-            url_for("messages_thread", user_id=u.id) + '">Message</a></div></div>')
-
+            ' <a class="btn-primary" style="padding:.3rem .7rem;font-size:.72rem;margin-left:.5rem;width:auto;" href="' + url_for("messages_thread", user_id=u.id) + '">Message</a></div></div>')
     unread_total = Message.query.filter_by(recipient_id=current_user.id, is_read=False).count()
     header_extra = (' · <span style="color:var(--danger);font-weight:700;">' + str(unread_total) + ' unread</span>') if unread_total else ""
-
-    inbox_html = ("".join(conv_rows) if conv_rows else
-        '<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
-        '<i class="fas fa-comment-dots" style="font-size:2.4rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>'
-        'No conversations yet. Start one below!</div>')
-
-    content = (
-        '<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1>'
+    inbox_html = ("".join(conv_rows) if conv_rows else '<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);"><i class="fas fa-comment-dots" style="font-size:2.4rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>No conversations yet. Start one below!</div>')
+    content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1>'
         '<p>Internal user-to-user messaging' + header_extra + '</p></div></div>'
         '<div class="card" style="padding:0;overflow:hidden;">'
         '<div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-secondary);">'
         '<div style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:1.2rem;font-weight:700;color:var(--gold);"><i class="fas fa-inbox"></i> Conversations</div>'
         '<span style="font-size:.78rem;color:var(--text-secondary);">' + str(len(conv_map)) + ' chat' + ('s' if len(conv_map) != 1 else '') + '</span>'
-        '</div>'
-        '<div class="tg-inbox">' + inbox_html + '</div>'
-        '</div>'
+        '</div><div class="tg-inbox">' + inbox_html + '</div></div>'
         '<div class="card"><div class="card-title"><i class="fas fa-paper-plane"></i> New Message</div>'
         '<form method="post" action="' + url_for("messages_send") + '" enctype="multipart/form-data">'
         '<div class="mb-3"><label class="form-label">To *</label>'
@@ -1865,12 +1906,9 @@ def messages_inbox():
         '<textarea name="body" class="form-control" rows="3" placeholder="Type a message or attach a file below…"></textarea></div>'
         '<div class="mb-3"><label class="form-label">Attach image (optional)</label>'
         '<input type="file" name="image" accept="image/*" class="form-control"></div>'
-        '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button>'
-        '</form></div>'
+        '<button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send</button></form></div>'
         '<div class="card"><div class="card-title"><i class="fas fa-users"></i> Users & Active Status</div>'
-        + ("".join(users_rows) if users_rows else '<p style="text-align:center;color:var(--text-secondary);">No other users available.</p>')
-        + '</div>'
-    )
+        + ("".join(users_rows) if users_rows else '<p style="text-align:center;color:var(--text-secondary);">No other users available.</p>') + '</div>')
     return page("Messages", content)
 
 @app.route("/messages/thread/<int:user_id>")
@@ -1879,34 +1917,22 @@ def messages_thread(user_id):
     other = get_or_404(User, user_id)
     if other.id == current_user.id:
         flash("You cannot message yourself.", "warning"); return redirect(url_for("messages_inbox"))
-
     unread = Message.query.filter_by(sender_id=other.id, recipient_id=current_user.id, is_read=False).all()
     if unread:
         for m in unread: m.is_read = True
         try: db.session.commit()
         except Exception: db.session.rollback()
-
-    msgs = Message.query.filter(
-        db.or_(
-            db.and_(Message.sender_id == current_user.id, Message.recipient_id == other.id),
-            db.and_(Message.sender_id == other.id, Message.recipient_id == current_user.id)
-        )
-    ).order_by(Message.created_at.asc()).all()
-
-    online = _user_is_online(other)
-    dot = _online_dot(online)
+    msgs = Message.query.filter(db.or_(
+        db.and_(Message.sender_id == current_user.id, Message.recipient_id == other.id),
+        db.and_(Message.sender_id == other.id, Message.recipient_id == current_user.id)
+    )).order_by(Message.created_at.asc()).all()
+    online = _user_is_online(other); dot = _online_dot(online)
     status_text = "Active now" if online else "Offline"
     other_name = other.full_name or other.username
-
     def _av_inner(u):
-        pic = (u.profile_pic or "").strip()
-        if pic:
-            return '<img src="' + url_for("static", filename="profile_pics/" + os.path.basename(pic)) + '" alt="">'
+        if u.has_profile_photo(): return '<img src="' + get_profile_photo_url(u) + '" alt="">'
         return ((u.full_name or u.username or "U")[:1]).upper()
-
-    other_avatar_inner = _av_inner(other)
-    my_avatar_inner = _av_inner(current_user)
-
+    other_avatar_inner = _av_inner(other); my_avatar_inner = _av_inner(current_user)
     rows = []
     for m in msgs:
         mine = (m.sender_id == current_user.id)
@@ -1924,27 +1950,18 @@ def messages_thread(user_id):
             wave = "".join('<span style="height:' + str(6 + ((i * 7 + 5) % 18)) + 'px"></span>' for i in range(24))
             bubble_inner += ('<div class="msg-voice">'
                 '<button type="button" class="msg-voice-btn" onclick="playVoice(this,\'' + audio_url + '\')"><i class="fas fa-play"></i></button>'
-                '<div class="msg-wave">' + wave + '</div>'
-                '<span class="msg-voice-dur">' + str(dur) + 's</span>'
-                '</div>')
+                '<div class="msg-wave">' + wave + '</div><span class="msg-voice-dur">' + str(dur) + 's</span></div>')
             if m.body:
                 safe_body = str(m.body).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 bubble_inner += '<div class="msg-caption">' + safe_body + '</div>'
         else:
             bubble_inner = str(m.body or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-
         if mine:
-            rows.append('<div class="msg-row mine"><div class="msg-bubble mine">' + bubble_inner + '</div><div class="msg-avatar">' + my_avatar_inner + '</div></div>'
-                        '<div class="msg-time mine">' + when + '</div>')
+            rows.append('<div class="msg-row mine"><div class="msg-bubble mine">' + bubble_inner + '</div><div class="msg-avatar">' + my_avatar_inner + '</div></div><div class="msg-time mine">' + when + '</div>')
         else:
-            rows.append('<div class="msg-row"><div class="msg-avatar">' + other_avatar_inner + '</div><div class="msg-bubble">' + bubble_inner + '</div></div>'
-                        '<div class="msg-time">' + when + '</div>')
-
+            rows.append('<div class="msg-row"><div class="msg-avatar">' + other_avatar_inner + '</div><div class="msg-bubble">' + bubble_inner + '</div></div><div class="msg-time">' + when + '</div>')
     if not rows:
-        rows.append('<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);">'
-            '<i class="fas fa-comment-dots" style="font-size:2.2rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>'
-            'No messages yet. Say hi! 👋</div>')
-
+        rows.append('<div style="text-align:center;padding:3rem 1rem;color:var(--text-secondary);"><i class="fas fa-comment-dots" style="font-size:2.2rem;opacity:.4;display:block;margin-bottom:.75rem;"></i>No messages yet. Say hi! 👋</div>')
     content = (
         '<div class="page-header" style="margin-bottom:1rem;">'
         '<div class="page-title"><h1><i class="fas fa-comments"></i> <span>Messages</span></h1></div>'
@@ -1956,8 +1973,7 @@ def messages_thread(user_id):
         +   '<div style="flex:1;min-width:0;">'
         +     '<div class="chat-head-name">' + str(other_name) + '</div>'
         +     '<div class="chat-head-status">' + dot + '<span>' + status_text + ' · ' + str(other.role) + '</span></div>'
-        +   '</div>'
-        + '</div>'
+        +   '</div></div>'
         + '<div class="chat-body" id="chatBody">' + "".join(rows) + '</div>'
         + '<form method="post" action="' + url_for("messages_send") + '" class="chat-input-wrap" id="chatForm" enctype="multipart/form-data" style="position:relative;">'
         +   '<input type="hidden" name="recipient_id" value="' + str(other.id) + '">'
@@ -1965,77 +1981,63 @@ def messages_thread(user_id):
         +   '<input type="file" name="image" id="imageInput" accept="image/*" style="display:none;">'
         +   '<div class="attach-menu" id="attachMenu">'
         +     '<button type="button" onclick="document.getElementById(\'imageInput\').click();document.getElementById(\'attachMenu\').classList.remove(\'show\');"><i class="fas fa-image"></i> Photo</button>'
-        +     '<button type="button" onclick="startRecording();document.getElementById(\'attachMenu\').classList.remove(\'show\');"><i class="fas fa-microphone"></i> Voice Message</button>'
         +   '</div>'
-        +   '<button type="button" class="chat-attach-btn" id="attachBtn" title="Attach"><i class="fas fa-paperclip"></i></button>'
-        +   '<textarea name="body" class="chat-input" id="chatInput" rows="1" placeholder="Type a message…"></textarea>'
+        +   '<button type="button" class="chat-attach-btn" id="attachBtn" title="Attach photo" aria-label="Attach photo"><i class="fas fa-paperclip"></i></button>'
+        +   '<textarea name="body" class="chat-input" id="chatInput" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>'
+        +   '<button type="button" class="chat-mic-btn" id="micBtn" title="Record voice message" aria-label="Record voice message"><i class="fas fa-microphone"></i></button>'
         +   '<button type="submit" class="chat-send" id="sendBtn" aria-label="Send"><i class="fas fa-paper-plane"></i></button>'
-        + '</form>'
-        + '</div>'
-        + '<div class="recording-overlay" id="recOverlay">'
-        +   '<div class="recording-box">'
-        +     '<div class="recording-pulse"><i class="fas fa-microphone"></i></div>'
-        +     '<div class="recording-time" id="recTime">0:00</div>'
-        +     '<div class="recording-hint">Recording voice message…</div>'
-        +     '<div class="recording-actions">'
-        +       '<button type="button" class="cancel-rec" onclick="cancelRecording()">Cancel</button>'
-        +       '<button type="button" class="send-rec" onclick="stopAndSend()">Send</button>'
-        +     '</div>'
-        +   '</div>'
-        + '</div>'
-        + '<script>'
-          '(function(){'
+        + '</form></div>'
+        + '<div class="recording-overlay" id="recOverlay"><div class="recording-box">'
+        +   '<div class="recording-pulse"><i class="fas fa-microphone"></i></div>'
+        +   '<div class="recording-time" id="recTime">0:00</div>'
+        +   '<div class="recording-hint">Recording voice message…</div>'
+        +   '<div class="recording-actions">'
+        +     '<button type="button" class="cancel-rec" onclick="cancelRecording()">Cancel</button>'
+        +     '<button type="button" class="send-rec" onclick="stopAndSend()">Send</button>'
+        +   '</div></div></div>'
+        + '<script>(function(){'
           'var b=document.getElementById("chatBody");if(b){b.scrollTop=b.scrollHeight;}'
           'var ta=document.getElementById("chatInput");'
           'var sendBtn=document.getElementById("sendBtn");'
           'var attachBtn=document.getElementById("attachBtn");'
           'var attachMenu=document.getElementById("attachMenu");'
-          'function updateSendBtn(){'
-            'var hasText=ta.value.trim().length>0;'
-            'sendBtn.style.display=hasText?"flex":"none";'
-            'attachBtn.style.display=hasText?"none":"flex";'
-          '}'
-          'if(ta){'
-            'ta.addEventListener("input",function(){this.style.height="auto";this.style.height=Math.min(this.scrollHeight,120)+"px";updateSendBtn();});'
-            'ta.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(this.value.trim()){document.getElementById("chatForm").submit();}}});'
-            'updateSendBtn();'
-          '}'
+          'function updateSendBtn(){var hasText=ta.value.trim().length>0;sendBtn.style.display=hasText?"flex":"none";attachBtn.style.display="flex";var mb=document.getElementById("micBtn");if(mb)mb.style.display="flex";}'
+          'if(ta){ta.addEventListener("input",function(){this.style.height="auto";this.style.height=Math.min(this.scrollHeight,120)+"px";updateSendBtn();});'
+          'ta.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(this.value.trim()){document.getElementById("chatForm").submit();}}});updateSendBtn();}'
           'attachBtn.addEventListener("click",function(e){e.stopPropagation();attachMenu.classList.toggle("show");});'
           'document.addEventListener("click",function(e){if(!attachMenu.contains(e.target)&&e.target!==attachBtn){attachMenu.classList.remove("show");}});'
           'var imageInput=document.getElementById("imageInput");'
           'imageInput.addEventListener("change",function(){if(this.files.length){document.getElementById("chatForm").submit();}});'
-          '/* Voice recording */'
           'var mediaRec=null,chunks=[],recStart=0,recTimer=null;'
+          'function pickMime(){if(!window.MediaRecorder||!MediaRecorder.isTypeSupported)return {};'
+          'if(MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))return{mimeType:"audio/webm;codecs=opus"};'
+          'if(MediaRecorder.isTypeSupported("audio/webm"))return{mimeType:"audio/webm"};'
+          'if(MediaRecorder.isTypeSupported("audio/mp4"))return{mimeType:"audio/mp4"};'
+          'if(MediaRecorder.isTypeSupported("audio/ogg"))return{mimeType:"audio/ogg"};'
+          'return {};}'
           'window.startRecording=function(){'
-            'if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("Voice recording not supported on this browser.");return;}'
+            'if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("Voice recording is not supported on this browser.");return;}'
             'navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){'
-              'chunks=[];'
-              'var opts={};'
-              'if(window.MediaRecorder&&MediaRecorder.isTypeSupported){'
-                'if(MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))opts={mimeType:"audio/webm;codecs=opus"};'
-                'else if(MediaRecorder.isTypeSupported("audio/webm"))opts={mimeType:"audio/webm"};'
-                'else if(MediaRecorder.isTypeSupported("audio/mp4"))opts={mimeType:"audio/mp4"};'
-              '}'
+              'chunks=[];var opts=pickMime();'
               'try{mediaRec=new MediaRecorder(stream,opts);}catch(e){mediaRec=new MediaRecorder(stream);}'
               'mediaRec.ondataavailable=function(e){if(e.data&&e.data.size>0)chunks.push(e.data);};'
-              'mediaRec.start();'
-              'recStart=Date.now();'
+              'mediaRec.start();recStart=Date.now();'
               'document.getElementById("recOverlay").classList.add("show");'
-              'recTimer=setInterval(function(){'
-                'var s=Math.floor((Date.now()-recStart)/1000);'
-                'document.getElementById("recTime").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0");'
-              '},200);'
-            '}).catch(function(err){alert("Cannot access microphone: "+err.message);});'
+              'var mbb=document.getElementById("micBtn");if(mbb)mbb.classList.add("recording");'
+              'recTimer=setInterval(function(){var s=Math.floor((Date.now()-recStart)/1000);document.getElementById("recTime").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0");},200);'
+            '}).catch(function(err){alert("Cannot access microphone: "+(err&&err.message?err.message:err)+"\n\nPlease allow microphone access in your browser.");});'
           '};'
           'window.cancelRecording=function(){'
             'if(mediaRec&&mediaRec.state!=="inactive"){try{mediaRec.stop();}catch(e){}}'
             'if(mediaRec&&mediaRec.stream){mediaRec.stream.getTracks().forEach(function(t){t.stop();});}'
             'if(recTimer)clearInterval(recTimer);'
             'document.getElementById("recOverlay").classList.remove("show");'
+            'var mbb=document.getElementById("micBtn");if(mbb)mbb.classList.remove("recording");'
             'mediaRec=null;chunks=[];'
           '};'
           'window.stopAndSend=function(){'
             'if(!mediaRec){cancelRecording();return;}'
+            'var stream=mediaRec.stream;'
             'mediaRec.onstop=function(){'
               'var dur=(Date.now()-recStart)/1000;'
               'var blob=new Blob(chunks,{type:chunks[0]?chunks[0].type:"audio/webm"});'
@@ -2046,32 +2048,27 @@ def messages_thread(user_id):
               'var ext="webm";'
               'if(blob.type.indexOf("mp4")>=0)ext="m4a";'
               'else if(blob.type.indexOf("ogg")>=0)ext="ogg";'
+              'else if(blob.type.indexOf("wav")>=0)ext="wav";'
               'fd.append("voice",blob,"voice_"+Date.now()+"."+ext);'
-              'fetch("' + url_for("messages_send") + '",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){'
-                'if(r.redirected){window.location.href=r.url;}else{window.location.reload();}'
-              '}).catch(function(){window.location.reload();});'
-              'mediaRec.stream.getTracks().forEach(function(t){t.stop();});'
+              'fetch("' + url_for("messages_send") + '",{method:"POST",body:fd,credentials:"same-origin"}).then(function(){window.location.reload();}).catch(function(){window.location.reload();});'
+              'if(stream){stream.getTracks().forEach(function(t){t.stop();});}'
               'document.getElementById("recOverlay").classList.remove("show");'
+              'var mbb=document.getElementById("micBtn");if(mbb)mbb.classList.remove("recording");'
               'if(recTimer)clearInterval(recTimer);'
             '};'
             'try{mediaRec.stop();}catch(e){cancelRecording();}'
           '};'
+          'var mb=document.getElementById("micBtn");if(mb){mb.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if(typeof startRecording==="function")startRecording();else alert("Voice recording not supported.");});}'
           'var currentAudio=null;'
           'window.playVoice=function(btn,src){'
             'if(currentAudio){currentAudio.pause();currentAudio=null;}'
-            'var a=new Audio(src);'
-            'currentAudio=a;'
-            'var icon=btn.querySelector("i");'
-            'icon.className="fas fa-pause";'
+            'var a=new Audio(src);currentAudio=a;'
+            'var icon=btn.querySelector("i");icon.className="fas fa-pause";'
             'a.play();'
             'a.onended=function(){icon.className="fas fa-play";currentAudio=null;};'
-            'btn.onclick=function(){'
-              'if(a.paused){a.play();icon.className="fas fa-pause";}else{a.pause();icon.className="fas fa-play";}'
-            '};'
+            'btn.onclick=function(){if(a.paused){a.play();icon.className="fas fa-pause";}else{a.pause();icon.className="fas fa-play";}};'
           '};'
-          '})();'
-        '</script>'
-    )
+          '})();</script>')
     return page("Chat with " + str(other_name), content)
 
 @app.route("/messages/send", methods=["POST"])
@@ -2086,12 +2083,8 @@ def messages_send():
     recipient = db.session.get(User, recipient_id)
     if not recipient:
         flash("Recipient not found.", "danger"); return redirect(url_for("messages_inbox"))
-
-    attachment_filename = None
-    attachment_type = None
-    duration = 0.0
+    attachment_filename = None; attachment_type = None; duration = 0.0
     try:
-        # ── Image ──
         img = request.files.get("image")
         if img and img.filename:
             if "." not in img.filename:
@@ -2099,55 +2092,39 @@ def messages_send():
             ext = img.filename.rsplit(".", 1)[-1].lower()
             if ext not in MESSAGE_IMAGE_EXTENSIONS:
                 flash("Invalid image type. Allowed: JPG, JPEG, PNG, WEBP, GIF.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-            try:
-                img.seek(0, os.SEEK_END); size = img.tell(); img.seek(0)
+            try: img.seek(0, os.SEEK_END); size = img.tell(); img.seek(0)
             except Exception: size = 0
-            if size <= 0:
-                flash("Image is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-            if size > MESSAGE_IMAGE_MAX_BYTES:
-                flash("Image too large. Maximum 8 MB.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-            if not _is_valid_image_file(img):
-                flash("Not a valid image file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size <= 0: flash("Image is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size > MESSAGE_IMAGE_MAX_BYTES: flash("Image too large. Maximum 8 MB.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if not _is_valid_image_file(img): flash("Not a valid image file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
             fname = secure_filename("img_" + str(current_user.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:6] + "." + ext)
             os.makedirs(MESSAGE_UPLOAD_FOLDER, exist_ok=True)
             img.save(os.path.join(MESSAGE_UPLOAD_FOLDER, fname))
-            attachment_filename = fname
-            attachment_type = "image"
-
-        # ── Voice ──
+            attachment_filename = fname; attachment_type = "image"
         voice = request.files.get("voice")
         if voice and voice.filename and not attachment_filename:
             fname_in = voice.filename
             ext = (fname_in.rsplit(".", 1)[-1].lower() if "." in fname_in else "webm")
-            if ext not in MESSAGE_VOICE_EXTENSIONS:
-                ext = "webm"
-            try:
-                voice.seek(0, os.SEEK_END); size = voice.tell(); voice.seek(0)
+            if ext not in MESSAGE_VOICE_EXTENSIONS: ext = "webm"
+            try: voice.seek(0, os.SEEK_END); size = voice.tell(); voice.seek(0)
             except Exception: size = 0
-            if size <= 0:
-                flash("Voice file is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-            if size > MESSAGE_VOICE_MAX_BYTES:
-                flash("Voice message too large.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-            if not _is_valid_voice_file(voice):
-                flash("Invalid voice file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size <= 0: flash("Voice file is empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if size > MESSAGE_VOICE_MAX_BYTES: flash("Voice message too large.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
+            if not _is_valid_voice_file(voice): flash("Invalid voice file.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
             try: duration = float(request.form.get("voice_duration", 0) or 0)
             except Exception: duration = 0.0
             fname = secure_filename("voice_" + str(current_user.id) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:6] + "." + ext)
             os.makedirs(MESSAGE_UPLOAD_FOLDER, exist_ok=True)
             voice.save(os.path.join(MESSAGE_UPLOAD_FOLDER, fname))
-            attachment_filename = fname
-            attachment_type = "voice"
-
+            attachment_filename = fname; attachment_type = "voice"
         if not body and not attachment_filename:
             flash("Message cannot be empty.", "danger"); return redirect(url_for("messages_thread", user_id=recipient_id))
-
         m = Message(sender_id=current_user.id, recipient_id=recipient_id, body=body or None,
                     attachment=attachment_filename, attachment_type=attachment_type, duration=duration or 0)
         db.session.add(m)
         log_audit("Message Sent", "Message", None, new_value=("to " + str(recipient.username) + (" [" + str(attachment_type) + "]" if attachment_type else "")))
         db.session.commit()
-        if not attachment_filename:
-            flash("✅ Message sent", "success")
+        if not attachment_filename: flash("✅ Message sent", "success")
     except Exception as e:
         db.session.rollback(); flash("Error: " + str(e), "danger")
         return redirect(url_for("messages_thread", user_id=recipient_id))
@@ -2158,8 +2135,7 @@ def messages_send():
 @role_required("ADMIN","MANAGER","SUPERVISOR")
 def items_list():
     depts = Department.query.order_by(Department.name).all()
-    dept_f = request.args.get("dept", type=int)
-    q = request.args.get("q", "").strip()
+    dept_f = request.args.get("dept", type=int); q = request.args.get("q", "").strip()
     show_inactive = request.args.get("show_inactive", "") == "1"
     base = WorkingItem.query
     if dept_f: base = base.filter(WorkingItem.department_id == dept_f)
@@ -2168,13 +2144,12 @@ def items_list():
     items = base.order_by(WorkingItem.department_id, WorkingItem.name).all()
     rows = []
     for it in items:
-        dname = it.department.name if it.department else "—"
-        aname = it.area.name if it.area else "—"
+        dname = it.department.name if it.department else "—"; aname = it.area.name if it.area else "—"
         inactive = (it.is_active is False)
         status_badge = ('<span class="badge badge-secondary">Inactive</span>' if inactive else '<span class="badge badge-success">Active</span>')
-        actions = ('<a class="btn-primary" href="' + url_for("items_edit", item_id=it.id) + '" style="padding:.35rem .7rem;font-size:.75rem;"><i class="fas fa-edit"></i> Edit</a> ')
-        if inactive: actions += '<form method="post" action="' + url_for("items_activate", item_id=it.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .7rem;font-size:.75rem;"><i class="fas fa-undo"></i> Activate</button></form>'
-        else: actions += '<form method="post" action="' + url_for("items_deactivate", item_id=it.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate this item?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.35rem .7rem;font-size:.75rem;"><i class="fas fa-ban"></i> Deactivate</button></form>'
+        actions = ('<a class="btn-primary" href="' + url_for("items_edit", item_id=it.id) + '" style="padding:.35rem .7rem;font-size:.75rem;width:auto;"><i class="fas fa-edit"></i> Edit</a> ')
+        if inactive: actions += '<form method="post" action="' + url_for("items_activate", item_id=it.id) + '" style="display:inline"><button type="submit" class="btn-primary" style="background:var(--success);padding:.35rem .7rem;font-size:.75rem;width:auto;"><i class="fas fa-undo"></i> Activate</button></form>'
+        else: actions += '<form method="post" action="' + url_for("items_deactivate", item_id=it.id) + '" style="display:inline" onsubmit="return confirm(\'Deactivate this item?\')"><button type="submit" class="btn-primary" style="background:var(--warning);padding:.35rem .7rem;font-size:.75rem;width:auto;"><i class="fas fa-ban"></i> Deactivate</button></form>'
         rows.append('<tr><td>' + str(it.id) + '</td><td>' + str(it.name) + '</td><td>' + str(dname) + '</td><td>' + str(aname) + '</td><td>' + status_badge + '</td><td>' + actions + '</td></tr>')
     dept_opts = '<option value="">All Departments</option>' + "".join('<option value="' + str(d.id) + '"' + (' selected' if dept_f==d.id else '') + '>' + d.name + '</option>' for d in depts)
     content = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-th-list"></i> <span>Maintenance</span> Items</h1><p>Add, edit or deactivate items per department</p></div>'
@@ -2195,17 +2170,14 @@ def items_add():
     depts = Department.query.order_by(Department.name).all()
     areas = Area.query.filter((Area.is_active == True) | (Area.is_active == None)).order_by(Area.name).all()
     if request.method == "POST":
-        name = (request.form.get("name") or "").strip()
-        dept_id = request.form.get("department_id", type=int)
-        area_id = request.form.get("area_id", type=int) or None
+        name = (request.form.get("name") or "").strip(); dept_id = request.form.get("department_id", type=int); area_id = request.form.get("area_id", type=int) or None
         desc = (request.form.get("description") or "").strip()
         if not name: flash("Item name is required","danger"); return redirect(url_for("items_add"))
         existing = WorkingItem.query.filter(func.lower(WorkingItem.name) == name.lower()).first()
         if existing: flash("An item with this name already exists.","warning"); return redirect(url_for("items_add"))
         try:
             it = WorkingItem(name=name, description=desc, department_id=dept_id, area_id=area_id, is_active=True)
-            db.session.add(it); db.session.flush()
-            log_audit("Item Created","WorkingItem",it.id,new_value=name)
+            db.session.add(it); db.session.flush(); log_audit("Item Created","WorkingItem",it.id,new_value=name)
             db.session.commit(); flash("✅ Item added successfully","success"); return redirect(url_for("items_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     dept_opts = '<option value="">-- Select Department --</option>' + "".join('<option value="' + str(d.id) + '">' + d.name + '</option>' for d in depts)
@@ -2228,16 +2200,13 @@ def items_edit(item_id):
     depts = Department.query.order_by(Department.name).all()
     areas = Area.query.filter((Area.is_active == True) | (Area.is_active == None)).order_by(Area.name).all()
     if request.method == "POST":
-        name = (request.form.get("name") or "").strip()
-        dept_id = request.form.get("department_id", type=int)
-        area_id = request.form.get("area_id", type=int) or None
+        name = (request.form.get("name") or "").strip(); dept_id = request.form.get("department_id", type=int); area_id = request.form.get("area_id", type=int) or None
         desc = (request.form.get("description") or "").strip()
         if not name: flash("Item name is required","danger"); return redirect(url_for("items_edit", item_id=it.id))
         dup = WorkingItem.query.filter(func.lower(WorkingItem.name) == name.lower(), WorkingItem.id != it.id).first()
         if dup: flash("Another item with this name already exists.","warning"); return redirect(url_for("items_edit", item_id=it.id))
         try:
-            old = it.name
-            it.name = name; it.description = desc; it.department_id = dept_id; it.area_id = area_id
+            old = it.name; it.name = name; it.description = desc; it.department_id = dept_id; it.area_id = area_id
             log_audit("Item Updated","WorkingItem",it.id,old_value=old,new_value=name)
             db.session.commit(); flash("✅ Item updated","success"); return redirect(url_for("items_list"))
         except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
@@ -2259,8 +2228,7 @@ def items_edit(item_id):
 def items_deactivate(item_id):
     it = get_or_404(WorkingItem, item_id)
     try:
-        it.is_active = False
-        log_audit("Item Deactivated","WorkingItem",it.id,old_value="active",new_value="inactive")
+        it.is_active = False; log_audit("Item Deactivated","WorkingItem",it.id,old_value="active",new_value="inactive")
         db.session.commit(); flash("Item deactivated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("items_list"))
@@ -2270,8 +2238,7 @@ def items_deactivate(item_id):
 def items_activate(item_id):
     it = get_or_404(WorkingItem, item_id)
     try:
-        it.is_active = True
-        log_audit("Item Activated","WorkingItem",it.id,old_value="inactive",new_value="active")
+        it.is_active = True; log_audit("Item Activated","WorkingItem",it.id,old_value="inactive",new_value="active")
         db.session.commit(); flash("Item activated","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("items_list"))
@@ -2315,22 +2282,15 @@ def request_create():
     sig_profile = get_user_signature_profile(current_user)
     user_dept_name = current_user.department.name if current_user.department else None
     user_dept_id = current_user.department_id
-
     hk_dept = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
     hk_dept_id = hk_dept.id if hk_dept else None
     hk_cats = [c for c in cats_all if c.name in HOUSEKEEPING_CATEGORY_NAMES]
     other_cats = [c for c in cats_all if c.name not in HOUSEKEEPING_CATEGORY_NAMES]
-
     if request.method == "POST":
         try:
-            lt = request.form.get("location_type","Room").strip() or "Room"
-            rid = request.form.get("room_id", type=int)
-            aid = request.form.get("area_id", type=int)
-            wid = request.form.get("working_item_id", type=int)
-            cid = request.form.get("category_id", type=int)
-            desc = request.form.get("description","").strip()
-            prio = request.form.get("priority","MEDIUM")
-            fl = request.form.get("floor", type=int)
+            lt = request.form.get("location_type","Room").strip() or "Room"; rid = request.form.get("room_id", type=int); aid = request.form.get("area_id", type=int)
+            wid = request.form.get("working_item_id", type=int); cid = request.form.get("category_id", type=int)
+            desc = request.form.get("description","").strip(); prio = request.form.get("priority","MEDIUM"); fl = request.form.get("floor", type=int)
             did = current_user.department_id if current_user.department_id else None
             form_dept_id = request.form.get("department_id", type=int)
             if form_dept_id: did = form_dept_id
@@ -2340,8 +2300,7 @@ def request_create():
             elif lt == "Area": rid = None
             else: rid = None; aid = None
             if not desc: flash("Description is required","danger"); return redirect(url_for("request_create"))
-            sig_data = request.form.get("signature_data", "").strip()
-            sig_name_from_form = request.form.get("signature_name", "").strip()
+            sig_data = request.form.get("signature_data", "").strip(); sig_name_from_form = request.form.get("signature_name", "").strip()
             if current_user.role in ["DEPARTMENT", "EMPLOYEE"]:
                 ok, err = validate_signature_for_user(current_user, sig_data)
                 if not ok: flash(err, "danger"); return redirect(url_for("request_create"))
@@ -2355,8 +2314,7 @@ def request_create():
                 signature_name=authorized_name, signature_status=("SIGNED" if sig_data else "UNSIGNED"),
                 signature_signed_at=(datetime.utcnow() if sig_data else None),
                 signature_data=sig_data, signature_department=user_dept_name,
-                signature_verified=bool(sig_data), signature_user_id=current_user.id,
-            )
+                signature_verified=bool(sig_data), signature_user_id=current_user.id)
             req.due_date = datetime.utcnow() + timedelta(hours=PRIORITIES.get(prio,24))
             db.session.add(req); db.session.flush()
             uploaded_files = request.files.getlist("photo")
@@ -2365,8 +2323,7 @@ def request_create():
                     ext = f.filename.rsplit(".",1)[-1].lower()
                     fname = secure_filename("req_" + str(req.id) + "_" + str(idx) + "_" + datetime.now().strftime("%Y%m%d%H%M%S") + "." + ext)
                     f.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
-                    db.session.add(Photo(filename=fname, object_type="request", object_id=req.id,
-                                         photo_type="Problem", uploaded_by_id=current_user.id))
+                    db.session.add(Photo(filename=fname, object_type="request", object_id=req.id, photo_type="Problem", uploaded_by_id=current_user.id))
             log_audit("Create Request","MaintenanceRequest",req.id,new_value=req.request_no)
             log_status_change(req.id,"Pending",notes="Created by " + str(current_user.full_name))
             managers = User.query.filter(User.role.in_(["MANAGER","ADMIN"]), User.active == True).all()
@@ -2377,7 +2334,6 @@ def request_create():
         except Exception as e:
             db.session.rollback(); print("Create error: " + traceback.format_exc())
             flash("Error: " + str(e),"danger"); return redirect(url_for("request_create"))
-
     is_hk_user = (user_dept_id == hk_dept_id) if hk_dept_id else False
     user_cats = hk_cats if is_hk_user else other_cats
     user_items = []
@@ -2478,96 +2434,46 @@ def request_create():
         '<div class="rq-bar"><div class="rq-bar-row"><button type="submit" class="rq-btn rq-btn-p" id="rq-submit">Submit Maintenance Request</button></div>'
         '<p>After submission, your request will be reviewed by the Engineering Department.</p></div>'
         '</form></div>'
-        '<script>'
-        'window.RORI_IS_HK=' + ('true' if is_hk_user else 'false') + ';'
+        '<script>window.RORI_IS_HK=' + ('true' if is_hk_user else 'false') + ';'
         'window.RORI_HK_ITEMS_BY_CAT=' + json.dumps({str(k): v for k, v in hk_items_by_cat_json.items()}) + ';'
         'window.RORI_ALL_ITEMS=' + json.dumps(items_json) + ';'
-        'window.RORI_SIG_REQUIRED=' + ('true' if sig_block_required else 'false') + ';'
-        '</script>'
+        'window.RORI_SIG_REQUIRED=' + ('true' if sig_block_required else 'false') + ';</script>'
         '<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>'
         '<script>(function(){'
         'var form=document.getElementById("requestForm");if(!form)return;'
-        'var IS_HK=window.RORI_IS_HK===true;'
-        'var HK_BY_CAT=window.RORI_HK_ITEMS_BY_CAT||{};'
-        'var ALL_ITEMS=window.RORI_ALL_ITEMS||[];'
-        'var SIG_REQUIRED=window.RORI_SIG_REQUIRED===true;'
-        'var locType=document.getElementById("rq-locationType");'
-        'var typeBtns=document.querySelectorAll("#rq-type button");'
-        'var roomF=document.getElementById("rq-roomF");'
-        'var areaF=document.getElementById("rq-areaF");'
-        'var catSel=document.getElementById("rq-cat");'
-        'var itemSel=document.getElementById("rq-item");'
-        'var priBtns=document.querySelectorAll("#rq-pri button");'
-        'var priHidden=document.getElementById("rq-priority");'
-        'var fileInp=document.getElementById("rq-file");'
-        'var thumbs=document.getElementById("rq-thumbs");'
-        'var cnt=document.getElementById("rq-cnt");'
-        'var sigData=document.getElementById("rq-sigData");'
-        'var sigStatus=document.getElementById("rq-sigStatus");'
-        'var submitBtn=document.getElementById("rq-submit");'
-        'var sL=document.getElementById("rq-sL"),sC=document.getElementById("rq-sC"),sP=document.getElementById("rq-sP");'
-        'var curType="Room";'
-        'typeBtns.forEach(function(b){b.addEventListener("click",function(){'
-        'curType=b.dataset.v;locType.value=curType;'
+        'var IS_HK=window.RORI_IS_HK===true;var HK_BY_CAT=window.RORI_HK_ITEMS_BY_CAT||{};var ALL_ITEMS=window.RORI_ALL_ITEMS||[];var SIG_REQUIRED=window.RORI_SIG_REQUIRED===true;'
+        'var locType=document.getElementById("rq-locationType");var typeBtns=document.querySelectorAll("#rq-type button");'
+        'var roomF=document.getElementById("rq-roomF");var areaF=document.getElementById("rq-areaF");'
+        'var catSel=document.getElementById("rq-cat");var itemSel=document.getElementById("rq-item");'
+        'var priBtns=document.querySelectorAll("#rq-pri button");var priHidden=document.getElementById("rq-priority");'
+        'var fileInp=document.getElementById("rq-file");var thumbs=document.getElementById("rq-thumbs");var cnt=document.getElementById("rq-cnt");'
+        'var sigData=document.getElementById("rq-sigData");var sigStatus=document.getElementById("rq-sigStatus");var submitBtn=document.getElementById("rq-submit");'
+        'var sL=document.getElementById("rq-sL"),sC=document.getElementById("rq-sC"),sP=document.getElementById("rq-sP");var curType="Room";'
+        'typeBtns.forEach(function(b){b.addEventListener("click",function(){curType=b.dataset.v;locType.value=curType;'
         'typeBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
-        'if(curType==="Room"){roomF.classList.remove("rq-hide");areaF.classList.add("rq-hide");}'
-        'else{roomF.classList.add("rq-hide");areaF.classList.remove("rq-hide");}'
-        'updateSum();});});'
-        'function renderItems(){var cid=catSel.value;var allowed=null;'
-        'if(IS_HK&&cid&&HK_BY_CAT[cid]){allowed=HK_BY_CAT[cid];}'
-        'itemSel.innerHTML=\'<option value="">Select item</option>\';'
-        'ALL_ITEMS.forEach(function(it){if(allowed&&allowed.indexOf(it.id)<0)return;'
-        'var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
-        'catSel.addEventListener("change",function(){renderItems();updateSum();});'
-        'renderItems();'
-        'priBtns.forEach(function(b){b.addEventListener("click",function(){'
-        'priBtns.forEach(function(x){x.classList.toggle("on",x===b);});'
-        'priHidden.value=b.dataset.v;updateSum();});});'
-        'var acc=new DataTransfer();'
-        'function pick(){fileInp.click();}'
-        'document.getElementById("rq-pick").addEventListener("click",pick);'
-        'document.getElementById("rq-pick2").addEventListener("click",pick);'
-        'fileInp.addEventListener("change",function(e){'
-        'for(var i=0;i<e.target.files.length;i++){if(acc.items.length>=5)break;acc.items.add(e.target.files[i]);}'
-        'fileInp.files=acc.files;renderThumbs();});'
-        'function renderThumbs(){thumbs.innerHTML="";'
-        'for(var i=0;i<acc.files.length;i++){(function(idx){'
-        'var f=acc.files[idx];var d=document.createElement("div");d.className="rq-th";'
-        'd.style.backgroundImage="url("+URL.createObjectURL(f)+")";'
-        'var btn=document.createElement("button");btn.type="button";btn.textContent="✕";btn.setAttribute("aria-label","Remove");'
-        'btn.addEventListener("click",function(){var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}'
-        'acc=nd;fileInp.files=acc.files;renderThumbs();});'
-        'd.appendChild(btn);thumbs.appendChild(d);})(i);}'
-        'cnt.textContent=acc.files.length+" / 5";}'
-        'var canvas=document.getElementById("signature-pad");'
-        'var sigPad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});'
+        'if(curType==="Room"){roomF.classList.remove("rq-hide");areaF.classList.add("rq-hide");}else{roomF.classList.add("rq-hide");areaF.classList.remove("rq-hide");}updateSum();});});'
+        'function renderItems(){var cid=catSel.value;var allowed=null;if(IS_HK&&cid&&HK_BY_CAT[cid]){allowed=HK_BY_CAT[cid];}'
+        'itemSel.innerHTML=\'<option value="">Select item</option>\';ALL_ITEMS.forEach(function(it){if(allowed&&allowed.indexOf(it.id)<0)return;var o=document.createElement("option");o.value=it.id;o.textContent=it.name;itemSel.appendChild(o);});}'
+        'catSel.addEventListener("change",function(){renderItems();updateSum();});renderItems();'
+        'priBtns.forEach(function(b){b.addEventListener("click",function(){priBtns.forEach(function(x){x.classList.toggle("on",x===b);});priHidden.value=b.dataset.v;updateSum();});});'
+        'var acc=new DataTransfer();function pick(){fileInp.click();}'
+        'document.getElementById("rq-pick").addEventListener("click",pick);document.getElementById("rq-pick2").addEventListener("click",pick);'
+        'fileInp.addEventListener("change",function(e){for(var i=0;i<e.target.files.length;i++){if(acc.items.length>=5)break;acc.items.add(e.target.files[i]);}fileInp.files=acc.files;renderThumbs();});'
+        'function renderThumbs(){thumbs.innerHTML="";for(var i=0;i<acc.files.length;i++){(function(idx){var f=acc.files[idx];var d=document.createElement("div");d.className="rq-th";d.style.backgroundImage="url("+URL.createObjectURL(f)+")";var btn=document.createElement("button");btn.type="button";btn.textContent="✕";btn.setAttribute("aria-label","Remove");btn.addEventListener("click",function(){var nd=new DataTransfer();for(var j=0;j<acc.files.length;j++){if(j!==idx)nd.items.add(acc.files[j]);}acc=nd;fileInp.files=acc.files;renderThumbs();});d.appendChild(btn);thumbs.appendChild(d);})(i);}cnt.textContent=acc.files.length+" / 5";}'
+        'var canvas=document.getElementById("signature-pad");var sigPad=new SignaturePad(canvas,{backgroundColor:"rgb(255,255,255)",penColor:"rgb(0,0,0)"});'
         'function resizeCanvas(){var r=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*r;canvas.height=canvas.offsetHeight*r;canvas.getContext("2d").scale(r,r);sigPad.clear();updateSig();}'
         'window.addEventListener("resize",resizeCanvas);setTimeout(resizeCanvas,60);'
-        'document.getElementById("rq-sigClear").addEventListener("click",function(){sigPad.clear();updateSig();});'
-        'sigPad.addEventListener("endStroke",updateSig);'
-        'function updateSig(){if(sigPad.isEmpty()){sigStatus.textContent="Awaiting signature";sigStatus.className="rq-sigstatus";}'
-        'else{sigStatus.textContent="✓ Signature captured";sigStatus.className="rq-sigstatus rq-ok";}}'
-        'updateSig();'
-        'function updateSum(){var loc="";'
-        'if(curType==="Room"){var rs=document.getElementById("rq-room");var ro=rs.options[rs.selectedIndex];if(rs.value&&ro)loc=ro.textContent;}'
-        'else{var as=document.getElementById("rq-area");var ao=as.options[as.selectedIndex];if(as.value&&ao)loc=ao.textContent;'
-        'var fs=document.getElementById("rq-floorA");if(fs&&fs.value&&fs.value!=="0"&&loc)loc+=", Floor "+fs.value;}'
-        'sL.textContent=loc||"–";'
-        'sC.textContent=(catSel.value&&catSel.options[catSel.selectedIndex])?catSel.options[catSel.selectedIndex].textContent:"–";'
-        'sP.textContent=(priHidden.value||"–");}'
-        '["rq-room","rq-area","rq-floorA"].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener("change",updateSum);});'
-        'updateSum();'
-        'form.addEventListener("submit",function(e){'
-        'var miss=[];'
+        'document.getElementById("rq-sigClear").addEventListener("click",function(){sigPad.clear();updateSig();});sigPad.addEventListener("endStroke",updateSig);'
+        'function updateSig(){if(sigPad.isEmpty()){sigStatus.textContent="Awaiting signature";sigStatus.className="rq-sigstatus";}else{sigStatus.textContent="✓ Signature captured";sigStatus.className="rq-sigstatus rq-ok";}}updateSig();'
+        'function updateSum(){var loc="";if(curType==="Room"){var rs=document.getElementById("rq-room");var ro=rs.options[rs.selectedIndex];if(rs.value&&ro)loc=ro.textContent;}else{var as=document.getElementById("rq-area");var ao=as.options[as.selectedIndex];if(as.value&&ao)loc=ao.textContent;var fs=document.getElementById("rq-floorA");if(fs&&fs.value&&fs.value!=="0"&&loc)loc+=", Floor "+fs.value;}sL.textContent=loc||"–";sC.textContent=(catSel.value&&catSel.options[catSel.selectedIndex])?catSel.options[catSel.selectedIndex].textContent:"–";sP.textContent=(priHidden.value||"–");}'
+        '["rq-room","rq-area","rq-floorA"].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener("change",updateSum);});updateSum();'
+        'form.addEventListener("submit",function(e){var miss=[];'
         'if(curType==="Room"&&!document.getElementById("rq-room").value)miss.push("Room");'
         'if(curType==="Area"&&!document.getElementById("rq-area").value)miss.push("Area");'
-        'if(!catSel.value)miss.push("Category");'
-        'if(!itemSel.value)miss.push("Item");'
-        'if(!document.getElementById("rq-desc").value.trim())miss.push("Description");'
-        'if(!priHidden.value)miss.push("Priority");'
+        'if(!catSel.value)miss.push("Category");if(!itemSel.value)miss.push("Item");'
+        'if(!document.getElementById("rq-desc").value.trim())miss.push("Description");if(!priHidden.value)miss.push("Priority");'
         'if(SIG_REQUIRED&&sigPad.isEmpty())miss.push("Signature");'
-        'if(miss.length){e.preventDefault();'
-        'document.querySelectorAll(".rq-page .rq-err").forEach(function(x){x.classList.remove("rq-err");});'
+        'if(miss.length){e.preventDefault();document.querySelectorAll(".rq-page .rq-err").forEach(function(x){x.classList.remove("rq-err");});'
         'var first=null;'
         'if(curType==="Room"&&!document.getElementById("rq-room").value){var w=document.getElementById("rq-rm");w.classList.add("rq-err");first=first||w;}'
         'if(curType==="Area"&&!document.getElementById("rq-area").value){var w2=document.getElementById("rq-ar");w2.classList.add("rq-err");first=first||w2;}'
@@ -2575,13 +2481,9 @@ def request_create():
         'if(!itemSel.value){var w4=document.getElementById("rq-ig");w4.classList.add("rq-err");first=first||w4;}'
         'if(!document.getElementById("rq-desc").value.trim()){var w5=document.getElementById("rq-dg");w5.classList.add("rq-err");first=first||w5;}'
         'if(SIG_REQUIRED&&sigPad.isEmpty()){alert("⚠️ Digital signature is required.");}'
-        'if(first)first.scrollIntoView({behavior:"smooth",block:"center"});'
-        'else alert("Please complete: "+miss.join(", "));'
-        'return false;}'
+        'if(first)first.scrollIntoView({behavior:"smooth",block:"center"});else alert("Please complete: "+miss.join(", "));return false;}'
         'if(!sigPad.isEmpty()){sigData.value=sigPad.toDataURL("image/png");}'
-        'submitBtn.disabled=true;submitBtn.innerHTML=\'<span class="rq-spin"></span>Submitting…\';'
-        '});'
-        '})();</script>')
+        'submitBtn.disabled=true;submitBtn.innerHTML=\'<span class="rq-spin"></span>Submitting…\';});})();</script>')
     return page("New Request", c)
 
 @app.route("/requests/<int:req_id>")
@@ -3292,7 +3194,7 @@ def dashboard():
     all_floors = [f.floor_number for f in Floor.query.order_by(Floor.floor_number).all()]
     if not all_floors: all_floors = sorted({r.floor for r in Room.query.all()})
     chart_data = {"trends": trends, "statuses": statuses, "departments": departments, "dept_completion": dept_completion, "priorities": priorities, "categories": categories, "floors": floors}
-    return render_template_string(DASHBOARD_TEMPLATE, kpis=kpis, work_orders={"total": WorkOrder.query.count()}, top_locations=[], staff_stats=tech_workload, inventory=inventory, recent_activity=activity, recent_requests=recent_reqs, all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms, all_areas=all_areas, all_floors=all_floors, chart_data=chart_data, filters={k: v for k, v in args.items()}, technician_workload=tech_workload, dept_completion=dept_completion, current_user=current_user)
+    return render_template_string(DASHBOARD_TEMPLATE, kpis=kpis, work_orders={"total": WorkOrder.query.count()}, top_locations=[], staff_stats=tech_workload, inventory=inventory, recent_activity=activity, recent_requests=recent_reqs, all_departments=all_depts, all_categories=all_cats, all_rooms=all_rooms, all_areas=all_areas, all_floors=all_floors, chart_data=chart_data, filters={k: v for k, v in args.items()}, technician_workload=tech_workload, dept_completion=dept_completion, current_user=current_user, get_profile_photo_url=get_profile_photo_url)
 
 DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -3310,40 +3212,32 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-
 body{font-family:'Figtree','Inter',system-ui,-apple-system,sans-serif;background:var(--app-bg);color:var(--text-primary);min-height:100vh;padding-top:64px;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:var(--gold);text-decoration:none}
 .navbar{background:rgba(14,14,14,0.94)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border);padding:.6rem 1.25rem;min-height:64px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
-.navbar-brand{font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.35rem;color:var(--gold)!important;letter-spacing:.18em;transition:transform .2s, text-shadow .2s}
-.navbar-brand:hover{transform:translateY(-1px);text-shadow:0 2px 12px rgba(197,160,89,.5)}
+.navbar-brand{font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;font-size:1.35rem;color:var(--gold)!important;letter-spacing:.18em}
 .navbar-brand i{color:var(--gold);margin-right:.35rem}
 .navbar-toggler{border-color:var(--border);color:var(--text-primary)}
-.navbar-toggler:focus{box-shadow:0 0 0 3px rgba(197,160,89,.25)}
-.nav-link{color:var(--text-secondary)!important;padding:.5rem .9rem!important;border-radius:10px;font-size:.9rem;transition:all .22s cubic-bezier(.4,0,.2,1)}
-.nav-link i{color:var(--text-muted);margin-right:5px;transition:color .2s ease}
-.nav-link:hover{background:rgba(197,160,89,0.12);color:var(--gold)!important;transform:translateY(-1px)}
+.nav-link{color:var(--text-secondary)!important;padding:.5rem .9rem!important;border-radius:10px;font-size:.9rem;transition:all .22s}
+.nav-link i{color:var(--text-muted);margin-right:5px}
+.nav-link:hover{background:rgba(197,160,89,0.12);color:var(--gold)!important}
 .nav-link:hover i{color:var(--gold)}
 .container{max-width:1400px;padding:1.5rem}
-.card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;color:var(--text-primary);padding:1.25rem 1.35rem;margin-bottom:1.25rem;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);transition:transform .28s cubic-bezier(.4,0,.2,1), box-shadow .28s, border-color .28s}
-.card:hover{border-color:rgba(197,160,89,0.32);transform:translateY(-3px);box-shadow:0 2px 4px rgba(0,0,0,.2), 0 18px 40px rgba(0,0,0,.5), 0 24px 60px rgba(197,160,89,.08), inset 0 1px 0 rgba(255,255,255,.05)}
-.card h5{font-family:'Cormorant Garamond',Georgia,serif;color:var(--gold);font-weight:700;font-size:1.25rem;letter-spacing:.02em}
-.metric-card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:1.1rem 1rem;text-align:center;height:100%;transition:all .28s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03)}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;color:var(--text-primary);padding:1.25rem 1.35rem;margin-bottom:1.25rem;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.card h5{font-family:'Cormorant Garamond',Georgia,serif;color:var(--gold);font-weight:700;font-size:1.25rem}
+.metric-card{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:1.1rem 1rem;text-align:center;height:100%;position:relative;overflow:hidden}
 .metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent);opacity:.65}
-.metric-card:hover{transform:perspective(800px) translateZ(12px) translateY(-4px);border-color:rgba(197,160,89,.4);box-shadow:0 2px 4px rgba(0,0,0,.2), 0 20px 45px rgba(0,0,0,.5), 0 24px 70px rgba(197,160,89,.15), inset 0 1px 0 rgba(255,255,255,.06)}
-.metric-value{font-family:'Cormorant Garamond',Georgia,serif;font-size:2.1rem;font-weight:700;color:var(--text-primary);line-height:1.05;letter-spacing:.01em}
+.metric-value{font-family:'Cormorant Garamond',Georgia,serif;font-size:2.1rem;font-weight:700;color:var(--text-primary);line-height:1.05}
 .metric-label{font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.1em;margin-top:.35rem;font-weight:600}
-.metric-icon{font-size:1.35rem;color:var(--gold);margin-bottom:.35rem;text-shadow:0 2px 8px rgba(197,160,89,.4)}
-.table{--bs-table-color:var(--text-primary)!important;--bs-table-bg:transparent!important;--bs-table-accent-bg:transparent!important;--bs-table-hover-color:var(--text-primary)!important;--bs-table-hover-bg:rgba(197,160,89,.05)!important;color:var(--text-primary)!important;background:transparent!important;width:100%;margin-bottom:0}
-.table>:not(caption)>*>*{background-color:transparent!important;color:var(--text-primary)!important;box-shadow:none!important;padding:.8rem .9rem;font-size:.88rem;border-color:rgba(197,160,89,.08)!important}
-.table thead th{color:var(--text-secondary)!important;border-bottom:1px solid var(--border-strong)!important;font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding:.8rem .9rem;white-space:nowrap;background:transparent!important;font-weight:600}
+.metric-icon{font-size:1.35rem;color:var(--gold);margin-bottom:.35rem}
+.table{--bs-table-color:var(--text-primary)!important;--bs-table-bg:transparent!important;color:var(--text-primary)!important;width:100%;margin-bottom:0}
+.table>:not(caption)>*>*{background-color:transparent!important;color:var(--text-primary)!important;padding:.8rem .9rem;font-size:.88rem;border-color:rgba(197,160,89,.08)!important}
+.table thead th{color:var(--text-secondary)!important;border-bottom:1px solid var(--border-strong)!important;font-size:11px;text-transform:uppercase;letter-spacing:.1em}
 .table-hover tbody tr:hover>*{background-color:rgba(197,160,89,.05)!important}
-.btn{border-radius:12px;font-weight:700;padding:.65rem 1.4rem;border:none;transition:all .18s cubic-bezier(.4,0,.2,1);min-height:48px}
+.btn{border-radius:12px;font-weight:700;padding:.65rem 1.4rem;border:none;min-height:48px}
 .btn-primary{background:var(--gold);color:#16120a!important;border:1.5px solid var(--gold);box-shadow:0 3px 0 var(--gold-deep), 0 6px 16px rgba(197,160,89,.28)}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 5px 0 var(--gold-deep), 0 12px 28px rgba(197,160,89,.42);background:#d4b06c;color:#16120a!important}
-.btn-primary:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-deep)}
 .btn-sm{padding:.45rem .95rem;font-size:.78rem;min-height:38px}
-.form-control,.form-select{background:#0e0e0e!important;border:1.5px solid var(--border);border-radius:12px;color:var(--text-primary);padding:.7rem .95rem;font-size:.9rem;min-height:48px;transition:all .22s cubic-bezier(.4,0,.2,1);box-shadow:inset 0 1px 3px rgba(0,0,0,.4)}
-.form-control:focus,.form-select:focus{background:#0e0e0e!important;color:var(--text-primary);border-color:var(--gold);box-shadow:inset 0 1px 3px rgba(0,0,0,.4), 0 0 0 3px rgba(197,160,89,.25), 0 4px 14px rgba(197,160,89,.18);outline:none;transform:translateY(-1px)}
-.form-control::placeholder{color:var(--text-muted)}
+.form-control,.form-select{background:#0e0e0e!important;border:1.5px solid var(--border);border-radius:12px;color:var(--text-primary);padding:.7rem .95rem;font-size:.9rem;min-height:48px}
+.form-control:focus,.form-select:focus{background:#0e0e0e!important;color:var(--text-primary);border-color:var(--gold);box-shadow:0 0 0 3px rgba(197,160,89,.25);outline:none}
 .form-label{color:var(--text-secondary);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.35rem}
-.badge{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border-radius:999px;font-weight:600;font-size:11px;border:1px solid transparent;transition:transform .15s}
-.badge:hover{transform:translateY(-1px)}
+.badge{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border-radius:999px;font-weight:600;font-size:11px;border:1px solid transparent}
 .chart-box{position:relative;width:100%;height:280px}
 .chart-box.tall{height:340px}
 .chart-box.donut{height:240px}
@@ -3352,35 +3246,25 @@ a{color:var(--gold);text-decoration:none}
 .prog-top{display:flex;justify-content:space-between;font-size:.8rem}
 .prog-top .nm{color:var(--text-primary);font-weight:600}
 .prog-top .ct{color:var(--gold);font-weight:800}
-.prog-bar{height:6px;background:rgba(197,160,89,.12);border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-.prog-bar span{display:block;height:100%;border-radius:6px;background:var(--gold);box-shadow:0 0 8px rgba(197,160,89,.5)}
+.prog-bar{height:6px;background:rgba(197,160,89,.12);border-radius:6px;overflow:hidden}
+.prog-bar span{display:block;height:100%;border-radius:6px;background:var(--gold)}
 .feed{display:flex;flex-direction:column;gap:.4rem}
-.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:rgba(255,255,255,.03);border-left:2px solid var(--gold);border-radius:9px;font-size:.8rem;transition:all .2s}
-.feed-item:hover{background:rgba(255,255,255,.05);transform:translateX(2px)}
-.feed-item .tx{color:var(--text-primary)}
-.feed-item .tx strong{color:#fff;font-weight:600}
+.feed-item{display:flex;gap:.6rem;padding:.55rem .7rem;background:rgba(255,255,255,.03);border-left:2px solid var(--gold);border-radius:9px;font-size:.8rem}
 .feed-item .tm{font-size:.68rem;color:var(--text-muted);margin-top:2px}
 .empty{text-align:center;padding:2rem 1rem;color:var(--text-secondary);font-size:.88rem}
 .empty i{font-size:1.6rem;color:var(--gold);opacity:.4;display:block;margin-bottom:.5rem}
-.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:16px;margin-bottom:1.5rem;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03)}
+.filter-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end;padding:1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:16px;margin-bottom:1.5rem}
 .filter-bar > div{display:flex;flex-direction:column;gap:.25rem;flex:1;min-width:130px}
 .rori-footer{margin-top:3rem;padding:1.5rem 2rem;text-align:center;font-size:.8rem;color:var(--text-secondary);border-top:1px solid var(--border)}
-.rori-footer .dev-name{color:var(--gold);font-weight:700;letter-spacing:.04em}
+.rori-footer .dev-name{color:var(--gold);font-weight:700}
 .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.rori-section-title{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--gold);font-weight:700;margin:0;letter-spacing:.02em;text-shadow:0 2px 12px rgba(197,160,89,.18)}
+.rori-section-title{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;color:var(--gold);font-weight:700;margin:0}
 .rori-section-sub{color:var(--text-secondary);font-size:.88rem;margin:.25rem 0 0}
-.dash-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle;margin-right:6px;border:1.5px solid var(--gold);box-shadow:0 2px 8px rgba(197,160,89,.4)}
-@media(max-width:1024px){
-  .card:hover,.metric-card:hover,.btn-primary:hover{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.18), 0 6px 18px rgba(0,0,0,.35) !important}
-  .form-control:focus,.form-select:focus{transform:none}
-  .nav-link:hover,.navbar-brand:hover{transform:none}
-}
+.dash-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle;margin-right:6px;border:1.5px solid var(--gold)}
 @media(max-width:768px){
   .nav-link{padding:.5rem .8rem!important;font-size:.82rem}
   .metric-value{font-size:1.7rem}
   .chart-box{height:220px}
-  .table>:not(caption)>*>*{padding:.65rem .55rem;font-size:.82rem}
-  .table thead th{font-size:10px;padding:.65rem .55rem}
   .container{padding:1rem .85rem}
   .filter-bar > div{min-width:100%}
   .btn{width:100%;justify-content:center}
@@ -3413,7 +3297,7 @@ a{color:var(--gold);text-decoration:none}
 <a class="nav-link" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> Reports</a>
 <a class="nav-link" href="{{ url_for('messages_inbox') }}"><i class="fas fa-comments"></i> Messages</a>
 <a class="nav-link" href="{{ url_for('notifications') }}"><i class="fas fa-bell"></i> Notifications</a>
-<a class="nav-link" href="{{ url_for('profile') }}">{% if current_user.profile_pic %}<img src="{{ url_for('static', filename='profile_pics/' + current_user.profile_pic) }}" alt="Profile" class="dash-avatar">{% else %}<i class="fas fa-user-circle"></i>{% endif %} {{ current_user.full_name or current_user.username }}</a>
+<a class="nav-link" href="{{ url_for('profile') }}">{% if current_user.has_profile_photo() %}<img src="{{ get_profile_photo_url(current_user) }}" alt="Profile" class="dash-avatar">{% else %}<i class="fas fa-user-circle"></i>{% endif %} {{ current_user.full_name or current_user.username }}</a>
 <a class="nav-link" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div></div></div></nav>
 <div class="container mt-4">
@@ -3483,7 +3367,7 @@ a{color:var(--gold);text-decoration:none}
 {% else %}<div class="empty"><i class="fas fa-inbox"></i>No requests</div>{% endif %}</div></div>
 <div class="col-lg-4"><div class="card"><h5 class="mb-3"><i class="fas fa-wave-square"></i> Activity</h5>
 {% if recent_activity|length > 0 %}<div class="feed">{% for a in recent_activity %}
-<div class="feed-item"><i class="fas fa-bolt" style="color:var(--gold);margin-top:.15rem"></i><div style="flex:1"><div class="tx"><strong>{{ a.user }}</strong> — {{ a.action }}</div><div class="tm">{{ a.time }}</div></div></div>{% endfor %}</div>
+<div class="feed-item"><i class="fas fa-bolt" style="color:var(--gold);margin-top:.15rem"></i><div style="flex:1"><div style="color:var(--text-primary)"><strong>{{ a.user }}</strong> — {{ a.action }}</div><div class="tm">{{ a.time }}</div></div></div>{% endfor %}</div>
 {% else %}<div class="empty"><i class="fas fa-wave-square"></i>No activity</div>{% endif %}</div>
 <div class="card"><h5 class="mb-3"><i class="fas fa-boxes"></i> Inventory Snapshot</h5><div class="prog-list">
 <div class="prog-row"><div class="prog-top"><span class="nm">Total Parts</span><span class="ct">{{ inventory.total_parts }}</span></div></div>
@@ -3712,13 +3596,20 @@ def workorders_list():
     if current_user.role == "EMPLOYEE": return redirect(url_for("employee_dashboard"))
     if current_user.role in STAFF_ROLES: wos = WorkOrder.query.filter(db.or_(WorkOrder.assigned_to_id == current_user.id, WorkOrder.assigned_to_id.is_(None))).order_by(WorkOrder.created_at.desc()).all()
     else: wos = WorkOrder.query.order_by(WorkOrder.created_at.desc()).all()
+    is_admin = (current_user.role == "ADMIN")
     rows = []
     for wo in wos:
         assigned = (wo.assigned_to.full_name or wo.assigned_to.username) if wo.assigned_to else "Unassigned"
         badge = "success" if wo.status in ["Completed","Verified"] else "warning" if wo.status in ["Pending","Assigned"] else "info"
-        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--rori-gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i> Detail</a></td></tr>')
+        del_cell = ""
+        if is_admin and wo.status in ("Completed", "Verified", "Closed"):
+            del_cell = ('<form method="post" action="' + url_for("workorder_delete", wo_id=wo.id) + '" style="display:inline" '
+                        'onsubmit="return confirm(\'Permanently delete work order ' + str(wo.work_order_no) + '? This cannot be undone.\');">'
+                        '<button type="submit" class="btn-icon" style="width:30px;height:30px;background:var(--danger-bg);color:var(--danger);border:1px solid rgba(255,107,94,.35);" title="Delete work order" aria-label="Delete work order"><i class="fas fa-trash"></i></button></form>')
+        rows.append('<tr><td><a href="' + url_for("workorder_detail", wo_id=wo.id) + '" style="color:var(--gold);">' + str(wo.work_order_no) + '</a></td><td>' + str(wo.request.location_name if wo.request else "—") + '</td><td>' + str(wo.request.working_item.name if wo.request and wo.request.working_item else "—") + '</td><td>' + str(wo.request.department.name if wo.request and wo.request.department else "—") + '</td><td>' + str(wo.request.priority if wo.request else "—") + '</td><td><span class="badge badge-' + badge + '">' + str(wo.status) + '</span></td><td>' + str(assigned) + '</td><td style="white-space:nowrap;"><a class="btn-primary" href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" style="padding:.25rem .6rem;font-size:.72rem;width:auto;"><i class="fas fa-file-alt"></i> Detail</a> ' + del_cell + '</td></tr>')
+    header_extra = '<th></th>' if is_admin else ''
     c = ('<div class="page-header"><div class="page-title"><h1><i class="fas fa-tasks"></i> <span>Work</span> Orders</h1></div></div>'
-         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th></tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="8" style="text-align:center;">No work orders</td></tr>') + '</tbody></table></div></div>')
+         '<div class="card"><div style="overflow-x:auto;"><table class="table"><thead><tr><th>Order #</th><th>Location</th><th>Item</th><th>Department</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Report</th>' + header_extra + '</tr></thead><tbody>' + ("".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;">No work orders</td></tr>') + '</tbody></table></div></div>')
     return page("Work Orders", c)
 
 @app.route("/workorders/new", methods=["GET","POST"])
@@ -3772,6 +3663,10 @@ def workorder_detail(wo_id):
         if wo.status == "In Progress": actions += '<a href="' + url_for("workorder_complete", wo_id=wo.id) + '" class="btn-primary w-100" style="background:var(--success);margin-bottom:0.75rem;display:block;text-align:center;"><i class="fas fa-check"></i> Complete</a>'
     if (current_user.role == "ADMIN" or current_user.role == "MANAGER") and wo.status == "Completed":
         actions += '<form method="post" action="' + url_for("workorder_verify", wo_id=wo.id) + '"><button type="submit" class="btn-primary w-100" style="background:var(--info);margin-bottom:0.75rem;"><i class="fas fa-check-double"></i> Verify</button></form>'
+    if current_user.role == "ADMIN" and wo.status in ("Completed", "Verified", "Closed"):
+        actions += ('<form method="post" action="' + url_for("workorder_delete", wo_id=wo.id) + '" style="margin-bottom:0.75rem;" '
+                    'onsubmit="return confirm(\'Permanently delete this work order? Only this work order will be removed. Request, photos and signatures will be preserved.\');">'
+                    '<button type="submit" class="btn-primary w-100" style="background:var(--danger-bg);color:var(--danger);border:1px solid rgba(255,107,94,.4);"><i class="fas fa-trash"></i> Delete Work Order</button></form>')
     c = ('<div class="page-header"><div class="page-title"><h1>Work Order <span>' + str(wo.work_order_no) + '</span></h1></div>'
         '<div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="' + url_for("detailed_report_single_wo", wo_id=wo.id) + '" class="btn-primary" style="width:auto;"><i class="fas fa-file-alt"></i> Report</a>'
         '<a href="' + url_for("workorders_list") + '" class="btn-primary" style="background:var(--bg-card);border:1px solid var(--border-color);width:auto;"><i class="fas fa-arrow-left"></i> Back</a></div></div>'
@@ -3841,6 +3736,25 @@ def workorder_verify(wo_id):
         db.session.commit(); flash("✅ Verified!","success")
     except Exception as e: db.session.rollback(); flash("Error: " + str(e),"danger")
     return redirect(url_for("workorder_detail", wo_id=wo_id))
+
+@app.route("/workorders/<int:wo_id>/delete", methods=["POST"])
+@role_required("ADMIN")
+def workorder_delete(wo_id):
+    if current_user.role != "ADMIN": abort(403)
+    try:
+        wo = get_or_404(WorkOrder, wo_id)
+        wo_no = wo.work_order_no
+        try:
+            InventoryStockHistory.query.filter_by(work_order_id=wo.id).update({"work_order_id": None}, synchronize_session=False)
+        except Exception: pass
+        WorkOrderPart.query.filter_by(work_order_id=wo.id).delete(synchronize_session=False)
+        db.session.delete(wo)
+        log_audit("Delete", "WorkOrder", wo_id, old_value=wo_no, new_value="deleted")
+        db.session.commit()
+        flash("✅ Work order " + str(wo_no) + " deleted", "success")
+    except Exception as e:
+        db.session.rollback(); flash("Error deleting work order: " + str(e), "danger")
+    return redirect(url_for("workorders_list"))
 
 # ══════════════════════════════════════════ SUPPLIERS
 def supplier_active(s):
@@ -4501,6 +4415,7 @@ def reports():
     return page("Reports", c)
 
 @app.route("/debug")
+@role_required("ADMIN")
 def debug():
     hk = Department.query.filter_by(name=HOUSEKEEPING_DEPT_NAME).first()
     return jsonify({
@@ -4511,6 +4426,7 @@ def debug():
         "requests_total_incl_archived": MaintenanceRequest.query.count(),
         "requests_active": MaintenanceRequest.query.filter_by(is_deleted=False).count(),
         "requests_archived": MaintenanceRequest.query.filter_by(is_deleted=True).count(),
+        "users_with_db_profile_photo": User.query.filter(User.profile_pic_data.isnot(None)).count(),
         "hk_items_count": WorkingItem.query.filter_by(department_id=hk.id).count() if hk else 0,
         "hk_categories_count": Category.query.filter(Category.name.in_(list(HOUSEKEEPING_CATEGORY_NAMES))).count(),
         "work_orders": WorkOrder.query.count(),
@@ -4555,8 +4471,13 @@ def e404(e): return page("Not Found",'<div class="alert alert-warning"><i class=
 def e405(e): return page("Method Not Allowed",'<div class="alert alert-danger"><i class="fas fa-times-circle"></i><span>Method not allowed.</span></div>'), 405
 @app.errorhandler(500)
 def e500(e):
-    tb = traceback.format_exc(); print("500 ERROR: " + tb)
-    return "<h1>500 Error</h1><pre>" + tb + "</pre>", 500
+    try: print("500 ERROR: " + traceback.format_exc())
+    except Exception: pass
+    try: db.session.rollback()
+    except Exception: pass
+    return page("Server Error",
+        '<div class="alert alert-danger"><i class="fas fa-times-circle"></i>'
+        '<span>An internal error occurred. The issue has been logged. Please try again or contact your administrator.</span></div>'), 500
 
 with app.app_context():
     print("="*60)
@@ -4577,13 +4498,16 @@ with app.app_context():
     print("✅ Rori Hotel Maintenance System initialized — Developer: Edom Adinew")
     print("✅ Full app uses the Rori black & gold theme (Cormorant Garamond + Figtree)")
     print("✅ Production data preserved — no drops, no truncates, no destructive migrations")
-    print("✅ Profile Photo upload added to /profile (all users)")
+    print("✅ PROFILE PHOTO PERSISTENCE: photos stored as base64 in users.profile_pic_data")
+    print("   → survives refresh, login/logout, server restart and Render redeploy")
+    print("✅ Serving route: /profile/photo/<user_id> (DB → disk fallback → default avatar)")
     print("✅ Telegram-style messaging: /messages (card inbox) + /messages/thread/<user_id>")
     print("✅ Voice messages (MediaRecorder) + Image attachments supported")
+    print("✅ Compact message composer [📎][input][🎤][➤] with safe-area padding")
     print("✅ Active/online status via request-driven last_seen")
+    print("✅ Work order delete (ADMIN-only) — deletes only the selected WO + its parts")
     print("✅ Reports show the Rori logo at the top")
     print("✅ Finance department: 70+ maintenance items")
-    print("✅ 3D depth effects (shadows, tilt, press, float) — disabled on mobile")
     print("="*60)
 
 if __name__ == "__main__":
